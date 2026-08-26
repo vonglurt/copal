@@ -39,6 +39,9 @@ def media_tag(name, title, present):
 # Ordered: the gallery reads as the install does, start to finish. Anything
 # not named here is appended at the end in filename order.
 CAPTIONS = [
+    ("release-pipeline.gif", "make release, start to finish",
+     "The Mac side: purge, build, verify, record, render, regenerate. Six "
+     "minutes of pipeline at 6x. The verify step is the one that can stop it."),
     ("install-cast.gif", "The install, accelerated",
      "Sixteen stages recorded from the VM's serial console. Every command is "
      "printed before it runs, and each phase is timed."),
