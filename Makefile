@@ -774,8 +774,8 @@ LEGACY   = copal-*.img copal-*-efivars.fd efivars.fd .copal-init.lint.sh \
            copal-prep-auto*.log copal-vm-check.log run-log-*.txt *.log
 # Generated per-machine configuration -- the same list .gitignore carries, and
 # deliberately the same list, so the two cannot drift apart.
-SECRETS  = copal.conf copal-git answers.txt usercfg.txt authorized_keys \
-           firstrun.log copal-auto copal-timings
+SECRETS  = copal.conf copal-git copal-repos answers.txt usercfg.txt \
+           authorized_keys firstrun.log copal-auto copal-timings
 # Finder droppings. Not big, but they are folder clutter and they travel.
 CRUFT    = .DS_Store ._* .Spotlight-V100 .Trashes
 

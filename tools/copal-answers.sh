@@ -92,6 +92,7 @@ get_answer() {  # <variable name>
 if [ -f "$ANSWERS" ]; then
     COPAL_GIT_NAME=$(get_answer COPAL_GIT_NAME)
     COPAL_GIT_EMAIL=$(get_answer COPAL_GIT_EMAIL)
+    COPAL_GIT_REPOS=$(get_answer COPAL_GIT_REPOS)
     COPAL_USER=$(get_answer COPAL_USER)
     COPAL_HOSTNAME=$(get_answer COPAL_HOSTNAME)
     COPAL_TIMEZONE=$(get_answer COPAL_TIMEZONE)
@@ -151,6 +152,42 @@ ask "Login name in the guest" "${COPAL_USER:-user}"       COPAL_USER
 ask "Hostname"               "${COPAL_HOSTNAME:-$(random_hostname)}" COPAL_HOSTNAME
 ask "Timezone"               "${COPAL_TIMEZONE:-US/Pacific}" COPAL_TIMEZONE
 ask "Keymap"                 "${COPAL_KEYMAP:-us us}"     COPAL_KEYMAP
+
+# The checkouts. Not one question but a list, so it is a loop rather than an
+# `ask` -- and the whole thing is optional: stage 1 asks again on the machine
+# and Enter here simply means "I will decide there".
+#
+# What this buys is the same thing the password hash buys. Answered here, an
+# unattended install ends with the repositories already cloned into ~/code and
+# nothing having stopped to ask; left empty, stage 1 stops for it.
+printf '\n'
+note "Repositories to check out into ~/code on the machine. Cloned by stage 7,"
+note "while the install still has a network. Enter alone finishes the list;"
+note "Enter at the first prompt leaves it to be asked during the install."
+note "https URLs work as-is -- an ssh URL needs a key the GUEST holds."
+if [ -n "${COPAL_GIT_REPOS:-}" ]; then
+    note ""
+    note "Already on file:"
+    for _r in ${COPAL_GIT_REPOS}; do note "  $_r"; done
+    printf '  Keep them? [Y/n]: ' >&2
+    IFS= read -r _keep || true
+    case "${_keep:-y}" in [Nn]*) COPAL_GIT_REPOS="" ;; esac
+fi
+while :; do
+    printf '  Repository URL [Enter when done]: ' >&2
+    IFS= read -r _r || true
+    [ -n "$_r" ] || break
+    # A URL with a space in it would become two list entries the moment
+    # copal-prep.sh word-splits this, so it is refused here rather than
+    # silently mangled on the card.
+    case "$_r" in
+        *[[:space:]]*) printf '\033[33m  A git URL cannot contain a space.\033[0m\n' >&2; continue ;;
+    esac
+    case " ${COPAL_GIT_REPOS:-} " in
+        *" $_r "*) note "  already listed"; continue ;;
+    esac
+    COPAL_GIT_REPOS="${COPAL_GIT_REPOS:+$COPAL_GIT_REPOS }$_r"
+done
 
 # The password. Read twice with echo off, never written anywhere in the clear,
 # and never passed as an argument -- an argument is visible in ps to every
@@ -322,6 +359,9 @@ cat > "$ANSWERS" <<EOF
 
 COPAL_GIT_NAME=$(sq "${COPAL_GIT_NAME}")
 COPAL_GIT_EMAIL=$(sq "${COPAL_GIT_EMAIL}")
+# Space-separated, one word per URL. Cloned into ~/code by stage 7; stage 1
+# offers this list and lets it be changed on the machine.
+COPAL_GIT_REPOS=$(sq "${COPAL_GIT_REPOS:-}")
 COPAL_USER=$(sq "${COPAL_USER}")
 COPAL_HOSTNAME=$(sq "${COPAL_HOSTNAME}")
 COPAL_TIMEZONE=$(sq "${COPAL_TIMEZONE}")
@@ -342,6 +382,7 @@ chmod 600 "$ANSWERS"
 info "Wrote $ANSWERS (mode 600)"
 note ""
 note "  git identity   ${COPAL_GIT_NAME} <${COPAL_GIT_EMAIL}>"
+note "  ~/code         $(set -- ${COPAL_GIT_REPOS:-}; [ $# -gt 0 ] && echo "$# repositor$([ $# = 1 ] && echo y || echo ies)" || echo '(none)')"
 note "  user           ${COPAL_USER}"
 note "  hostname       ${COPAL_HOSTNAME}"
 note "  root password  stored as a SHA-512 hash, not recoverable"

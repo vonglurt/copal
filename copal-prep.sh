@@ -417,6 +417,7 @@ if [ -f "$COPAL_ANSWERS" ]; then
     info "Read answers from $(basename "$COPAL_ANSWERS")${COPAL_ROOT_PW_HASH:+ (root password set)}"
     CFG_GIT_NAME="${CFG_GIT_NAME-${COPAL_GIT_NAME-}}"
     CFG_GIT_EMAIL="${CFG_GIT_EMAIL-${COPAL_GIT_EMAIL-}}"
+    CFG_GIT_REPOS="${CFG_GIT_REPOS-${COPAL_GIT_REPOS-}}"
     CFG_USER="${CFG_USER:-${COPAL_USER:-}}"
     CFG_HOSTNAME="${CFG_HOSTNAME:-${COPAL_HOSTNAME:-}}"
     CFG_TIMEZONE="${CFG_TIMEZONE:-${COPAL_TIMEZONE:-}}"
@@ -560,6 +561,35 @@ fi
 sanitise_conf_value() { printf '%s' "$1" | tr -d '"\\`$' | tr -d '[:cntrl:]'; }
 CFG_GIT_NAME=$(sanitise_conf_value "${CFG_GIT_NAME:-}")
 CFG_GIT_EMAIL=$(sanitise_conf_value "${CFG_GIT_EMAIL:-}")
+
+# The repositories to check out into ~/code on the machine -- the work you
+# actually intend to do there, cloned while the install still has a network and
+# a person nearby, rather than remembered as a chore for the first login.
+#
+# A PROPOSAL, exactly like the identity above: it rides across in copal.conf,
+# stage 1 shows it and lets you add to it, and the answer given there is what
+# stage 7 clones. Space-separated -- a URL cannot contain a space, so nothing
+# more elaborate is needed, and a list that survives being one shell word is a
+# list copal.conf can carry without a second file on the card.
+#
+# There is no default. Guessing which repositories somebody wants on a machine
+# is not a thing this can do, and cloning something unasked-for onto a 512 MB
+# board is worse than asking. Set it in answers.txt (COPAL_GIT_REPOS), or in
+# the environment for one build:
+#
+#   CFG_GIT_REPOS="https://github.com/you/dotfiles https://github.com/you/site" make pi4
+#
+# Anything git understands is fine -- https, ssh, git://. Note that an ssh URL
+# needs a key the MACHINE holds, which is not the key copal-prep.sh copies onto
+# the card (that one authorises you INTO the machine, not the machine out to
+# GitHub), so https is the shape that works without further setup.
+# Whitespace of any kind, including newlines from a heredoc in answers.txt,
+# collapses to single spaces: one shell word per URL is the whole contract.
+# BEFORE sanitise_conf_value, not after -- that function strips control
+# characters, which a newline is, and a list flattened by it would arrive as
+# two URLs run together into one nonsense one.
+CFG_GIT_REPOS=$(printf '%s' "${CFG_GIT_REPOS:-}" | tr -s ' \t\n' ' ' | sed 's/^ //; s/ $//')
+CFG_GIT_REPOS=$(sanitise_conf_value "$CFG_GIT_REPOS")
 
 # Why a second partition:
 #
@@ -2145,6 +2175,7 @@ cat > "$MNT/copal.conf" <<CONF
 PI_USER="${CFG_USER}"
 PI_GIT_NAME="${CFG_GIT_NAME}"
 PI_GIT_EMAIL="${CFG_GIT_EMAIL}"
+PI_GIT_REPOS="${CFG_GIT_REPOS}"
 CONF
 
 # Build identity, its own file rather than a line in copal.conf: it is read by
@@ -2187,6 +2218,13 @@ if [ -n "${CFG_GIT_NAME}${CFG_GIT_EMAIL}" ]; then
     info "Git identity offered: ${CFG_GIT_NAME:-(no name)} <${CFG_GIT_EMAIL:-no email}> -- stage 1 asks, Enter accepts"
 else
     warn "no git identity on this Mac -- stage 1 will ask for one with no default"
+fi
+
+if [ -n "$CFG_GIT_REPOS" ]; then
+    info "Repositories offered for ~/code -- stage 1 confirms, stage 7 clones:"
+    for _r in $CFG_GIT_REPOS; do info "  $_r"; done
+else
+    info "No repositories proposed for ~/code -- stage 1 asks, Enter skips"
 fi
 
 # The SSH public key, copied as a plain file next to it. Public keys are not
@@ -2429,6 +2467,17 @@ CONF="$BOOT/copal.conf"
 # file carries the PROPOSAL from the Mac; this one carries the answer given
 # here, and an answer must not be destroyed by re-running --refresh.
 IDFILE="$BOOT/copal-git"
+
+# The repositories to check out into ~/code, asked in stage 1 beside the
+# identity and cloned by stage 7. Same file, same partition, same reasons: it
+# is readable at every point in the install, it survives stage 3 moving the
+# root, and with the card in a reader on the Mac it can be corrected by hand.
+#
+# One URL per line. Full-line '#' comments and blanks are ignored, so the file
+# can explain itself to whoever opens it next -- which is the point of it being
+# a list in a file rather than a string in copal.conf. The PROPOSAL from the
+# Mac does arrive as a string, in PI_GIT_REPOS; this is where the answer lives.
+REPOFILE="$BOOT/copal-repos"
 
 # Full-automatic install state. Deliberately on the FAT boot partition and
 # nowhere else: it is the one filesystem that exists at every point in this
@@ -3045,6 +3094,7 @@ sshkey_done() {
 PI_USER=user
 PI_GIT_NAME=''
 PI_GIT_EMAIL=''
+PI_GIT_REPOS=''
 [ -f "$CONF" ] && . "$CONF"
 
 # uname -r is 6.x.y-0-rpi on this image; setup-disk derives the kernel package
@@ -4741,6 +4791,152 @@ MSG
     return 0
 }
 
+# ------------------------------------------------ the checkouts for ~/code ---
+#
+# A machine you install in order to work on something should arrive with that
+# something already on it. ~/code is where it goes -- separate from ~/dev,
+# which stage 7 fills with the sample project that proves the toolchain works,
+# because a directory holding a worked example and a directory holding your
+# repositories are two different things and merging them makes both worse.
+#
+# ASKED IN STAGE 1, next to the identity and the password, for the reason the
+# identity is asked there: that is the last moment in the install where anybody
+# is expected to be at the keyboard. CLONED IN STAGE 7, which is the first
+# stage that has git, a network and a home directory at the same time. Nothing
+# in between stops to ask.
+#
+# Not verified here, and deliberately so. Whether a URL exists, whether it is
+# public, and whether this machine may read it are all questions the network
+# answers, and the network is not necessarily up in stage 1 -- a wrong URL
+# fails in stage 7 with git's own message, which says more than anything this
+# could check.
+
+repos_list() {  # -> one URL per line, comments and blank lines removed
+    [ -f "$REPOFILE" ] || return 0
+    # \r goes because this file is meant to be editable from the Mac, and a
+    # carriage return on the end of a URL is a clone failure whose cause is
+    # invisible in the error. $1 rather than $0: a trailing comment on a URL
+    # line is a comment, and no git URL contains a space.
+    sed 's/\r$//' "$REPOFILE" 2>/dev/null \
+        | sed 's/^[[:space:]]*#.*//' \
+        | awk 'NF { print $1 }'
+}
+
+repos_save() {  # reads the list on stdin, one per line
+    mount -o remount,rw "$BOOT" 2>/dev/null || true
+    { echo "# Copal: repositories to check out into ~/code on this machine."
+      echo "# Asked in stage 1, cloned by stage 7. One URL per line; lines"
+      echo "# starting with # are ignored. Editable by hand, from here or"
+      echo "# from the Mac with the card in a reader."
+      echo "#"
+      echo "# Re-running stage 7 clones anything new and leaves the rest alone."
+      cat
+    } > "$REPOFILE" 2>/dev/null || {
+        warn "could not write $REPOFILE -- stage 7 will have nothing to clone"
+        return 1
+    }
+    sync
+    return 0
+}
+
+# What the list currently is: the answer given on this machine, or failing that
+# the proposal copal-prep.sh put in copal.conf. Same priority order as the
+# identity, for the same reason -- an answer given here outranks a default that
+# rode over on the card.
+#
+# The test is whether the FILE EXISTS, not whether it has anything in it, and
+# that distinction is the whole point. "I was asked and I said none" is an
+# answer; falling back to the card's proposal there would clone repositories
+# somebody had just finished declining.
+repos_current() {
+    if [ -f "$REPOFILE" ]; then
+        repos_list
+        return 0
+    fi
+    for _r in $PI_GIT_REPOS; do printf '%s\n' "$_r"; done
+}
+
+repos_ask() {
+    say "Repositories to check out into ~/code"
+    _list=$(repos_current)
+
+    # --auto means the card already holds the answer, and there is nobody there
+    # to ask. Save what the card proposed and move on -- but only if it
+    # proposed something, because writing an empty list would be recording an
+    # answer nobody gave.
+    if answers_auto; then
+        if [ -n "$_list" ]; then
+            printf '%s\n' "$_list" | repos_save \
+                && note "from the card -- stage 7 clones these into ~/code:"
+            printf '%s\n' "$_list" | while read -r _r; do note "  $_r"; done
+        else
+            note "auto: none proposed on the card -- ~/code will be created empty"
+        fi
+        return 0
+    fi
+
+    cat <<'MSG'
+    Anything listed here is cloned into ~/code by stage 7, while the install
+    still has a network and you are still nearby. It is not a package list
+    and nothing is built from it -- it is 'git clone', once, per line.
+
+    https URLs work with no further setup. An ssh URL needs a key that THIS
+    MACHINE holds, which is not the key on the card -- that one authorises
+    you into the machine, not the machine out to GitHub -- so an ssh URL
+    will fail in stage 7 until you put a key on here yourself.
+
+    Enter at an empty prompt finishes the list. Enter at the first one skips
+    the whole thing; ~/code is still created, and 'copal-code' adds to the
+    list later.
+MSG
+
+    if [ -n "$_list" ]; then
+        note "already listed:"
+        printf '%s\n' "$_list" | while read -r _r; do note "  $_r"; done
+        if ! confirm_yes "Keep these?"; then
+            _list=""
+            note "Starting from an empty list."
+        fi
+    fi
+
+    while :; do
+        ask_real "Repository URL (Enter when done):"
+        [ -n "$REPLY" ] || break
+        # A loose shape check, said while the person who typed it is still
+        # there to retype it. Not a rejection: git understands more URL forms
+        # than any pattern here should claim to know.
+        case "$REPLY" in
+            *://*|*@*:*|/*) ;;
+            *) warn "'$REPLY' does not look like a git URL; keeping it anyway" ;;
+        esac
+        # Typing the same one twice is a mistake, not an instruction.
+        if printf '%s\n' "$_list" | grep -qxF "$REPLY"; then
+            note "already on the list -- not adding it twice"
+            continue
+        fi
+        # ${x:+...} rather than a bare append: command substitution ate the
+        # trailing newline off repos_current, so appending to a non-empty list
+        # without putting one back glues two URLs into one nonsense one.
+        _list="${_list:+$_list
+}$REPLY"
+        note "$(printf '%s\n' "$_list" | awk 'NF' | wc -l | tr -d ' ') on the list"
+    done
+
+    _list=$(printf '%s\n' "$_list" | awk 'NF')
+    if [ -z "$_list" ]; then
+        note "Nothing listed -- ~/code will be created empty."
+        note "Add to it later with: copal-code add URL"
+        # An empty answer is still an answer: recording it stops the card's
+        # proposal from being cloned behind the back of somebody who just
+        # declined it.
+        printf '' | repos_save >/dev/null 2>&1 || true
+        return 0
+    fi
+    printf '%s\n' "$_list" | repos_save \
+        && note "saved to $REPOFILE -- stage 7 clones them without asking again"
+    return 0
+}
+
 # ------------------------------------------- the password from answers.txt ---
 # setup-alpine has no answer-file variable for the root password, and that one
 # gap is what has kept a full-automatic install from being possible: everything
@@ -4826,9 +5022,10 @@ stage_base_config() {
         confirm "Run setup-alpine again anyway?" || { note "Skipped."; return 0; }
     fi
 
-    note "First, two questions of Copal's own: the name and email for git"
-    note "commits. They are saved on the card and applied by stage 7, which is"
-    note "why that stage does not stop to ask an hour and a half from now."
+    note "First, a few questions of Copal's own: the name and email for git"
+    note "commits, and the repositories to check out into ~/code. They are"
+    note "saved on the card and acted on by stage 7, which is why that stage"
+    note "does not stop to ask an hour and a half from now."
     note "Then keymap, hostname, network, timezone, mirror, sshd and user come"
     note "from answers.txt."
     if answers_pw_hash >/dev/null 2>&1; then
@@ -4849,6 +5046,11 @@ stage_base_config() {
     # for setup-alpine below.
     tui_suspend
     git_identity_ask
+    # Last of Copal's own questions, and the only one that is about what this
+    # machine is FOR rather than about how it is built. It goes after the
+    # identity because it is the same conversation continued: who you are, and
+    # then what you came here to work on.
+    repos_ask
     tui_resume
 
     # setup-alpine writes over the whole terminal and asks questions of its own,
@@ -12021,6 +12223,219 @@ configure_git_identity() {
     note "written to $_gc (owned by $PI_USER)"
 }
 
+# --------------------------------------------- stage 7: ~/code --------------
+#
+# The repositories listed in stage 1, cloned. ~/code is created either way, so
+# that the directory the guides and this script keep referring to is there on a
+# machine where nobody listed anything.
+#
+# WHY THE WORK IS DONE BY copal-code AND NOT HERE. The same job is wanted twice
+# -- once now, unattended, and once later when somebody adds a repository to a
+# machine that has been running for a month -- and two implementations of
+# "clone the list" are two implementations that drift. So the script is written
+# first and then run, and the install is just its first caller.
+#
+# It is run through `su - $PI_USER` rather than by root with a chown afterwards.
+# A checkout is not a file dropped into a home directory: it has a .git with
+# config, hooks and objects, and every later `git pull` runs as the user. A
+# tree that was made by root and given away is a tree with root's umask on it,
+# and the failures that produces surface weeks later. Cloning as the user who
+# owns it means there is nothing to correct.
+clone_user_repos() {
+    say "Checkouts in ~/code"
+    # Written first, and unconditionally: a machine that gets git next week
+    # should already have the command that uses it.
+    install_copal_code
+    if ! command -v git >/dev/null 2>&1; then
+        warn "git is not installed -- skipping ~/code"
+        return 0
+    fi
+    ensure_user_home || true
+    _h=$(user_home)
+    if [ -z "$_h" ] || [ ! -d "$_h" ]; then
+        warn "no home directory for $PI_USER -- skipping ~/code"
+        return 0
+    fi
+
+    mkdir -p "$_h/code"
+    own_by_user "$_h/code"
+    note "$_h/code"
+
+    _repos=$(repos_current)
+    if [ -z "$_repos" ]; then
+        note "nothing listed -- ~/code is there and empty."
+        note "Add to it with: doas copal-code add https://github.com/you/thing"
+        return 0
+    fi
+    note "$(printf '%s\n' "$_repos" | wc -l | tr -d ' ') to clone -- git's own output follows"
+
+    # su, then a plain run as the user. If su is not available or refuses, say
+    # so and leave the list in place: the user can run copal-code themselves at
+    # the first login, which is a worse outcome than cloning now but a much
+    # better one than a ~/code full of root-owned trees.
+    if su - "$PI_USER" -c '/usr/local/bin/copal-code' 2>&1; then
+        note "done -- 'copal-code' again at any time to pull them"
+    else
+        warn "some checkouts did not complete -- see git's output above"
+        note "Run 'copal-code' as $PI_USER to retry; nothing already cloned is touched."
+    fi
+    return 0
+}
+
+# The script itself. Written on every stage-7 run, like the front door, so
+# editing the installed copy is pointless -- edit copal-prep.sh.
+install_copal_code() {
+    [ -d /usr/local/bin ] || mkdir -p /usr/local/bin 2>/dev/null || return 0
+    cat > /usr/local/bin/copal-code <<'COPALCODE'
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# copal-code -- the checkouts in ~/code.
+#
+#   copal-code              clone anything on the list that is not here yet,
+#                           and 'git pull' anything that is
+#   copal-code list         the list, and what is on disk
+#   copal-code add URL...   add to the list (needs doas: the list lives on the
+#                           boot partition, which only root can write)
+#   copal-code rm NAME...   remove from the list (needs doas). The CHECKOUT is
+#                           left alone -- deleting somebody's work is not a
+#                           thing a list editor should do.
+#   copal-code path         where the list is
+#
+# Rewritten by copal-init.sh every time stage 7 runs.
+set -eu
+
+CODE="$HOME/code"
+
+say()  { printf '\033[36m==>\033[0m %s\n' "$*"; }
+note() { printf '    %s\n' "$*"; }
+warn() { printf '\033[33mwarning:\033[0m %s\n' "$*" >&2; }
+
+# The list is on the FAT boot partition -- see REPOFILE in copal-init.sh. It is
+# looked for rather than hardcoded because /boot is where it lives after stage
+# 3 and /media/* is where it lives before.
+find_list() {
+    for _d in /boot /media/*; do
+        [ -f "$_d/copal-repos" ] && { printf '%s\n' "$_d/copal-repos"; return 0; }
+    done
+    # Nothing yet: /boot is the right place to make one, if this is that card.
+    [ -f /boot/answers.txt ] && { printf '%s\n' /boot/copal-repos; return 0; }
+    return 1
+}
+LIST=$(find_list || true)
+
+repos() {
+    [ -n "$LIST" ] && [ -f "$LIST" ] || return 0
+    sed 's/\r$//' "$LIST" | sed 's/^[[:space:]]*#.*//' | awk 'NF { print $1 }'
+}
+
+# The directory a URL becomes: the last path component, minus a trailing .git.
+# Same rule git itself uses, reimplemented because `git clone` will not tell
+# you what it would pick without doing it.
+name_of() {
+    _n=${1%/}
+    _n=${_n##*/}
+    _n=${_n%.git}
+    printf '%s\n' "$_n"
+}
+
+need_root() {
+    [ "$(id -u)" = 0 ] || {
+        echo "That edits $LIST on the boot partition. Re-run as: doas copal-code $*" >&2
+        exit 1
+    }
+    [ -n "$LIST" ] || { echo "no copal-repos list found on the boot partition" >&2; exit 1; }
+    mount -o remount,rw "$(dirname "$LIST")" 2>/dev/null || true
+}
+
+case "${1:-sync}" in
+sync)
+    # Root has no business owning a checkout in somebody else's home, and
+    # $HOME here would be /root anyway. Stage 7 calls this through `su -`.
+    if [ "$(id -u)" = 0 ]; then
+        echo "Run this as the user who owns the checkouts, not as root." >&2
+        exit 1
+    fi
+    _r=$(repos)
+    [ -n "$_r" ] || { say "Nothing listed in ${LIST:-(no list found)}"; exit 0; }
+    mkdir -p "$CODE"
+    _fail=0
+    # A for loop and not `| while read`, because the pipeline would run the
+    # body in a subshell and _fail would come back zero however many clones
+    # failed -- which is precisely the thing stage 7 checks. No git URL
+    # contains a space, so word splitting is the right tool here.
+    for _url in $_r; do
+        _dir="$CODE/$(name_of "$_url")"
+        if [ -d "$_dir/.git" ]; then
+            say "$(basename "$_dir") -- already here, pulling"
+            git -C "$_dir" pull --ff-only || warn "pull failed in $_dir"
+        elif [ -e "$_dir" ]; then
+            warn "$_dir exists and is not a checkout -- left alone"
+        else
+            say "$(basename "$_dir") -- cloning"
+            # --depth is NOT used. This is a machine to work on, and a shallow
+            # clone cannot be pushed from without a fetch --unshallow first,
+            # which is a trap to leave for somebody a month from now.
+            git clone "$_url" "$_dir" || { warn "clone failed: $_url"; _fail=1; }
+        fi
+    done
+    exit "$_fail" ;;
+list)
+    say "${LIST:-(no list found)}"
+    _r=$(repos)
+    [ -n "$_r" ] || { note "(empty)"; exit 0; }
+    for _url in $_r; do
+        _dir="$CODE/$(name_of "$_url")"
+        if [ -d "$_dir/.git" ]; then _st="cloned"
+        elif [ -e "$_dir" ]; then   _st="IN THE WAY -- not a checkout"
+        else                        _st="not cloned yet"
+        fi
+        printf '    %-46s %s\n' "$_url" "$_st"
+    done ;;
+add)
+    shift
+    [ "$#" -gt 0 ] || { echo "usage: copal-code add URL [URL...]" >&2; exit 2; }
+    need_root add "$@"
+    [ -f "$LIST" ] || printf '# Copal: repositories to check out into ~/code.\n' > "$LIST"
+    for _u in "$@"; do
+        if repos | grep -qxF "$_u"; then
+            note "already listed: $_u"
+        else
+            printf '%s\n' "$_u" >> "$LIST"
+            note "added: $_u"
+        fi
+    done
+    sync
+    note "Now run 'copal-code' as the user to clone it." ;;
+rm)
+    shift
+    [ "$#" -gt 0 ] || { echo "usage: copal-code rm NAME [NAME...]" >&2; exit 2; }
+    need_root rm "$@"
+    for _u in "$@"; do
+        # By URL or by the directory name it produces, because the name is
+        # what you can see in ~/code and the URL is what you would have to
+        # go and look up.
+        _tmp="$LIST.new.$$"
+        awk -v u="$_u" '
+            { line = $0 }
+            { s = $1; sub(/\/$/, "", s); sub(/.*\//, "", s); sub(/\.git$/, "", s) }
+            $0 ~ /^[[:space:]]*#/ || NF == 0 { print line; next }
+            $1 == u || s == u { next }
+            { print line }
+        ' "$LIST" > "$_tmp" && mv "$_tmp" "$LIST" && note "removed: $_u"
+    done
+    sync
+    note "The checkout in ~/code is still there; delete it by hand if you meant to." ;;
+path)
+    printf '%s\n' "${LIST:-}" ;;
+*)
+    sed -n '4,20p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac
+COPALCODE
+    chmod 0755 /usr/local/bin/copal-code
+    note "/usr/local/bin/copal-code -- the list, and cloning from it"
+}
+
 # Claude Code. INSTALLED BY DEFAULT, on the boards that can actually run it --
 # Enter accepts, and declining is a deliberate "n" rather than the other way
 # round. It was an opt-in for a long time and that was the wrong default for
@@ -12366,6 +12781,67 @@ COMPILING AND DEBUGGING -- the whole loop, in one editor
               copal-guide emacs       Eglot, and why there are no packages
               copal-guide languages   what exists on which board
               copal-guide tmux        keeping a build running
+GUIDE
+
+    cat > "$_g/code.txt" <<'GUIDE'
+~/CODE -- the checkouts this machine came with
+
+   Two directories, and they are not the same thing:
+
+      ~/dev/hello    the worked example stage 7 writes. A C file, a Makefile
+                     and a breakpoint to put the cursor on. It exists to prove
+                     the toolchain works; delete it once it has.
+      ~/code         your repositories. Nothing here was written by Copal.
+
+   WHERE THE LIST COMES FROM
+
+   Stage 1 asks for it, next to the name and email for git commits -- the last
+   moment in the install when anybody is expected to be at the keyboard. Stage
+   7 clones what was listed, while the machine still has a network and you are
+   still nearby. If the card was written with 'make answers', the list came
+   from there and stage 1 only confirmed it.
+
+   THE COMMAND
+
+      copal-code              clone anything not here yet, and 'git pull'
+                              anything that is. Safe to run repeatedly.
+      copal-code list         the list, and which of it is on disk
+      copal-code add URL      add to the list        (needs doas)
+      copal-code rm NAME      remove from the list   (needs doas). By URL or
+                              by the directory name. The CHECKOUT is left
+                              alone -- this edits a list, it does not delete
+                              your work.
+      copal-code path         where the list is
+
+   The list lives on the FAT boot partition, at /boot/copal-repos, one URL per
+   line with '#' comments. That is why editing it needs doas, and it is also
+   why the card can be put in a reader on another machine and the list fixed
+   there -- the same reason the git identity and the install's own state live
+   on that partition.
+
+   HTTPS AND SSH
+
+   An https URL works with nothing further. An ssh URL -- git@github.com:you/
+   thing.git -- needs a key THIS MACHINE holds, and the key copal-prep.sh put
+   on the card is not it: that one authorises you INTO this machine, not this
+   machine out to GitHub. If you want ssh URLs:
+
+      ssh-keygen -t ed25519 -C "$(hostname)"
+      cat ~/.ssh/id_ed25519.pub        # paste into GitHub -> SSH keys
+
+   Nothing is shallow-cloned. A --depth 1 checkout cannot be pushed from until
+   it has been fetched --unshallow, and this is a machine to work on rather
+   than a machine to read code on, so the full history is fetched even though
+   it costs more of the card.
+
+   IF A CLONE FAILED
+
+   Stage 7 says so and carries on -- one unreachable repository does not stop
+   an install. Fix the URL with 'doas copal-code rm NAME' and 'doas copal-code
+   add URL', then run 'copal-code'. Anything already cloned is left alone.
+
+   See also:  copal-guide ide         building and debugging what you cloned
+              copal-guide tmux        keeping a long build running
 GUIDE
 
     cat > "$_g/nvim.txt" <<'GUIDE'
@@ -14983,6 +15459,7 @@ MSG
     dev_languages_core
     dev_languages_optional
     configure_git_identity
+    clone_user_repos
     install_claude_code
 
     say "AVR toolchain (Arduino-class microcontrollers)"
@@ -15268,6 +15745,7 @@ MAKEFILE
         copal-guide ide           compiling, breakpoints, stepping, call traces
         copal-guide nvim          the editor itself, from nothing to useful
         copal-guide languages     what exists on THIS board, and why
+        copal-guide code          ~/code, and the copal-code that fills it
         copal-guide tmux          tmux and screen
         copal-guide terminals     which terminal, and why the GPU ones are not
         copal-guide instruments   bases, matrices, inverse Laplace, FFT, scopes
@@ -18051,7 +18529,7 @@ auto_manifest() {
 6|Access|Install the SSH key from the card|3
 4|Desktop|X.Org, i3, a terminal and a browser|9
 16|Desktop|Hyprland and the Antiquity theme|10
-7|Toolchain|Compilers, debuggers, editors and Claude Code|12
+7|Toolchain|Compilers, editors, Claude Code and the ~/code checkouts|13
 10|Hardware|Wireless, audio, capture and disks|8
 12|Software|The application catalogue|4
 14|Workshop|CAD, 3D printing, EDA, LaTeX, trackers|6
@@ -19054,8 +19532,9 @@ elif ! apkovl_exists && is_diskless; then
 
     Early on it asks who you are -- a name and email for git commits, with
     whatever the Mac that wrote this card uses offered as the default -- and
-    then for a ROOT PASSWORD, which setup-alpine has no way to be told in
-    advance. After those you can walk away.
+    which repositories to check out into ~/code, and then for a ROOT
+    PASSWORD, which setup-alpine has no way to be told in advance. After
+    those you can walk away.
 
 MSG
     # HOW MUCH, not just whether. This used to be one yes/no question, which

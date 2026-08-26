@@ -148,17 +148,22 @@ the whole thing by itself. Answer **yes**. (Answer no and you get the ordinary
 stage menu, where you pick each stage yourself — that is [Step
 5](#step-5--the-stage-menu-on-the-target).)
 
-### 3 · The three answers it needs, all near the start
+### 3 · The four answers it needs, all near the start
 
 Full automatic answers every question except these:
 
 1. **Who you are** — a name and email for git commits. The Mac that wrote the
    image offers its own git identity as the default, so this is usually just
    Enter.
-2. **A root password.** `setup-alpine` asks for it, and there is no answer-file
+2. **What you came here to work on** — the repositories to check out into
+   `~/code`. One URL per prompt, Enter on an empty one to finish, Enter on the
+   first one to skip. Stage 7 clones them while the install still has a
+   network. `make answers` can settle this in advance, in which case stage 1
+   only shows the list. See `copal-guide code` on the machine.
+3. **A root password.** `setup-alpine` asks for it, and there is no answer-file
    variable for a password — this is the one thing a full-automatic install
    cannot fill in for you.
-3. **The same password, twice more.** Once to confirm it, then again for your
+4. **The same password, twice more.** Once to confirm it, then again for your
    own account. **Type the same thing all three times.**
 
 Then walk away. It takes hours. It reboots itself once, part-way through stage
@@ -914,9 +919,11 @@ Stage 3's reboot is survived by a marker file on the boot partition plus a
 resume block in the new root's `/root/.profile`, so logging back in as root
 picks the install up where it stopped. The run ends with a second reboot, asked
 for with a ten-second window to refuse it. It stops exactly once, in the first
-minute, for two things `setup-alpine` has no answer-file variable for: the
-**root password** and the **git identity** (offered from this Mac's config, so
-Enter accepts). After that you can walk away. It takes hours.
+minute, for the things `setup-alpine` has no answer-file variable for: the
+**root password**, the **git identity** (offered from this Mac's config, so
+Enter accepts) and the **repositories to check out into `~/code`**, which
+stage 7 clones. `make answers` settles all but the password in advance. After
+that you can walk away. It takes hours.
 
 A stage that fails warns and the run carries on, so one bad package cannot cost
 you the other ten stages — which is why the summary at the end matters more than
@@ -1357,6 +1364,7 @@ these stay.
 | `copal-install` · `copal-guide` | Fetch one catalogue entry; read the plain-text guides |
 | `copal-logs` · `copal-debug` | The log collection, and the switch that is off by default |
 | `copal-ssh` · `copal-logflush` · `copal-splash` | SSH policy; RAM logs down to the card; the key bindings on the wallpaper |
+| `copal-code` | The checkouts in `~/code` — the list, and cloning or pulling from it |
 | `snapshot` · `mountdsk` | rsync snapshots; mount a disk image |
 
 ### Why one file, and not packages
