@@ -417,8 +417,15 @@ produces a page with two empty slots and no explanation. `make walkthrough`
 runs the same pipeline and stops at each one:
 
 ```sh
-make walkthrough
+make walkthrough              # keeps the payload cache
+make walkthrough PURGE=1      # purge first, build from nothing
+make walkthrough MINUTES=25   # record the install for longer
 ```
+
+`PURGE` is a make **variable**, not a flag: `make walkthrough --no-purge`
+cannot work, because make takes `--no-purge` for itself before the recipe
+ever sees it. It means the same thing here as everywhere else — `0` keeps the
+payload cache, `1` empties `build/` and removes the UTM machines first.
 
 | Step | Who | What happens |
 |---|---|---|

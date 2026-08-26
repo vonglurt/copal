@@ -450,8 +450,14 @@ gallery:
 # prompt, and photographing a desktop. Both are announced, waited for, and
 # checked afterwards, so a skipped screenshot leaves an honest empty slot
 # rather than a silent one. See docs/AUTOMATION.md.
+# PURGE means the same thing here as everywhere else: 0 keeps the payload
+# cache, 1 empties build/ and deletes the UTM machines first. It is a make
+# VARIABLE, not a flag -- `make walkthrough --no-purge` cannot work, because
+# make takes --no-purge for itself before the recipe ever sees it.
 walkthrough:
-	@tools/release-walkthrough.sh --minutes $(MINUTES) --level $(LEVEL)
+	@tools/release-walkthrough.sh \
+	    $(if $(filter 1,$(PURGE)),,--no-purge) \
+	    --minutes $(MINUTES) --level $(LEVEL)
 
 # Gather every log a run produced -- the Mac's build transcripts, the install
 # transcript off the image's FAT partition, and the guest's own logs if it is

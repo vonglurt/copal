@@ -112,7 +112,11 @@ if [ "$PURGE" = 1 ]; then
     say "  UTM machines      Copal-aarch64 and Copal-x86_64, and their disks"
     say "${D}Any other UTM machine is left alone.${N}"
     if pause_for "ready to purge"; then
-        make purge YES=1 2>&1 | sed 's/^/   /'
+        # NOT piped. Indenting through sed buffers the output, so a step that
+        # takes a minute shows nothing at all and reads as a hang -- which is
+        # the opposite of what a walkthrough is for. Alignment is not worth
+        # hiding progress for.
+        make purge YES=1
         done_ "purged"
     else
         say "Keeping what is there. The build below may reuse it."
@@ -124,14 +128,16 @@ step "Build — a clean image, unattended"
 say "${D}make auto: ./copal build $(sed -n 's/^MODEL *?= *//p' Makefile | head -1) --auto${N}"
 say "No questions. script(1) supplies the tty the step gates want."
 say "About 90 seconds once the payload is cached; longer if it re-downloads."
-# The status is taken from make, not from the tail of the pipe. Without
-# PIPESTATUS the exit code here would be sed's, which is always 0 -- and the
-# walkthrough would announce success over a release that failed at verify.
-set -o pipefail
-make release PURGE=0 LEVEL="$LEVEL" MINUTES="$MINUTES" 2>&1 \
-    | grep -vE '^\s*[0-9]+ / [0-9]+' | sed 's/^/   /'
-_rc=${PIPESTATUS[0]}
-set +o pipefail
+# STRAIGHT TO THE TERMINAL, deliberately. This used to run through
+# `grep -v | sed` to drop agg's progress bars and indent the rest -- and both
+# of those buffer, so the build showed nothing for ninety seconds and the
+# recording showed nothing for the length of the capture. A walkthrough whose
+# whole job is to say what is happening cannot be the thing that hides it.
+#
+# Not piping also means $? is make's own status, so the PIPESTATUS dance that
+# used to be needed here is gone with it.
+make release PURGE=0 LEVEL="$LEVEL" MINUTES="$MINUTES"
+_rc=$?
 if [ "$_rc" != 0 ]; then
     printf '%s└─%s %sthe release failed (exit %s)%s\n' "$C" "$N" "$Y" "$_rc" "$N"
     say ""
@@ -199,7 +205,7 @@ pause_for "saved the i3 screenshot" \
 # ------------------------------------------------------------- 4. the gallery
 step "Gallery and pages"
 say "Regenerating docs/gallery.html from whatever is actually in docs/media."
-python3 tools/build-gallery.py 2>&1 | sed 's/^/   /'
+python3 tools/build-gallery.py
 done_ "gallery rebuilt"
 
 printf '\n%s%s  Release walkthrough complete.%s\n\n' "$B" "$G" "$N"
