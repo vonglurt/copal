@@ -7072,8 +7072,16 @@ bindsym $mod+Ctrl+Left  workspace prev
 #   Super + Ctrl + arrows  Mission Control, moving between Mac desktops.
 #
 # So each of those gets a SECOND binding on a modifier macOS does not
-# reserve. One rule, not a table to memorise: WHERE SUPER IS EATEN, PRESS
-# CTRL+ALT INSTEAD. The rest of the binding stays exactly where it was.
+# reserve -- and not only those: EVERY Super binding in this file has one, so
+# the rule never runs out halfway through. Two lines, not a table to memorise:
+#
+#     WHERE SUPER IS EATEN, PRESS CTRL+ALT INSTEAD.
+#     WHERE THE BINDING ALSO HAS CTRL IN IT, PRESS CTRL+ALT+SHIFT.
+#
+# The rest of the binding stays exactly where it was. The second line exists
+# because a modifier set has no duplicates -- Super+Ctrl+V cannot become
+# Ctrl+Alt with a Ctrl in it -- and the generated block at the end of this
+# file is where the two rules are actually applied.
 #
 # Ctrl+Alt rather than plain Ctrl, because i3 grabs a binding globally and
 # system-wide: Ctrl+W and Ctrl+H bound here would stop being kill-word and
@@ -7099,22 +7107,14 @@ bindsym $mod+Ctrl+Left  workspace prev
 #       Application UTM, menu title "Close", new shortcut Cmd+Shift+W.
 #       Moving the menu item's key is what actually takes Cmd+W away from
 #       UTM; nothing inside the guest can.
-bindsym Ctrl+Mod1+space       exec dmenu_run
-bindsym Ctrl+Mod1+Tab         focus mode_toggle
-bindsym Ctrl+Mod1+h           focus left
-bindsym Ctrl+Mod1+w           layout tabbed
-bindsym Ctrl+Mod1+comma       exec copal-config
-bindsym Ctrl+Mod1+slash       exec $helpcmd
-bindsym Ctrl+Mod1+Shift+p     exec copal-halt
-bindsym Ctrl+Mod1+Shift+q     kill
-bindsym Ctrl+Mod1+Shift+space floating toggle
-bindsym Ctrl+Mod1+Shift+1 move container to workspace number 1
-bindsym Ctrl+Mod1+Shift+2 move container to workspace number 2
-bindsym Ctrl+Mod1+Shift+3 move container to workspace number 3
-bindsym Ctrl+Mod1+Shift+4 move container to workspace number 4
-bindsym Ctrl+Mod1+Shift+5 move container to workspace number 5
-bindsym Ctrl+Mod1+Right workspace next
-bindsym Ctrl+Mod1+Left  workspace prev
+# The list itself is not written here. Every one of these bindings is a copy
+# of a Super binding above with the modifier swapped, and a hand-kept copy of
+# a list is a list that drifts: add a binding, forget the twin, and the rule
+# stops being true exactly where somebody is relying on it. So the twins are
+# GENERATED from the Super bindings, by the awk pass that runs just after this
+# file is assembled -- see the block after the closing brace of this heredoc
+# in copal-prep.sh. Add a bindsym above and its Ctrl+Alt twin appears by
+# itself; delete one and the twin goes with it.
 
 # The launcher gets plain Ctrl+Space on top of the Ctrl+Alt one. It is the
 # binding reached most often and the one Spotlight takes most reliably, and
@@ -7157,6 +7157,90 @@ bar {
 }
 I3B
     } > /tmp/i3cfg.$$
+
+    # ----------------------------------------------------------------------
+    # THE CTRL+ALT TWINS, generated rather than written.
+    #
+    # Under UTM every Super chord is a macOS shortcut first, so the config
+    # above carries a second modifier for the whole binding set. Doing that by
+    # hand covered the dozen bindings somebody remembered on the day; this
+    # walks the file that was just written and gives EVERY Super binding a
+    # twin, so the promise "where Super is eaten, press Ctrl+Alt" is true of
+    # all of them rather than most of them. A binding added above gets its
+    # twin for free, which is the whole point of generating it.
+    #
+    # The mapping, and there are only two rules:
+    #
+    #     $mod+KEY            ->  Ctrl+Mod1+KEY
+    #     $mod+Shift+KEY      ->  Ctrl+Mod1+Shift+KEY
+    #     $mod+Ctrl+KEY       ->  Ctrl+Mod1+Shift+KEY
+    #
+    # The third line is the one that needs explaining. A modifier set has no
+    # order and no duplicates, so Super+Ctrl+V cannot become "Ctrl+Alt with a
+    # Ctrl in it" -- that is just Ctrl+Alt+V, which the plain rule has already
+    # given to Super+V. The Super+Ctrl family needs a modifier of its own, and
+    # Shift is the only one left. Hence: WHERE THE BINDING HAS CTRL IN IT,
+    # PRESS CTRL+ALT+SHIFT.
+    #
+    # That collides with the Super+Shift family in exactly three places, and
+    # all three are resolved here rather than left for i3 to arbitrate -- i3
+    # takes the FIRST of a duplicated binding and logs the second as an error
+    # nobody reads, so an unmanaged collision is a binding that silently does
+    # the wrong thing.
+    #
+    #   Ctrl+Alt+Shift+Left/Right go to workspace prev/next (Super+Ctrl+arrow,
+    #       the pair macOS eats for Mission Control -- the reason any of this
+    #       exists). Moving a window left and right loses its arrow twin and
+    #       keeps its letter one, Ctrl+Alt+Shift+H and +L, which is the same
+    #       action on the keys i3 was designed around.
+    #   Ctrl+Alt+Shift+V goes to the clipboard history (Super+Ctrl+V), which
+    #       is reached daily. splitv, which would otherwise have had it, is
+    #       given Ctrl+Alt+Shift+B instead -- splith is on B already, so the
+    #       vertical one lands next to the horizontal one rather than nowhere.
+    #
+    # Written to a second file and appended, not edited in place: awk reading
+    # a file it is also appending to is a loop, not a program.
+    awk '
+        /^bindsym \$mod\+/ {
+            key = $2
+            # The three collisions above: the Super+Ctrl claimant wins the
+            # chord, so these Super+Shift ones are skipped and re-placed by
+            # hand below.
+            if (key == "$mod+Shift+Left" || key == "$mod+Shift+Right" \
+                || key == "$mod+Shift+v") next
+            rest = substr($0, index($0, key) + length(key))
+            sub(/^[ \t]+/, "", rest)
+            twin = key
+            if (sub(/^\$mod\+Ctrl\+/,  "Ctrl+Mod1+Shift+", twin)) { }
+            else if (sub(/^\$mod\+Shift\+/, "Ctrl+Mod1+Shift+", twin)) { }
+            else sub(/^\$mod\+/, "Ctrl+Mod1+", twin)
+            # Belt and braces against a future collision nobody predicted:
+            # first claimant keeps the chord, and the loser is reported at
+            # install time rather than discovered as a dead key months later.
+            if (twin in seen) {
+                printf "# SKIPPED (%s already bound): %s\n", twin, key
+                next
+            }
+            seen[twin] = 1
+            printf "bindsym %-26s %s\n", twin, rest
+        }
+    ' /tmp/i3cfg.$$ > /tmp/i3alt.$$
+    {
+        printf '\n# ---- Ctrl+Alt twins, generated from the Super bindings above ----\n'
+        printf '# One rule: where Super is eaten by the Mac, press Ctrl+Alt. Where the\n'
+        printf '# binding already has Ctrl in it, press Ctrl+Alt+Shift. Delete this\n'
+        printf '# whole block on a machine that is not a guest; nothing depends on it.\n'
+        cat /tmp/i3alt.$$
+        printf 'bindsym Ctrl+Mod1+Shift+b  splitv\n'
+    } >> /tmp/i3cfg.$$
+    rm -f /tmp/i3alt.$$
+    # Loud, because a collision report inside a generated file is a comment
+    # nobody will ever open the file to read.
+    if grep -q '^# SKIPPED' /tmp/i3cfg.$$; then
+        warn "some Ctrl+Alt twins collided and were skipped:"
+        grep '^# SKIPPED' /tmp/i3cfg.$$ | sed 's/^/      /'
+    fi
+
     # $helpcmd holds a command line, and it is built here rather than left as
     # "$term -title ..." for i3 to expand.
     #
@@ -8573,10 +8657,19 @@ COPALSPLASH
      Super + W            ->  Ctrl + Alt + W
      Super + ,            ->  Ctrl + Alt + ,
      Super + /            ->  Ctrl + Alt + /
+     Super + 1..5         ->  Ctrl + Alt + 1..5
      Super + Shift + Q    ->  Ctrl + Alt + Shift + Q
      Super + Shift + P    ->  Ctrl + Alt + Shift + P
      Super + Shift + 1..5 ->  Ctrl + Alt + Shift + 1..5
-     Super + Ctrl + arrow ->  Ctrl + Alt + Left / Right
+     Super + Ctrl + V     ->  Ctrl + Alt + Shift + V   (the Ctrl rule)
+     Super + Ctrl + A     ->  Ctrl + Alt + Shift + A
+     Super + Ctrl + T     ->  Ctrl + Alt + Shift + T
+     Super + Ctrl + arrow ->  Ctrl + Alt + Shift + Left / Right
+
+   Two bindings could not keep both rules at once, and gave way to the
+   Ctrl ones above:
+     move window left/right   Ctrl+Alt+Shift+H and +L, not the arrows
+     split vertical           Ctrl+Alt+Shift+B, next to splith on B
 
    What macOS is doing with them, so the behaviour is not a mystery:
      Cmd + Space          Spotlight
@@ -9798,12 +9891,23 @@ bindel = , XF86MonBrightnessDown, exec, brightnessctl s 10%-
 # i3 config: under UTM the Mac eats several Super chords before this guest
 # sees them, so the most-reached actions get a second binding on Ctrl+Alt,
 # which macOS reserves nothing on. Harmless on real hardware; delete freely.
-bind = CTRL ALT, SPACE, exec, $menu
+# The Super twins are not listed here. They are GENERATED from the $mainMod
+# binds above, by the awk pass that runs just after this file is written --
+# stage 4's i3 config does the same thing for the same reason, and a
+# hand-kept copy of a list is a list that drifts. Two rules, and they are the
+# rules the i3 side uses so the two desktops can be described in one sentence:
+#
+#     $mainMod        ->  CTRL ALT
+#     $mainMod SHIFT  ->  CTRL ALT SHIFT
+#     $mainMod CTRL   ->  CTRL ALT SHIFT
+#
+# Plain Ctrl+Space and Alt+Space for the launcher stay hand-written, because
+# neither follows from the rules: they are there because the launcher is
+# reached more often than anything else and Cmd+Space is the chord Spotlight
+# takes most reliably. Alt is Option on a Mac keyboard, right beside Command,
+# and macOS reserves nothing on it.
 bind = CTRL, SPACE, exec, $menu
-bind = CTRL ALT SHIFT, Q, killactive,
-bind = CTRL ALT SHIFT, P, exec, copal-halt
-bind = CTRL ALT, right, workspace, e+1
-bind = CTRL ALT, left, workspace, e-1
+bind = ALT, SPACE, exec, $menu
 
 # The theme's own layer rules: quickshell's bars ask for blur behind their
 # translucent regions, by the namespaces the QML declares.
@@ -9835,6 +9939,76 @@ ANTIQHYPR
     _fm=pcmanfm
     command -v nemo >/dev/null 2>&1 && _fm=nemo
     sed -i "s|FILEMGR_PLACEHOLDER|$_fm|" /tmp/hyprconf.$$
+
+    # ----------------------------------------------------------------------
+    # THE CTRL+ALT TWINS -- the Wayland half of what stage 4 does to the i3
+    # config, generated the same way and by the same two rules, so "where
+    # Super is eaten, press Ctrl+Alt; where the binding has Ctrl in it, press
+    # Ctrl+Alt+Shift" describes both desktops rather than one of them.
+    #
+    # Hyprland's grammar makes this easier than i3's: the modifier set is the
+    # first comma-separated field, so it is swapped without touching the key
+    # or the dispatcher. bind, binde, bindm and bindl are all rewritten --
+    # bindm is the mouse drag, and a drag that only works with a key macOS has
+    # taken is no better than a binding that does.
+    #
+    # THE ARROWS ARE THE ONE COLLISION. Super+Shift+arrow (move the window)
+    # and Super+Ctrl+arrow (resize it) both want Ctrl+Alt+Shift+arrow. Resize
+    # takes it, because moving a window has Ctrl+Alt+Shift+H/J/K/L already and
+    # resizing would have nothing -- the same call stage 4 makes. Hyprland
+    # runs BOTH binds on a duplicated chord rather than picking one, so this
+    # has to be settled here; left alone it would move and resize at once.
+    awk '
+        /^bind[elm]* = \$mainMod/ {
+            eq   = index($0, "=")
+            head = substr($0, 1, eq)
+            rest = substr($0, eq + 1)
+            c    = index(rest, ",")
+            if (c == 0) next
+            mods = substr(rest, 1, c - 1)
+            tail = substr(rest, c)
+            sub(/^[ \t]+/, "", mods); sub(/[ \t]+$/, "", mods)
+            # The key is the field after the modifiers; needed only to spot
+            # collisions, so case is normalised rather than preserved.
+            key = substr(tail, 2)
+            if (index(key, ",") > 0) key = substr(key, 1, index(key, ",") - 1)
+            sub(/^[ \t]+/, "", key); sub(/[ \t]+$/, "", key)
+            key = toupper(key)
+
+            if      (mods == "$mainMod")       twin = "CTRL ALT"
+            else if (mods == "$mainMod SHIFT") twin = "CTRL ALT SHIFT"
+            else if (mods == "$mainMod CTRL")  twin = "CTRL ALT SHIFT"
+            else next
+
+            # Move-window gives up the arrows to resize; it keeps H/J/K/L.
+            if (mods == "$mainMod SHIFT" \
+                && (key == "LEFT" || key == "RIGHT" || key == "UP" || key == "DOWN")) next
+
+            # Two binds on one chord is legal and sometimes deliberate --
+            # Super+Tab is cyclenext AND bringactivetotop, and both must
+            # survive. So a repeat is only a collision when it comes from a
+            # DIFFERENT modifier set; from the same one it was always a pair.
+            chord = twin "," key
+            if (chord in from && from[chord] != mods) {
+                printf "# SKIPPED (%s+%s already bound): %s\n", twin, key, mods
+                next
+            }
+            from[chord] = mods
+            printf "%s %s%s\n", head, twin, tail
+        }
+    ' /tmp/hyprconf.$$ > /tmp/hypralt.$$
+    {
+        printf '\n# ---- Ctrl+Alt twins, generated from the Super binds above ----\n'
+        printf '# Where Super is eaten by the Mac, press Ctrl+Alt. Where the bind also\n'
+        printf '# has Ctrl in it, press Ctrl+Alt+Shift. Delete this block on hardware.\n'
+        cat /tmp/hypralt.$$
+    } >> /tmp/hyprconf.$$
+    rm -f /tmp/hypralt.$$
+    if grep -q '^# SKIPPED' /tmp/hyprconf.$$; then
+        warn "some Ctrl+Alt twins collided and were skipped:"
+        grep '^# SKIPPED' /tmp/hyprconf.$$ | sed 's/^/      /'
+    fi
+
     install_home_file .config/hypr/hyprland.conf /tmp/hyprconf.$$
     rm -f /tmp/hyprconf.$$
 

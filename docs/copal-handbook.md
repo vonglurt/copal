@@ -1185,9 +1185,19 @@ reaches the guest in any form. Its three keyboard preferences are `IsCapsLockKey
 `IsCtrlCmdSwapped` and `IsISOKeySwapped` — Caps Lock is the only one of the three
 that buys a free modifier.
 
-If you press the real Super key anyway, every affected binding has a second one,
-and the rule is the whole table: **where Super is eaten, press Ctrl + Alt
-instead.** The rest of the binding does not move.
+If you press the real Super key anyway, there is a second way in — and not only
+for the bindings macOS eats. **Every** Super binding in both desktops has a
+Ctrl + Alt twin, so the rule never runs out halfway through a session. Two lines
+are the whole of it:
+
+> **Where Super is eaten, press Ctrl + Alt instead.**
+> **Where the binding also has Ctrl in it, press Ctrl + Alt + Shift.**
+
+The rest of the binding does not move. The second line is not a special case
+somebody forgot to simplify: a modifier set has no duplicates, so Super + Ctrl +
+V cannot become "Ctrl + Alt with a Ctrl in it" — that is just Ctrl + Alt + V,
+which the first rule has already given to Super + V. The Super + Ctrl family
+needs a modifier of its own and Shift is the one left.
 
 | Instead of | Press | Because macOS uses it for |
 |---|---|---|
@@ -1199,7 +1209,15 @@ instead.** The rest of the binding does not move.
 | **Super + /** | **Ctrl + Alt + /** | (Super + F1 mirrors displays) |
 | **Super + Shift + Q** | **Ctrl + Alt + Shift + Q** | Log out of macOS |
 | **Super + Shift + 1..5** | **Ctrl + Alt + Shift + 1..5** | Cmd+Shift+3/4/5 are screenshots |
-| **Super + Ctrl + arrows** | **Ctrl + Alt + Left / Right** | Mission Control, switch desktop |
+| **Super + Ctrl + V** | **Ctrl + Alt + Shift + V** | (clipboard history — the Ctrl rule) |
+| **Super + Ctrl + arrows** | **Ctrl + Alt + Shift + Left / Right** | Mission Control, switch desktop |
+
+The twins are generated from the Super bindings when the config is written, not
+kept as a second list by hand — add a binding and its twin appears with it. Two
+bindings could not satisfy both rules at once and gave way to the Super + Ctrl
+claimant: **moving a window left and right** is Ctrl + Alt + Shift + H and + L
+rather than the arrows, and **split vertical** is Ctrl + Alt + Shift + B, next
+to splith on B.
 
 Ctrl + Alt rather than plain Ctrl, because i3 grabs a binding globally: Ctrl + W
 and Ctrl + H bound in i3 would stop being kill-word and backspace in every
