@@ -17,6 +17,66 @@ which — the thing that is genuinely invisible in a Makefile, because a
 recursive `$(MAKE)` inside a recipe does not show up in `make -n` until it
 runs, and never shows up in `make help`.
 
+**Contents**
+
+- [Navigating the targets](#navigating-the-targets) — the mental model
+- [Doing all of it](#doing-all-of-it) — `make release`
+- [Which runner: QEMU or UTM?](#which-runner-qemu-or-utm)
+- [Controlling UTM](#controlling-utm-what-is-possible-and-what-is-not)
+- [Finishing an install by hand](#finishing-an-install-in-utm-by-hand)
+- [Capturing what happened](#capturing-what-happened) — recordings
+- [Screenshots](#screenshots-three-routes-and-when-each-works) — three routes
+- [Logs](#logs-where-they-hide-and-how-to-collect-them) — `make logs`
+- [The guided release](#the-guided-release-and-the-human-steps-in-it)
+- [Verifying](#verifying-before-publishing-or-tagging)
+- [Clearing up](#clearing-up)
+
+---
+
+## Navigating the targets
+
+There are a lot of targets, but only **five kinds**, and knowing which kind
+you want is most of the navigation:
+
+| Kind | Targets | The question it answers |
+|---|---|---|
+| **Build** | `image` `fresh` `auto` `all` `cache` `refresh` | *make me something to boot* |
+| **Run** | `vm` `graphical` `check` `utm` `utm-x86` `layout` `utm-type` | *start it* |
+| **Capture** | `capture` `video` `screens` `gallery` `release-cast` | *photograph it* |
+| **Inspect** | `verify` `verify-boot` `logs` `space` `lint` `chain` `help` | *is it right, and what happened* |
+| **Clear up** | `clean` `distclean` `purge` | *take it away* |
+
+Three rules make the rest obvious:
+
+1. **Everything builds `$(IMG)`**, which is `build/copal-$(MODEL).img`. Change
+   `MODEL` and every target in every row follows it. `MODEL=vm` by default.
+2. **Automation goes through QEMU, interaction goes through UTM.** See
+   [below](#which-runner-qemu-or-utm) — it is the one decision that matters.
+3. **`make release` is the composite.** If you want "all of it", you want that
+   one target; the others exist so you can do a piece of it in isolation.
+
+Two commands orient you at any time:
+
+```sh
+make help     # what each target does
+make chain    # how they call each other, and in what order
+```
+
+`make help` is the list; `make chain` is the map. `bin/*.sh` are two-line
+shortcuts that `exec make <target>`, so `bin/vm.sh` is `make vm` and cannot
+drift from it.
+
+### The variables worth knowing
+
+| Variable | Default | Changes |
+|---|---|---|
+| `MODEL` | `vm` | which board — `zero`, `zero2`, `pi4`, `pi5`, `pc`, `pc32`, `vm`, `vmx86` |
+| `LEVEL` | `f` | install level to record — `s`erver, `m`edium, `f`ull |
+| `MINUTES` | `12` | how long a capture records for |
+| `PURGE` | `0` | whether `make release` purges first |
+| `SHOTS` / `SHOTWAIT` | `6` / `150` | screenshot count and boot delay |
+| `YES` | unset | `YES=1` skips `purge`'s typed confirmation |
+
 ---
 
 ## Doing all of it
@@ -241,6 +301,152 @@ once reached the installer but never matched the level prompt, while a
 4-minute run on the same image matched it in 10.6 s. `cast-trim` reports when
 a marker is missing and the caller currently only warns, so a release can
 still ship a stale still. Check the output.
+
+---
+
+## Screenshots: three routes, and when each works
+
+There is no single way to photograph this system, because "the screen" means
+three different things depending on what is running.
+
+### Route 1 — `make screens` (QEMU's monitor). Automatic.
+
+```sh
+make screens                       # 6 shots, 20s apart, after a 150s boot
+make screens SHOTS=10 SHOTWAIT=300 # more of them, later
+```
+
+QEMU's monitor has a `screendump` command that writes the guest's framebuffer
+to a file **exactly as the guest is drawing it**. Real pixels, at the guest's
+own resolution, with no window on your screen, no compositor in between and
+no camera. It runs headless, so nothing steals focus while it works.
+
+It is also the only route that does not need the guest's cooperation — which
+matters, because the moment you most want a picture of a desktop is the moment
+that desktop is broken and cannot help you take one.
+
+**What it needs:** an image with a desktop **already installed**. It boots one
+and photographs what appears; it does not install anything. Point it at a
+half-installed image and you get pictures of a console.
+
+Output lands in `docs/media/screen-N.png`.
+
+### Route 2 — from inside the guest. Best framing.
+
+Once a desktop is running, the tools are already installed:
+
+| | Wayland (full level) | X11 (medium level) |
+|---|---|---|
+| Region | `Super+Shift+S` → `copal-shot` | `Super+Shift+S` |
+| Whole screen | `grim ~/Pictures/shot.png` | `import -window root shot.png` |
+
+Then copy it out over the shared folder (`/mnt/share` in the guest,
+`~/Downloads/SharedVM` on the Mac) or with `scp`.
+
+This is the route that gives you a *good* picture rather than merely a true
+one, because you choose the workspace, the open windows and whether a menu is
+up. That judgement is the reason routes 1 and 3 cannot fully replace it.
+
+### Route 3 — the Mac's own screenshot, of the UTM window.
+
+`Cmd+Shift+4`, then space, then click the UTM window. Captures the window
+including its title bar and shadow.
+
+Use it when you want the machine to *look* like a machine — a window on a
+desktop — rather than a bare framebuffer. It is also the only one that works
+if the guest has no screenshot tool and QEMU is not the thing running it.
+
+### Which names the page expects
+
+`docs/index.html` and the gallery look for these exact names in `docs/media/`:
+
+| File | What it should show |
+|---|---|
+| `antiquity-desktop.png` | Hyprland with the Linux Antiquity theme |
+| `i3-desktop.png` | i3 on the framebuffer, key bindings on the root window |
+| `install-cast.gif` | the install recording (generated) |
+| `guided-levels.gif` | the level chooser (generated) |
+| `release-pipeline.gif` | `make release` itself (generated) |
+| `install.mp4` | the install as video (generated) |
+
+Drop a file in under one of those names and `make gallery` picks it up with no
+edit. Anything else in `docs/media/` still appears in the gallery, just
+unlabelled — which is the prompt to add a caption in
+`tools/build-gallery.py`.
+
+---
+
+## Logs: where they hide, and how to collect them
+
+```sh
+make logs
+```
+
+Everything lands in `build/logs/<timestamp>/` with a `SUMMARY.txt`.
+
+### Why a command rather than a `cat`
+
+The evidence for "did that work" is spread across three places that have
+nothing to do with each other:
+
+| Where | File | What it tells you |
+|---|---|---|
+| The Mac | `build/copal-prep-auto-*.log` | what the **build** did — payload, partitioning, staging |
+| The image | `COPALBOOT/firstrun.log` | what the **install** did — every stage, every command |
+| The guest | `/var/log/copal/`, `copal-logs` | what the **system** did afterwards — X/Wayland sessions |
+
+The middle one is both the most useful and the most awkward. `copal-init.sh`
+writes it onto the FAT boot partition, which means **it survives a guest that
+will not boot**, and can be read from the Mac with the machine switched off.
+That is exactly the situation in which a log is worth having, and exactly the
+situation in which SSH is not an option.
+
+Reading it means attaching the image, so `collect-logs.sh` does that inside a
+trap that detaches on any exit. A stray `/Volumes/COPALBOOT` is worse than it
+sounds: every Copal image and card carries that same label, so a leftover
+mount silently collides with the next one — see the note on `assert_mount_is`
+in `copal-prep.sh`.
+
+### What the summary answers
+
+`SUMMARY.txt` is grep, not eyes. It reports:
+
+1. **The build stamp** — id, date, target, Alpine version, git revision, and
+   whether the tree was dirty when it was built.
+2. **The level chosen** — from `copal-profile`.
+3. **What to worry about** — counts of `Config error`, `ERROR`, `failed`,
+   `not found`, `No space left`, `ENOSPC`. `Config error` is there
+   specifically to catch a Hyprland config the compositor rejected, which is
+   how the `layerrule` bug announced itself.
+4. **Which stages were reached** — 1, 2, 3, 4, 5, 7, 16.
+5. **Nine stage-16 milestones**, each a claim worth checking on real
+   hardware: `Installing Hyprland`, `seatd running`, `quickshell is not
+   packaged`, `session = wayland`, `setuid server disarmed`, `Linux Antiquity
+   configs`, `JetBrains Mono substituted`, `GTK 3 and 4`, `fonts installed
+   system-wide`.
+
+A bounded capture stops during stages 1–3, so expect stage 16 to read
+`not seen` and all nine to read `absent` unless a **complete** install has
+run. That is the capture behaving as documented, not a failure.
+
+### Reading them by hand
+
+On the machine itself, `copal-logs` is installed by the installer:
+
+```sh
+copal-logs            # what sessions there have been
+copal-logs errors     # the (EE) lines from the last X session
+copal-logs install    # the whole install transcript
+copal-logs clean      # throw the old ones away
+```
+
+From the Mac, with the image not running:
+
+```sh
+hdiutil attach -imagekey diskimage-class=CRawDiskImage build/copal-vm.img
+less /Volumes/COPALBOOT/firstrun.log
+hdiutil detach /Volumes/COPALBOOT       # do not skip this
+```
 
 ---
 
