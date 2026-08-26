@@ -40,6 +40,7 @@
 #   utm/utm-vm.sh layout --autotype              # ...and log in and start the install
 #   utm/utm-vm.sh layout --no-start              # arrange only; do not start VMs
 #   utm/utm-vm.sh layout --probe                 # can the consoles be read? moves nothing
+#   utm/utm-vm.sh type --target aarch64 --text root       # type a line into the console
 #
 set -euo pipefail
 
@@ -93,6 +94,9 @@ AUTOTYPE=0
 # nothing. Everything else here is guesswork until this has been run once.
 PROBE=0
 INIT_PATH="/media/vda1/copal-init.sh"
+# type only: the line to send. Empty is refused rather than sending a bare
+# Return, which is a keystroke with consequences at a menu.
+TYPE_TEXT=""
 # layout starts the machines before arranging them. --no-start skips that, for
 # rearranging windows that are already up.
 NO_START=0
@@ -689,6 +693,110 @@ do_probe() {
     esac
 }
 
+# ------------------------------------------------------- typing into UTM ---
+#
+# CAN UTM'S TTY INPUT BE CONTROLLED? Yes -- but not by opening a device, and
+# it is worth writing down why, because it looks like it should be.
+#
+# UTM wires the guest's serial to a SPICE port, not a pty:
+#
+#     -chardev spiceport,id=term0,name=com.utmapp.terminal.0 -serial chardev:term0
+#
+# There is no device node and no socket to write bytes into; UTM's own window
+# is the only client of that port. Two things that look like escape hatches
+# are not: `Serial:0:Mode = Ptty` in the machine's config.plist is accepted
+# and then ignored for this backend (QEMU is still launched with spiceport,
+# and no pty appears), and `utmctl attach` -- documented as "redirect the
+# serial input/output to this terminal" -- is a stub that prints
+# "WARNING: attach command is not implemented yet!" in UTM 4.7.4.
+#
+# What IS possible is typing into the window, which is what a person does,
+# and the characters reach the guest's tty exactly as if they had. That is
+# real control: this action sends an arbitrary line.
+#
+#     utm/utm-vm.sh type --target aarch64 --text 'sh /media/vda1/copal-init.sh'
+#     utm/utm-vm.sh type --target aarch64 --text root
+#     utm/utm-vm.sh type --target aarch64 --text f          # a level, at the prompt
+#
+# THE HUMAN STEP, and it is once rather than every time: sending keystrokes to
+# another application needs an Accessibility grant, which macOS records
+# against the process doing the asking. A terminal is a poor asker -- the
+# prompt does not reliably appear and a denial is remembered -- so when this
+# is refused the script is opened in Script Editor to be read and run with
+# Cmd+R. Script Editor is Apple-signed, asks cleanly, and is remembered. Once
+# it has the grant, everything after it is silent.
+_type_script() {  # <target substring> <text>
+    cat <<APPLESCRIPT
+-- Type one line into a Copal serial console. Written by utm/utm-vm.sh type.
+--
+-- WHAT IT TOUCHES: the UTM window whose name contains "$1" and "Term", and
+-- nothing else. It raises that window, types the text, and presses Return.
+-- It moves no windows, closes nothing, and reads nothing back.
+--
+-- Cmd+R to run. macOS asks once whether Script Editor may control System
+-- Events and UTM; that is the grant this cannot get for itself.
+
+tell application "System Events" to tell process "UTM"
+    set target to missing value
+    repeat with w in windows
+        set n to name of w
+        if n contains "$1" and n contains "Term" then set target to w
+    end repeat
+    if target is missing value then
+        return "no serial console window matching '$1' -- is the machine running?"
+    end if
+
+    -- Raised immediately before typing rather than once at the start:
+    -- keystrokes go to whichever window is frontmost AT THE MOMENT they are
+    -- sent, and anything at all may have taken focus in between.
+    perform action "AXRaise" of target
+    set frontmost to true
+    delay 0.4
+
+    keystroke "$2"
+    keystroke return
+    return "typed into " & (name of target)
+end tell
+APPLESCRIPT
+}
+
+do_type() {
+    command -v osascript >/dev/null 2>&1 || die "osascript not found -- this action is macOS only"
+    [ -n "${TYPE_TEXT:-}" ] || die "type needs --text 'what to type'"
+    local _sub
+    case "$TARGET" in
+        aarch64) _sub=aarch64 ;;
+        x86_64)  _sub=x86_64 ;;
+        *) die "type needs --target aarch64 or --target x86_64" ;;
+    esac
+
+    local _script="${BUILDDIR:-build}/copal-utm-type.applescript"
+    mkdir -p "$(dirname "$_script")"
+    _type_script "$_sub" "$TYPE_TEXT" > "$_script"
+
+    local _out _rc=0
+    _out=$(osascript "$_script" 2>&1) || _rc=$?
+    if [ "$_rc" -eq 0 ]; then
+        info "$_out"
+        return 0
+    fi
+    case "$_out" in
+        *-1743*|*'not authorized'*|*'not allowed'*|*1002*)
+            warn "This terminal is not allowed to control other apps (macOS denied it)."
+            note "Opening it in Script Editor instead. Read it -- it says at the top"
+            note "what it touches -- then press Cmd+R and approve the prompts."
+            note ""
+            note "  $_script"
+            open -a "Script Editor" "$_script" \
+                || die "could not open Script Editor. Run it by hand: osascript $_script"
+            ;;
+        *)
+            printf '%s\n' "$_out" >&2
+            die "could not type. The script is at $_script"
+            ;;
+    esac
+}
+
 do_layout() {
     command -v osascript >/dev/null 2>&1 || die "osascript not found -- this action is macOS only"
 
@@ -766,9 +874,9 @@ do_layout() {
 }
 
 case "$ACTION" in
-    create|start|stop|status|delete|refresh|config|ip|log|progress|share|layout) : ;;
+    create|start|stop|status|delete|refresh|config|ip|log|progress|share|layout|type) : ;;
     -h|--help) usage; exit 0 ;;
-    *) die "unknown action '$ACTION'. One of: create share start stop status delete refresh config ip log progress layout" ;;
+    *) die "unknown action '$ACTION'. One of: create share start stop status delete refresh config ip log progress layout type" ;;
 esac
 
 while [ $# -gt 0 ]; do
@@ -785,6 +893,7 @@ while [ $# -gt 0 ]; do
         --autotype) AUTOTYPE=1; shift ;;
         --probe)    PROBE=1; shift ;;
         --no-start) NO_START=1; shift ;;
+        --text)     TYPE_TEXT="$2"; shift 2 ;;
         --init-path) INIT_PATH="${2:-}"; shift 2 ;;
         --force)    FORCE=1; shift ;;
         --no-share) NO_SHARE=1; shift ;;
@@ -1771,4 +1880,5 @@ case "$ACTION" in
     log)     do_log     ;;
     progress) do_progress ;;
     layout)  do_layout   ;;
+    type)    do_type     ;;
 esac

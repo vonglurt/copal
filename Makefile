@@ -86,7 +86,7 @@ model_of = $(patsubst pizero%,zero%,$(1))
 .PHONY: alldebug build-all-debug imagedebug freshdebug purge \
 	help menu flow targets boards configure require-tools vm graphical check \
         fresh auto image refresh utm utm-x86 layout layout-auto answers answers-show lint space clean distclean \
-        all cache build-all release capture video screens verify gallery
+        all cache build-all release capture video screens verify gallery chain utm-type
 
 help:
 	@printf '\nCopal Linux -- make targets\n\n'
@@ -365,6 +365,20 @@ layout:
 layout-auto:
 	@$(UTMRUN) layout --autotype
 
+# Type one line into the running UTM machine's serial console. UTM's serial is
+# a SPICE port rather than a pty -- there is no device to write to -- so the
+# only route to its tty input is the window, and this is that route made
+# scriptable. The Accessibility grant is a one-time human step; after it, this
+# is silent. See docs/AUTOMATION.md.
+#
+#   make utm-type TEXT=root
+#   make utm-type TEXT='sh /media/vda1/copal-init.sh'
+#   make utm-type TEXT=f
+TEXT ?=
+utm-type:
+	@[ -n '$(TEXT)' ] || { printf 'usage: make utm-type TEXT=...\n' >&2; exit 2; }
+	@$(UTMRUN) type --target aarch64 --text '$(TEXT)'
+
 # --------------------------------------------------------------- release ---
 #
 # The images on the web page, regenerated from a real install rather than
@@ -443,6 +457,52 @@ verify-boot:
 gallery:
 	@python3 tools/build-gallery.py
 
+# ----------------------------------------------------------------- chain ---
+#
+# WHICH TARGET CALLS WHICH. `make help` lists what each target does; this says
+# how they fit together, which is the thing that is genuinely hard to see in a
+# Makefile -- the recursive $(MAKE) calls inside recipes are invisible to
+# `make -n` until you run it, and invisible to the help text entirely.
+#
+# Hand-written and therefore capable of drifting. It is checked by `make lint`
+# against the targets that actually exist, so a chain naming a target that has
+# been renamed fails rather than misleading.
+chain:
+	@printf '\n\033[1mCopal -- how the targets chain\033[0m\n\n'
+	@printf '  \033[36mONE COMMAND, START TO FINISH\033[0m\n'
+	@printf '    make release PURGE=1\n'
+	@printf '      └─ purge YES=1        empty build/, delete both UTM machines\n'
+	@printf '      └─ auto               ./copal build $(MODEL) --auto   (unattended, needs no tty)\n'
+	@printf '      └─ verify             stamp vs checkout vs remote\n'
+	@printf '      └─ video              record the install, render GIF + mp4 + stills\n'
+	@printf '      └─ gallery            regenerate docs/gallery.html from docs/media\n\n'
+	@printf '  \033[36mBUILDING\033[0m\n'
+	@printf '    make image              build $(IMG) if it is missing\n'
+	@printf '    make fresh              delete it first, build again      (asks at each step)\n'
+	@printf '    make auto               the same, unattended               (script(1) supplies a tty)\n'
+	@printf '    make all                cache + every board + both UTM machines\n\n'
+	@printf '  \033[36mRUNNING IT\033[0m\n'
+	@printf '    make vm                 QEMU, serial console on THIS terminal   <- scriptable\n'
+	@printf '    make graphical          QEMU, a window\n'
+	@printf '    make check              QEMU headless; exits non-zero if no login prompt\n'
+	@printf '    make utm                register + start a UTM machine          <- interactive\n'
+	@printf '    make layout             arrange the UTM windows\n'
+	@printf '    make layout-auto        ...and type the install into them (needs Accessibility)\n\n'
+	@printf '  \033[36mCHECKING AND CAPTURING\033[0m\n'
+	@printf '    make verify             six questions about image, source and remote\n'
+	@printf '    make verify-boot        the same, and boot it\n'
+	@printf '    make capture            record an install  (GIF + stills)\n'
+	@printf '    make video              the same, plus mp4/webm\n'
+	@printf '    make screens            QEMU screendump of an INSTALLED desktop\n'
+	@printf '    make gallery            rebuild docs/gallery.html\n\n'
+	@printf '  \033[36mCLEARING UP\033[0m\n'
+	@printf '    make clean              build artefacts, keep the payload cache\n'
+	@printf '    make distclean          those and the cache\n'
+	@printf '    make purge              those and the UTM machines        (asks; YES=1 skips)\n\n'
+	@printf '  \033[2mbin/*.sh are two-line shortcuts that exec the same targets, so they\n'
+	@printf '  cannot disagree with this. bin/vm.sh is make vm, and so on.\033[0m\n\n'
+	@printf '  Variables: MODEL=$(MODEL)  LEVEL=$(LEVEL)  MINUTES=$(MINUTES)  PURGE=0\n\n'
+
 # A CLEAN IMAGE, and it has to be clean rather than merely current: the guided
 # screen is the first thing the page shows, and it only appears on a machine
 # that has never been installed -- no apkovl, root still a tmpfs. Capturing
@@ -453,8 +513,17 @@ gallery:
 # /dev/tty and there is no terminal in a release run. auto supplies one with
 # script(1), which is the whole reason that target exists. The image is
 # removed first so auto has nothing to resume from.
+# PURGE=1 empties build/ and deletes the UTM machines first. Off by default,
+# and that default is deliberate: purge destroys the payload cache (a
+# re-download) and any VM disk, and "regenerate the web page's images" should
+# not quietly cost somebody an hour and a virtual machine they were using.
+# `make release PURGE=1` is the from-nothing version, and it says so.
 release: | require-tools $(BUILDDIR)
 	@printf '\033[36m==>\033[0m \033[1mRelease capture\033[0m -- a clean image, then a recorded install\n'
+	@if [ "$(PURGE)" = 1 ]; then \
+	    printf '\033[36m==>\033[0m PURGE=1 -- emptying build/ and removing the UTM machines\n'; \
+	    $(MAKE) --no-print-directory purge YES=1; \
+	fi
 	@rm -f $(IMG)
 	@CFG_GIT_NAME='$(CAPTURE_NAME)' CFG_GIT_EMAIL='$(CAPTURE_EMAIL)' \
 	    $(MAKE) --no-print-directory auto MODEL=$(MODEL)
