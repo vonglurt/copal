@@ -9795,6 +9795,21 @@ stage_hyprland() {
     done
     rm -rf "/tmp/antiquity.$$"
 
+    # The editor follows the desktop. Stage 7 wrote both theme directories and
+    # pointed the symlink at tokyo-night, which is stage 4's palette; this
+    # desktop is the other one. Written here rather than assumed, because
+    # stage 16 can be run on a machine that never ran stage 7 -- and if it was
+    # run, an editor that is open right now repaints within three seconds
+    # without being restarted. See dev_write_nvim_ui() and ~/.config/nvim/theme.lua.
+    [ -d "$copal_theme_dir/antiquity" ] || copal_write_themes
+    copal_set_theme antiquity
+
+    # Same reasoning: this desktop binds four keys to copal-clip, and stage 4
+    # -- which is where the script is normally written -- may never have run
+    # on this machine. Writing it twice costs nothing; not having it costs
+    # four dead keys.
+    write_copal_clip
+
     # ------------------------------------------------------------------
     # The transformations. Everything Arch-shaped or newer-than-Alpine in the
     # vendored configs is corrected here, in generated files, so the vendored
@@ -10441,21 +10456,6 @@ CURSORENV
         note "the X desktop recoloured to match -- i3, Xresources and the root window"
         note "  so switching session changes the compositor, not the palette"
     fi
-
-    # The editor follows the desktop. Stage 7 wrote both theme directories and
-    # pointed the symlink at tokyo-night, which is stage 4's palette; this
-    # desktop is the other one. Written here rather than assumed, because
-    # stage 16 can be run on a machine that never ran stage 7 -- and if it was
-    # run, an editor that is open right now repaints within three seconds
-    # without being restarted. See dev_write_nvim_ui() and ~/.config/nvim/theme.lua.
-    [ -d "$copal_theme_dir/antiquity" ] || copal_write_themes
-    copal_set_theme antiquity
-
-    # Same reasoning: this desktop binds four keys to copal-clip, and stage 4
-    # -- which is where the script is normally written -- may never have run
-    # on this machine. Writing it twice costs nothing; not having it costs
-    # four dead keys.
-    write_copal_clip
 
     # ------------------------------------------------------------------
     # Claim the session -- but only if there is something to claim it FOR.
@@ -11378,6 +11378,27 @@ NEOVIM -- a primer, from nothing to useful
    If you have never used a modal editor, read section 1 and stop; come back
    for the rest when the first part is reflex.
 
+   THE SHORT VERSION, IF YOU KNOW LAZYVIM ALREADY. Omarchy's editor is
+   LazyVim, and this one is arranged to match it as far as the hardware
+   allows: the leader is SPACE, pressing it and waiting opens a menu of what
+   it can do, <leader><Space> finds a file, <leader>e is the sidebar,
+   <leader>sg greps the project, <leader>gg is lazygit, <leader>ca is a code
+   action, Shift-H and Shift-L walk the buffers. Where LazyVim uses a plugin,
+   this uses the built-in that plugin was written to make bearable, or fzf.
+
+   WHY NOT ACTUAL LAZYVIM. Two reasons, and only the first is decisive.
+   LazyVim compiles a treesitter parser per language with gcc the first time
+   you open a file of that language; on one ARMv6 core that is the better part
+   of an hour and it wants more memory than a Pi Zero has. And the two plugins
+   everyone installs first -- nvim-lspconfig and nvim-cmp -- existed because
+   Neovim had no built-in LSP configuration and no built-in completion. Since
+   0.11 it has both, and Alpine ships 0.12. So the keys are copied and the
+   machinery is not, because the machinery is already in the editor.
+
+   THE COLOURS FOLLOW THE DESKTOP. 'copal-theme' lists the themes and switches
+   between them; a running nvim repaints within a few seconds without being
+   restarted. :Theme does the same from inside the editor.
+
  ---------------------------------------------------------------------------
  1. THE ONE IDEA
  ---------------------------------------------------------------------------
@@ -11867,27 +11888,6 @@ TERMINALS -- which one, and why the fast ones are not
    The fast terminal for THIS board is st or urxvt. Both are X11-native, both
    draw with the same server calls the rest of the desktop uses, and neither
    asks for anything the hardware does not have.
-
-   THE SHORT VERSION, IF YOU KNOW LAZYVIM ALREADY. Omarchy's editor is
-   LazyVim, and this one is arranged to match it as far as the hardware
-   allows: the leader is SPACE, pressing it and waiting opens a menu of what
-   it can do, <leader><Space> finds a file, <leader>e is the sidebar,
-   <leader>sg greps the project, <leader>gg is lazygit, <leader>ca is a code
-   action, Shift-H and Shift-L walk the buffers. Where LazyVim uses a plugin,
-   this uses the built-in that plugin was written to make bearable, or fzf.
-
-   WHY NOT ACTUAL LAZYVIM. Two reasons, and only the first is decisive.
-   LazyVim compiles a treesitter parser per language with gcc the first time
-   you open a file of that language; on one ARMv6 core that is the better part
-   of an hour and it wants more memory than a Pi Zero has. And the two plugins
-   everyone installs first -- nvim-lspconfig and nvim-cmp -- existed because
-   Neovim had no built-in LSP configuration and no built-in completion. Since
-   0.11 it has both, and Alpine ships 0.12. So the keys are copied and the
-   machinery is not, because the machinery is already in the editor.
-
-   THE COLOURS FOLLOW THE DESKTOP. 'copal-theme' lists the themes and switches
-   between them; a running nvim repaints within a few seconds without being
-   restarted. :Theme does the same from inside the editor.
 
  ---------------------------------------------------------------------------
  THE LINE-UP
