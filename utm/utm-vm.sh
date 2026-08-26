@@ -110,7 +110,11 @@ NO_START=0
 # the number AppleScript works in. Empty means ask the window server.
 SCREEN=""
 
-usage() { sed -n '5,41p' "$0" | sed 's/^# \{0,1\}//'; }
+# The whole header block, found by looking for where it ends rather than by a
+# line number: the number was 41, the header had grown past it, and two lines
+# of the usage message had been silently missing from --help ever since.
+usage() { sed -n '5,/^set -euo pipefail$/p' "$0" \
+             | sed '/^set -euo pipefail$/d' | sed 's/^# \{0,1\}//'; }
 
 [ $# -gt 0 ] || { usage; exit 0; }
 ACTION="$1"; shift
