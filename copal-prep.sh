@@ -150,10 +150,25 @@ hint() { printf '    \033[2m%s\033[0m\n' "$*" >&2; }
 # Every command is printed as it would be typed, prefixed with '$', before it
 # runs -- before, so a command that hangs has already told you what it is.
 
-BUILD_PHASES=""          # name<TAB>seconds, one per line, in order
+# The phase records live in a file rather than in a shell variable, and that
+# is not a stylistic choice. fetch_payload is called as
+#
+#     SRC=$(fetch_payload | tail -n1)
+#
+# -- a command substitution, and a pipeline besides -- so everything it does
+# happens in a subshell. It opens the Payload and Extract phases in there,
+# prints their "took" lines from in there, and then the subshell exits and
+# takes every assignment with it. The parent reached the exit trap with an
+# empty list, returned early, and printed no table and wrote no .tsv: the two
+# phases that WERE timed were the two that could not survive being timed. A
+# file outlives the subshell; a variable cannot.
+BUILD_STATE="${TMPDIR:-/tmp}/copal-build-$$"
+BUILD_PHASE_LOG="$BUILD_STATE/phases"   # name<TAB>seconds, one per line, in order
+BUILD_PHASE_OPEN="$BUILD_STATE/open"    # name<TAB>started, for the phase running now
+mkdir -p "$BUILD_STATE" 2>/dev/null || true
+: > "$BUILD_PHASE_LOG" 2>/dev/null || true
+: > "$BUILD_PHASE_OPEN" 2>/dev/null || true
 BUILD_T0=$(date +%s)
-PHASE_NAME=""
-PHASE_T0=""
 
 hms_host() {  # seconds -> "1h 02m 03s" / "2m 03s" / "9s"
     _h=$1
@@ -165,18 +180,22 @@ hms_host() {  # seconds -> "1h 02m 03s" / "2m 03s" / "9s"
 
 phase() {  # <name> -- closes the previous phase, opens this one
     phase_end
-    PHASE_NAME="$1"
-    PHASE_T0=$(date +%s)
+    printf '%s\t%s\n' "$1" "$(date +%s)" > "$BUILD_PHASE_OPEN" 2>/dev/null || true
+    # A name longer than the rule would ask printf for a negative width, which
+    # is an error rather than a short line. Three dashes is still a banner.
+    _pad=$(( 60 - ${#1} )); [ "$_pad" -lt 3 ] && _pad=3
     printf '\n\033[1;35m--- %s \033[0m\033[2m%s\033[0m\n' "$1" \
-        "$(printf '%*s' $(( 60 - ${#1} )) '' | tr ' ' '-')" >&2
+        "$(printf '%*s' "$_pad" '' | tr ' ' '-')" >&2
 }
 
 phase_end() {
-    [ -n "$PHASE_NAME" ] || return 0
-    _pe=$(( $(date +%s) - PHASE_T0 ))
-    BUILD_PHASES="${BUILD_PHASES}${PHASE_NAME}\t${_pe}\n"
-    printf '\033[2m    %s took %s\033[0m\n' "$PHASE_NAME" "$(hms_host "$_pe")" >&2
-    PHASE_NAME=""
+    [ -s "$BUILD_PHASE_OPEN" ] || return 0
+    _pn=$(cut -f1 "$BUILD_PHASE_OPEN")
+    _pt=$(cut -f2 "$BUILD_PHASE_OPEN")
+    : > "$BUILD_PHASE_OPEN"
+    _pe=$(( $(date +%s) - _pt ))
+    printf '%s\t%s\n' "$_pn" "$_pe" >> "$BUILD_PHASE_LOG"
+    printf '\033[2m    %s took %s\033[0m\n' "$_pn" "$(hms_host "$_pe")" >&2
 }
 
 # run <command...>  -- print it, run it, time it, report failure.
@@ -214,17 +233,17 @@ runq() {
 build_time_report() {
     phase_end
     _bt=$(( $(date +%s) - BUILD_T0 ))
-    [ -n "$BUILD_PHASES" ] || return 0
+    [ -s "$BUILD_PHASE_LOG" ] || return 0
     printf '\n\033[1m  Image build -- where the time went\033[0m\n' >&2
     printf '  %s\n' '------------------------------------------------------------' >&2
-    printf '%b' "$BUILD_PHASES" | awk -F'\t' -v tot="$_bt" '
+    awk -F'\t' -v tot="$_bt" '
         $1 != "" {
             pct = (tot > 0) ? $2 * 100 / tot : 0
             n = int(pct / 4)
             bar = ""
             for (i = 0; i < 25; i++) bar = bar (i < n ? "=" : " ")
             printf "  %-26.26s %6ds %5.1f%%  [%s]\n", $1, $2, pct, bar
-        }' >&2
+        }' "$BUILD_PHASE_LOG" >&2
     printf '  %s\n' '------------------------------------------------------------' >&2
     printf '  %-26.26s %6ds\n\n' "total" "$_bt" >&2
     # Machine-readable beside the image, same idea as the guest's
@@ -236,7 +255,7 @@ build_time_report() {
             printf '#copal-build-times v1\n'
             printf '#build\t%s\t%s\t%s\n' "${BUILD_ID:-?}" "${BUILD_DATE:-?}" "${MODEL:-${ARCH:-?}}"
             printf '#phase\tseconds\n'
-            printf '%b' "$BUILD_PHASES"
+            cat "$BUILD_PHASE_LOG"
             printf 'total\t%s\n' "$_bt"
         } > "$_tf" 2>/dev/null && info "Build timings: $_tf"
     fi
@@ -895,7 +914,12 @@ on_exit() {
     # its time went -- which is exactly when that is most worth knowing, and
     # is the reason this is in the exit trap rather than at the end of the
     # script. Failures are silent about their cost otherwise.
-    build_time_report 2>/dev/null || true
+    # NOT redirected: every line this prints goes to stderr, so the
+    # 2>/dev/null that used to sit here threw away the whole table -- the
+    # exact opposite of the paragraph above. Failures inside it are still
+    # swallowed by '|| true', which is all the trap actually needs.
+    build_time_report || true
+    rm -rf "$BUILD_STATE" 2>/dev/null || true
     if [ -n "${IMAGE_DEV:-}" ] && [ -e "${IMAGE_DEV:-/nonexistent}" ]; then
         printf '\033[33mReleasing %s (%s).\033[0m\n' "$IMAGE_DEV" "${IMAGE_PATH:-image}" >&2
         release_image
@@ -1432,6 +1456,7 @@ if [ "$IMAGE_MODE" -eq 1 ]; then
         "${IMAGE_PATH:+Path  : $IMAGE_PATH}" \
         "" \
         "Boot the result with UTM or QEMU. Nothing here can damage a disk."
+    phase "Create image"
     attach_image
 else
     step "Identify the SD card" \
@@ -1654,6 +1679,7 @@ if [ "$NOW_FINGERPRINT" != "$DISK_FINGERPRINT" ]; then
 fi
 info "Re-checked /dev/$DISK: still the device you selected."
 
+phase "Partition"
 ERASED=1
 # MBRFormat: the Pi firmware reads an MBR/FDisk partition table, not GPT.
 # MS-DOS FAT32 boot partition, remainder left as free space for ext4 later.
@@ -1700,6 +1726,7 @@ step "Set the bootable flag on partition 1" \
     "If it fails the script warns and continues -- the Pi firmware usually" \
     "boots without the active flag."
 
+phase "Boot flag"
 info "Marking partition 1 bootable..."
 printf 'f 1\nw\ny\nq\n' | sudo fdisk -e "/dev/$DISK" >/dev/null 2>&1 \
     || warn "could not set the bootable flag (usually harmless; continuing)"
@@ -1721,6 +1748,7 @@ step "Copy the Alpine payload onto ${BOOT_LABEL}" \
     "" \
     "May take several minutes on a slow card."
 
+phase "Copy payload"
 # COPYFILE_DISABLE stops macOS writing ._AppleDouble sidecar files.
 info "Copying payload to $MNT ..."
 export COPYFILE_DISABLE=1
@@ -1751,6 +1779,7 @@ step "Write the answer file, firmware settings and first-run script" \
     "This script carries the instructions there instead of leaving them for" \
     "you to retype at the console."
 
+phase "Generated files"
 info "Writing answers.txt, usercfg.txt and copal-init.sh..."
 
 # See LBUOPTS below for what this is and why it differs by platform.
@@ -2250,6 +2279,44 @@ if [ -n "$PB_TGZ" ]; then
     info "PianoBooster source staged: $(basename "$PB_TGZ") ($(( $(wc -c < "$PB_TGZ") / 1024 )) kB)"
 else
     warn "no pianobooster-*.tar.gz in $MVM_LOCAL/pianobooster -- stage 14 will download it"
+fi
+
+# Linux Antiquity, staged for the same reason as Mini vMac: stage 16 applies a
+# desktop theme whose configuration lives in a GitHub repository, and a card
+# that already carries the theme does not care whether GitHub is reachable at
+# hour three of an unattended install. The theme is diinki's Linux Antiquity
+# (MIT), vendored under vendor/linux-antiquity-main -- see docs/THEME.md for
+# what it is, why it was chosen, and every transformation stage 16 applies to
+# make an Arch-targeted Hyprland theme land on Alpine.
+#
+# Only configs/ and the licence travel. iconTheme/ stays behind deliberately:
+# it is a derivative of the Buuf icon set, whose own licence is CC BY-NC-SA,
+# not MIT -- the repository's MIT grant cannot launder it, so it is not
+# shipped. screenshots/ is 12 MB of documentation for a web page.
+#
+# COPYFILE_DISABLE stops bsdtar embedding AppleDouble ._* sidecars, which
+# would otherwise be unpacked onto the Pi as garbage dotfiles.
+#
+# Two names are tried: vendor/linux-antiquity is the git-subtree of our fork
+# (the place changes are made and pushed back from -- see docs/THEME.md,
+# "Forking and vendoring"), and vendor/linux-antiquity-main is the plain
+# unzipped upstream snapshot that predates the subtree. Whichever exists
+# first wins, so the migration from snapshot to subtree needs no edit here.
+ANTIQ_SRC=""
+for _a in "$MVM_LOCAL/vendor/linux-antiquity" "$MVM_LOCAL/vendor/linux-antiquity-main"; do
+    [ -d "$_a/configs" ] && { ANTIQ_SRC="$_a"; break; }
+done
+if [ -n "$ANTIQ_SRC" ]; then
+    mkdir -p "$MNT/antiquity"
+    COPYFILE_DISABLE=1 tar -czf "$MNT/antiquity/linux-antiquity.tar.gz" \
+        --exclude '._*' --exclude '.DS_Store' \
+        -C "$ANTIQ_SRC" configs LICENSE README.md
+    info "Linux Antiquity staged: $(( $(wc -c < "$MNT/antiquity/linux-antiquity.tar.gz") / 1024 / 1024 )) MB (configs + licence)"
+    info "  stage 16 uses this and does not need the network for the theme"
+else
+    warn "no linux-antiquity checkout under vendor/ -- stage 16 will download the theme"
+    warn "Unpack https://github.com/diinki/linux-antiquity/archive/refs/heads/main.zip into vendor/,"
+    warn "or add the subtree (docs/THEME.md, 'Forking and vendoring'), then --refresh."
 fi
 
 # The first-run script. Quoted heredoc: nothing here is expanded by the host.
@@ -5891,9 +5958,82 @@ STARTX
 # /etc/copal/autostart-desktop is the switch. Deleting it is enough to get the
 # console back at the next boot, without editing inittab or .profile, and the
 # autologin is left in place because it is the half nobody regrets.
-configure_desktop_autostart() {
-    confirm_yes "Start the desktop automatically at boot (autologin as '$PI_USER', then startx)?" || {
-        note "Desktop autostart declined -- log in and run startx"
+#
+# WHICH desktop starts is a second, separate switch: /etc/copal/session, one
+# word, 'x11' or 'wayland'. It exists because stage 16 added a second desktop
+# and the two are exclusive AT THE SESSION, not at the package level -- an X
+# server and a Wayland compositor cannot own the same seat at the same time,
+# but their packages coexist on disk without complaint. So .profile execs
+# copal-session rather than startx, and copal-session reads the word. Stage 4
+# writes 'x11', stage 16 writes 'wayland', and whichever ran LAST owns the
+# console at the next boot -- which is the only rule anyone can predict.
+# Editing the one-word file flips it back without reinstalling anything.
+configure_desktop_autostart() {  # [session command shown in the question, e.g. startx]
+    _sess_word="${1:-startx}"
+
+    # The chooser is written unconditionally -- even when autostart is
+    # declined, `copal-session` from a console login must start the right
+    # desktop, and stage 16's Hyprland needs the runtime-directory ceremony
+    # below whether or not anyone said yes to autostart.
+    cat > /usr/local/bin/copal-session <<'SESSION'
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# copal-session -- the one front door for the graphical session.
+#
+# Reads one word from /etc/copal/session and starts that desktop:
+#
+#   wayland   Hyprland, directly. A Wayland compositor is its own display
+#             server, so there is no startx equivalent to go through.
+#   x11       startx, which is the whole X11 path stage 4 set up.
+#
+# Written by copal-init.sh (stages 4 and 16 both install it; the file is
+# byte-identical from either). The word decides, not the caller, so tty
+# autostart, a console login and the documentation all say the same thing:
+# run copal-session.
+
+# The desktop belongs to the admin user; refuse root for the same reason
+# copal-startx does. Refusing here covers the Wayland path, which never goes
+# through copal-startx.
+if [ "$(id -u)" = 0 ]; then
+    echo "copal-session: the desktop runs as the admin user, not root." >&2
+    echo "  exit, log in as the admin user, run copal-session again." >&2
+    exit 1
+fi
+
+if [ "$(cat /etc/copal/session 2>/dev/null)" = wayland ] \
+   && command -v Hyprland >/dev/null 2>&1; then
+    # Wayland puts its socket in XDG_RUNTIME_DIR and refuses to start without
+    # one. elogind would create /run/user/<uid>; Copal does not carry elogind,
+    # so a private directory under /tmp does the same job. 700, owned by the
+    # user, checked rather than trusted -- a directory someone else owns is
+    # exactly the thing this variable exists to prevent.
+    if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
+        XDG_RUNTIME_DIR="/tmp/xdg-runtime-$(id -u)"
+        export XDG_RUNTIME_DIR
+    fi
+    mkdir -p "$XDG_RUNTIME_DIR"
+    chmod 700 "$XDG_RUNTIME_DIR"
+    [ -O "$XDG_RUNTIME_DIR" ] || {
+        echo "copal-session: $XDG_RUNTIME_DIR is not owned by you -- refusing." >&2
+        exit 1
+    }
+    # mako, the portal and hyprpolkitagent all find each other over the
+    # session bus; dbus-run-session gives the compositor and everything it
+    # spawns one bus and tears it down with the session.
+    if command -v dbus-run-session >/dev/null 2>&1; then
+        exec dbus-run-session Hyprland
+    fi
+    exec Hyprland
+fi
+
+exec startx
+SESSION
+    chmod 0755 /usr/local/bin/copal-session
+    note "copal-session -- starts whichever desktop /etc/copal/session names"
+
+    confirm_yes "Start the desktop automatically at boot (autologin as '$PI_USER', then $_sess_word)?" || {
+        note "Desktop autostart declined -- log in and run copal-session"
         rm -f /etc/copal/autostart-desktop 2>/dev/null || true
         return 0
     }
@@ -5938,15 +6078,17 @@ AUTOLOGIN
             cat >> "$_uh/.profile" <<'AUTOSTART'
 # >>> copal autostart >>>
 # Start the desktop on the physical console. Remove /etc/copal/autostart-desktop
-# to stop this without editing anything.
+# to stop this without editing anything. Which desktop -- X11 or Hyprland --
+# is /etc/copal/session's one word; copal-session reads it.
 if [ -f /etc/copal/autostart-desktop ] \
    && [ -z "${DISPLAY:-}" ] \
+   && [ -z "${WAYLAND_DISPLAY:-}" ] \
    && [ "$(tty 2>/dev/null)" = /dev/tty1 ] \
    && [ ! -f /boot/copal-auto ] \
    && ! ls /media/*/copal-auto >/dev/null 2>&1; then
     printf '\n  Copal: starting the desktop in 5 seconds.\n'
     printf '  Press Ctrl-C now for a shell instead.\n\n'
-    if sleep 5; then exec startx; fi
+    if sleep 5; then exec copal-session; fi
 fi
 # <<< copal autostart <<<
 AUTOSTART
@@ -8116,7 +8258,12 @@ XRES
 
     install_modern_browser
     configure_x_for_user
-    configure_desktop_autostart
+
+    # Claim the session for X11. Stage 16 writes 'wayland' over this if it
+    # runs later -- last writer wins, see the note above copal-session.
+    mkdir -p /etc/copal
+    printf 'x11\n' > /etc/copal/session
+    configure_desktop_autostart startx
 
     say "Stage 4 complete."
     cat <<MSG
@@ -8141,6 +8288,590 @@ XRES
     If X fails, read /var/log/Xorg.0.log -- the useful lines are marked (EE).
     "no screens found" on this board is usually fbdev: check that
     /dev/fb0 exists and that '$PI_USER' is in the video group.
+MSG
+    commit_reminder
+}
+
+# -------------------------------------- stage 16: the Antiquity desktop ----
+#
+# Hyprland, and diinki's Linux Antiquity theme -- "scientific and celestial
+# antiquity", the author calls it: radial menus drawn as orbits, workspaces as
+# planets with faces, tarot cards for the power menu, weather told in the four
+# humours. A desktop that looks like an old star chart you can click on. The
+# theme is MIT-licensed and vendored in this repository; copal-prep.sh stages
+# its configs onto the card next to Mini vMac, for the same reason.
+#
+# THIS IS THE FULL MONTY. Stage 4 is the medium path: X on the framebuffer,
+# i3, CPU-drawn pixels -- the desktop that fits a Pi Zero. This stage is the
+# other end of the scale: a GPU-composited Wayland desktop with blur, shadows
+# and rounded corners, for the boards that can pay for it -- a Pi 4/5, a PC,
+# or the UTM/QEMU VM. It does not replace stage 4's packages; it replaces
+# stage 4's SESSION. An X server and a Wayland compositor cannot own the same
+# seat at once, so /etc/copal/session carries one word -- 'x11' or 'wayland'
+# -- and copal-session starts whichever it names. This stage writes 'wayland';
+# re-running stage 4 writes 'x11' back. Nothing is uninstalled either way.
+#
+# WHAT ALPINE 3.24 ACTUALLY PACKAGES, measured against the theme's dependency
+# list (README, upstream commit c0e3eac), because an installer that assumes
+# Arch's repositories helps nobody here:
+#
+#   hyprland 0.54.3      community  -- present, but READS ONLY hyprland.conf:
+#                                      the theme ships hyprland.lua, and Lua
+#                                      configs arrived in Hyprland 0.55. So
+#                                      this stage TRANSLATES the .lua into a
+#                                      .conf -- every value carried over, the
+#                                      systemd and Arch assumptions swapped
+#                                      out. The vendored .lua stays beside it
+#                                      for the day Alpine's Hyprland reads it.
+#   kitty, mako, nemo    community  -- present, configs used as vendored.
+#   hyprpolkitagent      community  -- present; upstream starts it with
+#                                      `systemctl --user`, which does not
+#                                      exist on Alpine. exec'd directly.
+#   quickshell           NOT PACKAGED, not even in edge/testing. It is the
+#                        theme's taskbar, launcher and widgets -- the most
+#                        visible layer. try_add is still asked, so the day it
+#                        is packaged this stage picks it up unchanged; until
+#                        then wofi stands in as the launcher and the desktop
+#                        is Antiquity's windows, terminal, notifications and
+#                        wallpaper without the radial shell. copal-launcher
+#                        prefers quickshell's IPC the moment it exists.
+#   hyprpaper, hyprshot  NOT PACKAGED. swaybg paints the wallpaper instead;
+#                        grim + slurp take the region screenshot. Both behind
+#                        wrappers (copal-wallpaper, copal-shot) that prefer
+#                        the upstream tool when it appears.
+#   nm-applet            upstream autostarts it; Copal configures wifi with
+#                        wpa_supplicant (stage 10), not NetworkManager, so it
+#                        is dropped rather than shipped broken.
+#
+# The full survey, the .lua -> .conf mapping and how each program finds its
+# config files are written down in docs/THEME.md.
+stage_hyprland() {
+    say "Stage 16: Hyprland and the Linux Antiquity theme (the full monty)"
+
+    if is_diskless; then
+        warn "the root filesystem is still a tmpfs (~$(df -h / | awk 'NR==2{print $2}'))."
+        warn "A compositor does not fit. apk will fail with ENOSPC."
+        note "Run stage 3 first."
+        confirm "Try anyway?" || return 0
+    fi
+
+    # The boards this can never work on are refused with the reason, not a
+    # failed package install an hour later. armhf and armv7 have no Hyprland
+    # package -- and no GLES-capable Mesa worth the name on a Zero's
+    # VideoCore -- so the answer is stage 4, which was designed for exactly
+    # that hardware. Unattended, the answer is no: AUTO_DEFAULT=n makes the
+    # full-automatic install skip this stage on a Zero instead of wedging.
+    case "$(apk --print-arch 2>/dev/null || uname -m)" in
+        aarch64|x86_64) : ;;
+        *)  warn "this is a $(apk --print-arch 2>/dev/null || uname -m) board -- Alpine packages no Hyprland for it."
+            note "Stage 4 (X.Org and i3) is the desktop for this hardware."
+            if [ "${AUTO:-0}" = 1 ]; then AUTO_DEFAULT=n; fi
+            confirm "Try anyway (it will almost certainly fail)?" || return 0 ;;
+    esac
+
+    require_network || return 1
+    have_space_mb 900 "Hyprland, Qt-free Wayland stack and the theme" || return 1
+
+    # ------------------------------------------------------------------
+    # The compositor and the theme's programs. hyprland, kitty and mako are
+    # the spine -- without any one of them this is not the Antiquity desktop,
+    # so plain `apk add` and a hard stop, unlike everything after them.
+    say "Installing Hyprland, kitty and mako"
+    apk add hyprland kitty mako || {
+        warn "the core packages did not install -- see apk's message above."
+        note "hyprland lives in the community repository; check /etc/apk/repositories."
+        return 1
+    }
+
+    # The seat and the bus. A Wayland compositor needs permission to open the
+    # DRM device and the input devices; on a systemd distro logind brokers
+    # that, on Alpine it is seatd -- a 100 kB daemon -- plus membership of
+    # three groups. dbus is the session bus mako and the polkit agent talk
+    # over; copal-session wraps the compositor in dbus-run-session.
+    say "Installing the seat manager and the session bus"
+    add_optional seatd dbus
+    if apk info -e seatd >/dev/null 2>&1; then
+        rc-update add seatd default >/dev/null 2>&1 || true
+        rc-service seatd start >/dev/null 2>&1 || true
+        note "seatd running and enabled at boot"
+    fi
+    if apk info -e dbus >/dev/null 2>&1; then
+        rc-update add dbus default >/dev/null 2>&1 || true
+        rc-service dbus start >/dev/null 2>&1 || true
+    fi
+    for _g in seat input video; do
+        addgroup "$PI_USER" "$_g" 2>/dev/null || true
+    done
+    note "'$PI_USER' is in seat, input and video -- what a compositor needs"
+
+    # The GPU's userspace half. apk resolves shared-library dependencies by
+    # itself but Mesa DRIVERS are runtime-loaded, not linked, so nothing pulls
+    # them in. Alpine has renamed these packages across releases; each name is
+    # asked for separately and a missing one is not an error.
+    say "Installing the Mesa drivers"
+    add_optional mesa-dri-gallium
+    add_optional mesa-egl
+    add_optional mesa-gles
+    add_optional mesa-gbm
+
+    # Everything else the theme names, each surviving its own absence.
+    # xwayland keeps stage 4's and stage 12's X programs runnable inside the
+    # compositor -- without it every X application on the machine goes dark
+    # the moment the session switches.
+    say "Installing the theme's supporting cast"
+    add_optional xwayland
+    add_optional hyprpolkitagent polkit
+    add_optional nemo
+    add_optional wofi
+    add_optional grim slurp
+    add_optional swaybg
+    add_optional wl-clipboard
+    add_optional jq socat
+    add_optional font-dejavu
+    add_optional font-jetbrains-mono
+    # The upstream tools, asked for by name so the day Alpine packages them
+    # this stage starts using them without being edited -- the wrappers below
+    # already prefer them. Today all three are expected to be missing.
+    try_add hyprpaper  || note "hyprpaper is not packaged -- swaybg paints the wallpaper instead"
+    try_add hyprshot   || note "hyprshot is not packaged -- grim + slurp take the screenshots"
+    if ! try_add quickshell; then
+        warn "quickshell is not packaged in this Alpine release -- not even edge has it."
+        note "The theme's radial taskbar, widgets and launcher are quickshell; without"
+        note "it you get Antiquity's windows, terminal, notifications and wallpaper,"
+        note "with wofi as the launcher. The quickshell configs are installed anyway:"
+        note "the moment a quickshell binary appears on this machine (apk or a source"
+        note "build -- see docs/THEME.md), the next login uses it, nothing to redo."
+    fi
+
+    # ------------------------------------------------------------------
+    # The theme itself. From the card first -- copal-prep.sh staged it next to
+    # Mini vMac -- and GitHub only as the fallback, so an unattended install
+    # does not hang on a web server for a theme it is already carrying.
+    say "Installing the Linux Antiquity configs"
+    _theme_tgz=""
+    for _c in "$BOOT/antiquity/linux-antiquity.tar.gz" /media/*/antiquity/linux-antiquity.tar.gz; do
+        [ -f "$_c" ] && { _theme_tgz="$_c"; break; }
+    done
+    _tdir="/tmp/antiquity.$$"
+    rm -rf "$_tdir"; mkdir -p "$_tdir"
+    if [ -n "$_theme_tgz" ]; then
+        tar -xzf "$_theme_tgz" -C "$_tdir" || { warn "could not unpack $_theme_tgz"; return 1; }
+        note "theme from the card: $_theme_tgz"
+    else
+        note "no staged theme on the boot partition -- fetching from GitHub"
+        if wget -q -O "$_tdir/main.tar.gz" \
+                "https://github.com/diinki/linux-antiquity/archive/refs/heads/main.tar.gz"; then
+            tar -xzf "$_tdir/main.tar.gz" -C "$_tdir" && rm -f "$_tdir/main.tar.gz"
+        else
+            warn "could not fetch the theme -- no card copy, no network copy. Stopping here."
+            rm -rf "$_tdir"
+            return 1
+        fi
+    fi
+    # The staged tarball unpacks to configs/; the GitHub one to
+    # linux-antiquity-main/configs. Point at whichever appeared.
+    [ -d "$_tdir/configs" ] || _tdir="$_tdir/linux-antiquity-main"
+    [ -d "$_tdir/configs" ] || { warn "no configs/ in the theme archive -- corrupt download?"; rm -rf "/tmp/antiquity.$$"; return 1; }
+
+    # The copy is upstream install.sh's behaviour, kept because its simplicity
+    # is the point: each config directory goes to ~/.config/<name> whole, and
+    # anything already there is MOVED ASIDE first, timestamped, never merged
+    # and never deleted. Reimplemented in POSIX sh (upstream is bash), and
+    # into both homes, the same two install_home_file writes to.
+    for _h in /root "$(user_home)"; do
+        [ -n "$_h" ] && [ -d "$_h" ] || continue
+        _bak="$_h/copal-theme-backups"
+        for _d in "$_tdir/configs"/*/; do
+            [ -d "$_d" ] || continue
+            _name=$(basename "$_d")
+            _tgt="$_h/.config/$_name"
+            if [ -d "$_tgt" ]; then
+                mkdir -p "$_bak"
+                _b="$_bak/$_name"
+                [ -e "$_b" ] && _b="${_b}_$(date +%Y%m%d_%H%M%S)"
+                mv "$_tgt" "$_b"
+                note "moved aside: $_tgt -> $_b"
+            fi
+            mkdir -p "$_h/.config"
+            cp -r "$_d" "$_tgt"
+        done
+        # The licence travels with what it licenses.
+        cp "$_tdir/LICENSE" "$_h/.config/hypr/LICENSE.linux-antiquity" 2>/dev/null || true
+        _own=$(stat -c '%u:%g' "$_h" 2>/dev/null) \
+            && chown -R "$_own" "$_h/.config" "$_bak" 2>/dev/null || true
+        note "$_h/.config -- hypr, kitty, mako, quickshell"
+    done
+    rm -rf "/tmp/antiquity.$$"
+
+    # ------------------------------------------------------------------
+    # The transformations. Everything Arch-shaped or newer-than-Alpine in the
+    # vendored configs is corrected here, in generated files, so the vendored
+    # tree stays byte-identical to upstream and every deviation is readable
+    # in this stage rather than hidden in edited copies.
+
+    # Three small wrappers before the compositor config that binds them.
+    # Each one prefers the tool the theme wants and falls back to the tool
+    # Alpine has, so the binds never point at a binary that is not there.
+    say "Writing copal-launcher, copal-shot and copal-wallpaper"
+    cat > /usr/local/bin/copal-launcher <<'ANTIQLAUNCH'
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# copal-launcher -- Super+D on the Antiquity desktop.
+#
+# The theme's launcher is quickshell's radial menu, reached over IPC with the
+# focused monitor's name in the target -- the same call upstream binds. Alpine
+# packages no quickshell yet, so: quickshell if it is running, wofi if not,
+# dmenu as the X11-era last resort.
+if command -v qs >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
+    _mon=$(hyprctl monitors -j 2>/dev/null \
+           | jq -r '.[] | select(.focused == true) | .name' 2>/dev/null)
+    if [ -n "$_mon" ]; then
+        qs ipc call "appLauncher_$_mon" toggleAppLauncher 2>/dev/null && exit 0
+    fi
+fi
+command -v wofi >/dev/null 2>&1 && exec wofi --show drun
+command -v dmenu_run >/dev/null 2>&1 && exec dmenu_run
+echo "copal-launcher: no launcher installed (quickshell, wofi, dmenu)" >&2
+exit 1
+ANTIQLAUNCH
+    chmod 0755 /usr/local/bin/copal-launcher
+
+    cat > /usr/local/bin/copal-shot <<'ANTIQSHOT'
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# copal-shot -- Super+Shift+S: screenshot a region you draw.
+#
+# hyprshot is what the theme binds; Alpine does not package it, and grim +
+# slurp are the same two verbs (grab, select) it is built from. Saved under
+# ~/Pictures when it exists, /tmp when it does not -- upstream used /tmp.
+if command -v hyprshot >/dev/null 2>&1; then
+    exec hyprshot --mode region --output-folder "${XDG_PICTURES_DIR:-/tmp}"
+fi
+if command -v grim >/dev/null 2>&1 && command -v slurp >/dev/null 2>&1; then
+    _dir="$HOME/Pictures"; [ -d "$_dir" ] || _dir=/tmp
+    _geom=$(slurp) || exit 1
+    exec grim -g "$_geom" "$_dir/screenshot-$(date +%Y%m%d-%H%M%S).png"
+fi
+echo "copal-shot: neither hyprshot nor grim+slurp installed" >&2
+exit 1
+ANTIQSHOT
+    chmod 0755 /usr/local/bin/copal-shot
+
+    cat > /usr/local/bin/copal-wallpaper <<'ANTIQWALL'
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# copal-wallpaper -- paints the Antiquity wallpaper at session start.
+#
+# hyprpaper is what the theme uses and Alpine does not package it; swaybg
+# shows one image just as well. The image is the one upstream's
+# hyprpaper.conf names. Runs for the life of the session; exec'd from
+# hyprland.conf so the compositor owns it.
+WP="$HOME/.config/hypr/wallpapers_bundled/georges_riom_collage.png"
+if command -v hyprpaper >/dev/null 2>&1; then
+    exec hyprpaper
+fi
+if command -v swaybg >/dev/null 2>&1 && [ -f "$WP" ]; then
+    exec swaybg -i "$WP" -m fill
+fi
+exit 0
+ANTIQWALL
+    chmod 0755 /usr/local/bin/copal-wallpaper
+
+    # The compositor config: upstream's hyprland.lua translated value-for-
+    # value into the .conf dialect that Hyprland 0.54 -- the one Alpine
+    # ships -- actually reads. Hyprland looks for ~/.config/hypr/
+    # hyprland.conf first and reads .lua only from 0.55; both files being
+    # present is therefore not a conflict today and self-resolves the day it
+    # could be: a Hyprland new enough to read the .lua is new enough that
+    # whoever upgrades it can delete this .conf and get upstream's config,
+    # monitors and all. The mapping table lives in docs/THEME.md.
+    #
+    # What changed in translation, and why -- everything else is upstream's
+    # value verbatim:
+    #   monitors      DP-2/DP-4 at the author's desk -> one auto rule. The
+    #                 only portable answer, and hyprctl monitors tells you
+    #                 what to pin if you want the upstream shape back.
+    #   kb_layout     us,se with alt-shift toggle -> us. A surprise layout
+    #                 switch on a machine with one keyboard is a trap.
+    #   autostart     nm-applet dropped (no NetworkManager here);
+    #                 systemctl --user hyprpolkitagent -> exec'd directly;
+    #                 hyprpaper -> copal-wallpaper; qs kept but guarded;
+    #                 hyprctl setcursor dropped (theme not vendored).
+    #   launcher      the quickshell IPC one-liner -> copal-launcher.
+    #   screenshot    hyprshot -> copal-shot.
+    #   power         Copal's own additions: Super+Shift+P and the keyboard
+    #                 power key end the day through copal-halt, exactly as
+    #                 they do in i3 -- one habit, both desktops.
+    say "Writing ~/.config/hypr/hyprland.conf (the Alpine translation)"
+    cat > /tmp/hyprconf.$$ <<'ANTIQHYPR'
+# hyprland.conf -- generated by copal-init.sh (stage 16).
+# A translation of Linux Antiquity's hyprland.lua (upstream: diinki, MIT) for
+# the Hyprland Alpine packages -- 0.54 reads only this dialect. The original
+# .lua sits beside this file; on Hyprland >= 0.55 you may delete this .conf
+# to use it, after pinning your monitors in it. See docs/THEME.md.
+
+# One rule, every monitor: native mode, automatic placement, no scaling.
+# `hyprctl monitors all` shows what you have; pin specific outputs here the
+# way upstream's hyprland.lua does if you want more than one arranged.
+monitor = , preferred, auto, 1
+
+$terminal = kitty
+$fileManager = FILEMGR_PLACEHOLDER
+$menu = copal-launcher
+
+# Autostart. Each guarded or wrapped -- see copal-wallpaper and copal-launcher
+# for the reasoning; the polkit agent is exec'd directly because there is no
+# systemd --user on Alpine to start it.
+exec-once = copal-wallpaper
+exec-once = mako
+exec-once = sh -c 'command -v qs >/dev/null 2>&1 && exec qs'
+exec-once = sh -c '[ -x /usr/libexec/hyprpolkitagent ] && exec /usr/libexec/hyprpolkitagent'
+
+env = XCURSOR_SIZE,24
+env = HYPRCURSOR_SIZE,24
+
+input {
+    kb_layout = us
+    follow_mouse = 1
+    sensitivity = 0
+    touchpad {
+        natural_scroll = false
+    }
+}
+
+# Upstream sets this against cursor glitches; in a VM it is not optional --
+# virtio-gpu has no hardware cursor plane worth trusting.
+cursor {
+    no_hardware_cursors = true
+}
+
+general {
+    gaps_in = 4
+    gaps_out = 8
+    border_size = 1
+    col.active_border = rgb(1c1c1c)
+    col.inactive_border = rgb(1c1c1c)
+    resize_on_border = false
+    layout = dwindle
+    allow_tearing = false
+}
+
+decoration {
+    rounding = 9
+    rounding_power = 4
+    active_opacity = 1.0
+    inactive_opacity = 1.0
+    shadow {
+        enabled = true
+        range = 12
+        render_power = 6
+        sharp = false
+        color = rgba(00000030)
+        offset = 0 0
+        scale = 1
+    }
+    blur {
+        enabled = true
+        size = 3
+        passes = 2
+        noise = 0.023
+        contrast = 0.9
+        new_optimizations = true
+    }
+}
+
+animations {
+    enabled = true
+    bezier = smooth, 0.22, 1, 0.36, 1
+    animation = workspaces, 1, 8, smooth, slide
+    animation = windows, 1, 3, smooth
+    animation = fade, 1, 3, smooth
+}
+
+dwindle {
+    preserve_split = true
+}
+
+master {
+    new_status = master
+}
+
+misc {
+    force_default_wallpaper = 0
+    disable_hyprland_logo = true
+}
+
+$mainMod = SUPER
+
+bind = $mainMod, Return, exec, $terminal
+bind = $mainMod, Q, killactive,
+bind = $mainMod SHIFT, S, exec, copal-shot
+bind = $mainMod, E, exec, $fileManager
+bind = $mainMod SHIFT, SPACE, togglefloating,
+bind = $mainMod, F, fullscreen,
+bind = $mainMod, D, exec, $menu
+
+# Copal's additions, so both desktops end the day the same way: copal-halt
+# asks, closes the session, syncs, powers down. The keyboard power key
+# arrives as a key event, and the compositor is the only thing placed to
+# catch it -- same story as the i3 binding.
+bind = $mainMod SHIFT, P, exec, copal-halt
+bind = , XF86PowerOff, exec, copal-halt
+bind = $mainMod SHIFT, Delete, exec, copal-halt reboot
+bind = $mainMod SHIFT, E, exit,
+
+# Workspaces 1-10 -- upstream generates these with a Lua loop; unrolled here
+# because the .conf dialect has no loops.
+bind = $mainMod, 1, workspace, 1
+bind = $mainMod, 2, workspace, 2
+bind = $mainMod, 3, workspace, 3
+bind = $mainMod, 4, workspace, 4
+bind = $mainMod, 5, workspace, 5
+bind = $mainMod, 6, workspace, 6
+bind = $mainMod, 7, workspace, 7
+bind = $mainMod, 8, workspace, 8
+bind = $mainMod, 9, workspace, 9
+bind = $mainMod, 0, workspace, 10
+bind = $mainMod SHIFT, 1, movetoworkspace, 1
+bind = $mainMod SHIFT, 2, movetoworkspace, 2
+bind = $mainMod SHIFT, 3, movetoworkspace, 3
+bind = $mainMod SHIFT, 4, movetoworkspace, 4
+bind = $mainMod SHIFT, 5, movetoworkspace, 5
+bind = $mainMod SHIFT, 6, movetoworkspace, 6
+bind = $mainMod SHIFT, 7, movetoworkspace, 7
+bind = $mainMod SHIFT, 8, movetoworkspace, 8
+bind = $mainMod SHIFT, 9, movetoworkspace, 9
+bind = $mainMod SHIFT, 0, movetoworkspace, 10
+
+# Move / resize with the mouse, upstream's binds.
+bindm = $mainMod, mouse:272, movewindow
+bindm = $mainMod, mouse:273, resizewindow
+
+# Media keys, upstream's binds kept verbatim. wpctl is wireplumber's tool and
+# arrives with stage 10's audio work; until then these keys do nothing, which
+# is what they did before this file existed.
+bindel = , XF86AudioRaiseVolume, exec, wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%+
+bindel = , XF86AudioLowerVolume, exec, wpctl set-volume @DEFAULT_AUDIO_SINK@ 5%-
+bindl = , XF86AudioMute, exec, wpctl set-mute @DEFAULT_AUDIO_SINK@ toggle
+bindl = , XF86AudioMicMute, exec, wpctl set-mute @DEFAULT_AUDIO_SOURCE@ toggle
+bindel = , XF86MonBrightnessUp, exec, brightnessctl s 10%+
+bindel = , XF86MonBrightnessDown, exec, brightnessctl s 10%-
+
+# WHEN THE HOST STEALS A KEY -- the short version of the essay in stage 4's
+# i3 config: under UTM the Mac eats several Super chords before this guest
+# sees them, so the most-reached actions get a second binding on Ctrl+Alt,
+# which macOS reserves nothing on. Harmless on real hardware; delete freely.
+bind = CTRL ALT, SPACE, exec, $menu
+bind = CTRL, SPACE, exec, $menu
+bind = CTRL ALT SHIFT, Q, killactive,
+bind = CTRL ALT SHIFT, P, exec, copal-halt
+bind = CTRL ALT, right, workspace, e+1
+bind = CTRL ALT, left, workspace, e-1
+
+# The theme's own layer rules: quickshell's bars ask for blur behind their
+# translucent regions, by the namespaces the QML declares.
+layerrule = blur, diinki_celestialantiquity:bars
+layerrule = ignorealpha 0.19, diinki_celestialantiquity:bars
+layerrule = blur, diinki_celestialantiquity:no_blur
+layerrule = ignorealpha 0.19, diinki_celestialantiquity:no_blur
+ANTIQHYPR
+    # The file manager the theme wants, if this machine has it; the one stage
+    # 4 installed otherwise. Substituted here, not left for Hyprland to
+    # expand, for the same reason as stage 4's TERMEMU_PLACEHOLDER.
+    _fm=pcmanfm
+    command -v nemo >/dev/null 2>&1 && _fm=nemo
+    sed -i "s|FILEMGR_PLACEHOLDER|$_fm|" /tmp/hyprconf.$$
+    install_home_file .config/hypr/hyprland.conf /tmp/hyprconf.$$
+    rm -f /tmp/hyprconf.$$
+
+    # hyprpaper.conf named the author's two monitors. An empty monitor field
+    # means every monitor, which is the only shape that survives contact with
+    # other people's hardware. Only read if hyprpaper ever appears -- swaybg
+    # takes its orders from copal-wallpaper -- but corrected now, once.
+    say "Writing ~/.config/hypr/hyprpaper.conf (all monitors)"
+    cat > /tmp/hyprpaper.$$ <<'ANTIQPAPER'
+# hyprpaper.conf -- rewritten by copal-init.sh (stage 16); upstream's file
+# named the author's DP-2 and DP-4. Empty monitor = every monitor.
+wallpaper {
+  monitor =
+  path = ~/.config/hypr/wallpapers_bundled/georges_riom_collage.png
+  fit_mode = cover
+}
+splash = false
+ANTIQPAPER
+    install_home_file .config/hypr/hyprpaper.conf /tmp/hyprpaper.$$
+    rm -f /tmp/hyprpaper.$$
+
+    # The theme's kitty.conf asks for Maple Mono, which Alpine does not
+    # package. kitty falls back to its default monospace without complaint,
+    # but JetBrains Mono is a close cousin and IS packaged -- when it landed
+    # above, point the config at it. sed on the installed copies, not the
+    # vendored tree: the vendored tree stays upstream's.
+    if apk info -e font-jetbrains-mono >/dev/null 2>&1; then
+        for _h in /root "$(user_home)"; do
+            [ -n "$_h" ] && [ -f "$_h/.config/kitty/kitty.conf" ] || continue
+            sed -i 's/^font_family maple mono/font_family JetBrains Mono/' \
+                "$_h/.config/kitty/kitty.conf" 2>/dev/null || true
+        done
+        note "kitty: Maple Mono is not packaged -- JetBrains Mono substituted"
+    fi
+
+    # ------------------------------------------------------------------
+    # Claim the session -- but only if there is something to claim it FOR.
+    # This is the one exclusive act in the whole stage: from the next boot
+    # (or the next copal-session) the console belongs to Hyprland, and
+    # re-running stage 4 hands it back to X.
+    #
+    # ASKED OF THE MACHINE, NOT ASSUMED. The full level chooses Wayland by
+    # itself when Wayland is actually available, which is exactly what the
+    # binary being on PATH means -- so this tests for it rather than trusting
+    # that the apk add above did what it was told. A stage that wrote
+    # 'wayland' after a failed install would hand the console to a compositor
+    # that is not there; copal-session would fall back to startx and the word
+    # in the file would be a lie about the machine. Better to say so here,
+    # once, while someone is reading the output.
+    mkdir -p /etc/copal
+    if command -v Hyprland >/dev/null 2>&1; then
+        printf 'wayland\n' > /etc/copal/session
+        note "/etc/copal/session = wayland -- re-run stage 4 (or write 'x11') to switch back"
+        configure_desktop_autostart Hyprland
+    else
+        warn "Hyprland is not on PATH -- the session is being left as it was."
+        note "The theme's configs are installed and will be used the moment a"
+        note "compositor exists; nothing here needs re-running but stage 16."
+        [ -s /etc/copal/session ] || printf 'x11\n' > /etc/copal/session
+        note "/etc/copal/session = $(cat /etc/copal/session 2>/dev/null)"
+    fi
+
+    say "Stage 16 complete."
+    cat <<MSG
+    The Antiquity desktop runs as '$PI_USER', not as root. So:
+
+        exit                     leave this root shell
+        login as $PI_USER        at the console
+        copal-session
+
+    /etc/copal/session now says 'wayland', so copal-session starts Hyprland;
+    stage 4's X desktop is still installed, and one word in that file (or
+    re-running stage 4) brings it back. The two cannot run at once -- one
+    seat, one compositor -- which is why it is a switch and not a menu.
+
+    Super+Return terminal (kitty)   Super+d      launcher
+    Super+e      file manager       Super+Shift+s screenshot region
+    Super+q      close window       Super+f      fullscreen
+    Super+1..9,0 workspaces         Super+Shift+p power down (copal-halt)
+
+    What is missing, honestly: quickshell -- the theme's radial taskbar and
+    widgets -- has no Alpine package yet. Its configs are in place and
+    copal-launcher already prefers it, so a future 'apk add quickshell' (or a
+    source build: docs/THEME.md) completes the theme with no re-run of this
+    stage. Until then wofi launches, mako notifies, the wallpaper hangs.
+
+    If the screen stays black: 'dmesg | grep -i drm' first -- a compositor
+    with no DRM device is the usual cause in a VM without a virtio GPU.
 MSG
     commit_reminder
 }
@@ -8624,8 +9355,18 @@ configure_git_identity() {
     note "written to $_gc (owned by $PI_USER)"
 }
 
-# Claude Code. Asked for explicitly, so it is offered -- with what this board
-# actually is stated rather than buried.
+# Claude Code. INSTALLED BY DEFAULT, on the boards that can actually run it --
+# Enter accepts, and declining is a deliberate "n" rather than the other way
+# round. It was an opt-in for a long time and that was the wrong default for
+# what this machine is for: a small system you work on from the keyboard, where
+# the agent is part of the toolchain rather than an extra.
+#
+# What "can actually run it" means is decided by the machine, not by this
+# comment: npm has to exist, node has to execute on this CPU (Node dropped
+# ARMv6 years ago, so a Pi Zero fails that test in two seconds), and either
+# failure declines for you with the reason printed. The cost is stated before
+# the question, because ~120 MB of nodejs on a 512 MB board is a real decision
+# even when it is the default one.
 install_claude_code() {
     say "Claude Code"
     # npm, or an offer to get it. This used to warn and return, which made the
@@ -8636,7 +9377,7 @@ install_claude_code() {
     # dead branch.
     if ! command -v npm >/dev/null 2>&1; then
         note "Claude Code is a Node application, and this machine has no npm."
-        if confirm "Install nodejs and npm for it (~120 MB)?"; then
+        if confirm_yes "Install nodejs and npm for it (~120 MB)?"; then
             try_add nodejs npm || { warn "could not install nodejs/npm"; return 0; }
         else
             note "Skipped. 'apk add nodejs npm' first, then re-run stage 7."
@@ -8670,7 +9411,7 @@ install_claude_code() {
         installs one and this sets $BROWSER to it.
 
 MSG
-    confirm "Install Claude Code?" || { note "Skipping Claude Code."; return 0; }
+    confirm_yes "Install Claude Code?" || { note "Skipping Claude Code."; return 0; }
 
     say "Installing @anthropic-ai/claude-code"
     # Global, so it lands on PATH for every account. That is not the same as
@@ -13855,7 +14596,8 @@ auto_manifest() {
 5|Memory|Compressed swap in RAM (zram)|4
 6|Access|Install the SSH key from the card|3
 4|Desktop|X.Org, i3, a terminal and a browser|9
-7|Toolchain|Compilers, debuggers and editors|12
+16|Desktop|Hyprland and the Antiquity theme|10
+7|Toolchain|Compilers, debuggers, editors and Claude Code|12
 10|Hardware|Wireless, audio, capture and disks|8
 12|Software|The application catalogue|4
 14|Workshop|CAD, 3D printing, EDA, LaTeX, trackers|6
@@ -13866,6 +14608,30 @@ MANIFEST
 
 # Derived, so the run order and the checklist can never disagree.
 auto_seq_from_manifest() { auto_manifest | cut -d'|' -f1 | tr '\n' ' '; }
+
+# The three levels the guided install offers, as subsets of the one manifest
+# -- subsets, not separate lists, so a stage added to the manifest lands in
+# the right levels by default and the lists can never drift apart:
+#
+#   server   the machine with no screen: base system, persistent root, zram,
+#            SSH, grown partition, root handed over. Nothing graphical.
+#   medium   server plus the X desktop and everything downstream of it --
+#            the install this script performed before levels existed, and
+#            the ceiling for a Pi Zero.
+#   full     the whole manifest, stage 16 included: Hyprland and the Linux
+#            Antiquity theme take the session, X stays as the fallback.
+#
+# Anything unrecognised -- including 'custom', which guided_install records
+# when the menu is chosen instead -- means the full manifest, because the
+# only caller is auto_run and a wrong-but-complete sequence beats a wrong-
+# and-missing one.
+seq_for_profile() {  # <server|medium|full|anything>
+    case "$1" in
+        server) auto_seq_from_manifest | tr ' ' '\n' | grep -vE '^(4|16|7|9|10|12|14)$' | tr '\n' ' ' ;;
+        medium) auto_seq_from_manifest | tr ' ' '\n' | grep -v  '^16$' | tr '\n' ' ' ;;
+        *)      auto_seq_from_manifest ;;
+    esac
+}
 auto_phases_in_order()   { auto_manifest | cut -d'|' -f2 | awk '!seen[$0]++'; }
 auto_field() {  # <stage> <field-number>
     auto_manifest | awk -F'|' -v s="$1" -v f="$2" '$1 == s { print $f; exit }'
@@ -14549,6 +15315,14 @@ RESUME
 
 auto_run() {
     AUTO=1
+    # The guided install records a level on the boot partition -- FAT, so it
+    # survives the stage 3 reboot that wipes the tmpfs this shell lives on --
+    # and the level decides the sequence. No file means the full manifest,
+    # which is what 'a' always meant.
+    if [ -f "$BOOT/copal-profile" ]; then
+        AUTO_SEQ=$(seq_for_profile "$(cat "$BOOT/copal-profile" 2>/dev/null)")
+        note "install level '$(cat "$BOOT/copal-profile" 2>/dev/null)' -- stages: $AUTO_SEQ"
+    fi
     say "FULL AUTOMATIC INSTALL"
     cat <<'MSG'
 
@@ -14569,7 +15343,11 @@ auto_run() {
         ten-second pause -- with that one password.
       - Stage 4 asks whether the desktop should start by itself at boot.
         Unattended, the answer is yes: tty1 logs the admin user in and runs
-        startx. Deleting /etc/copal/autostart-desktop undoes it.
+        copal-session. Deleting /etc/copal/autostart-desktop undoes it.
+      - Stage 16 (Hyprland and the Linux Antiquity theme) runs only on
+        aarch64 and x86_64 -- a Pi Zero declines it by itself and keeps the
+        X desktop from stage 4. Where it does run, it takes the session:
+        /etc/copal/session says which desktop the console gets.
 
     It ends by rebooting -- the install changes the kernel, the root
     filesystem and the login path, and a reboot is the only honest way to see
@@ -14648,6 +15426,7 @@ MSG
             12) AUTO_DEFAULT=a; stage_apps ;;        # the whole catalogue
             13) stage_lockroot ;;
             14) AUTO_DEFAULT=a; stage_workshop ;;    # every bundle
+            16) stage_hyprland ;;                    # skips itself on armhf/armv7
         esac
         _rc=$?
         set -e
@@ -15866,8 +16645,77 @@ COPALLOGS
     chmod 0755 /usr/local/bin/copal-logs
 }
 
+# ------------------------------------------------------- guided install ----
+#
+# The menu below is sixteen numbered stages, and the first question every new
+# install raises is which of them are actually wanted. This answers it with
+# one letter instead of sixteen numbers: a description of how the install
+# flows, then three levels, each a named subset of the same manifest the
+# full-automatic mode runs (see seq_for_profile). Choosing one records it on
+# the boot partition -- FAT, so it survives the stage 3 reboot -- and hands
+# over to auto_run, which reads it back on every resume. Declining records
+# 'custom', so the offer is made exactly once and the menu is the answer
+# from then on.
+guided_install() {
+    say "GUIDED INSTALL -- pick a level, or take the menu"
+    cat <<MSG
+
+    Every Copal install moves through the same three acts:
+
+      SETTLE    stages 1-3   answers applied, packages made persistent, the
+                             root filesystem moved onto the card. Everything
+                             else needs these; stage 3 reboots once.
+      FURNISH   stages 4-12  a desktop, zram, SSH, toolchain, emulators,
+                             media, the application catalogue.
+      HARDEN    stage 13     root locked, '$PI_USER' + doas from then on.
+
+    The levels only differ in how much furniture act two brings in:
+
+      s) SERVER      no screen attached: settle, zram, SSH, grow the
+                     partition, harden. Nothing graphical is installed.
+      m) MEDIUM      the X desktop -- X.Org on the framebuffer, i3, the
+                     catalogue, emulators, workshop. The ceiling for a
+                     Pi Zero, and the whole install as it always was.
+      f) FULL MONTY  everything medium installs, then stage 16 on top:
+                     Hyprland on Wayland with the Linux Antiquity theme --
+                     kitty, mako, the star-chart look. Takes the session;
+                     X stays installed as the fallback. Needs aarch64 or
+                     x86_64 -- on a Pi Zero this level declines itself and
+                     lands exactly where medium does.
+
+    X and Hyprland cannot own the screen at once, so the desktop at boot is
+    one word in /etc/copal/session -- stage 4 writes 'x11', stage 16 writes
+    'wayland', re-running either flips it. Nothing is ever uninstalled.
+
+    Enter takes you to the menu instead: every stage by hand, in any order,
+    re-runnable -- the levels above are only bundles of the same stages.
+MSG
+    ask "Level [s/m/f, Enter for the menu]:"
+    case "$REPLY" in
+        s|S) _prof=server ;;
+        m|M) _prof=medium ;;
+        f|F) _prof=full ;;
+        *)   _prof=custom ;;
+    esac
+    mount -o remount,rw "$BOOT" 2>/dev/null || true
+    printf '%s\n' "$_prof" > "$BOOT/copal-profile" 2>/dev/null \
+        || warn "could not record the level on $BOOT -- a resume after reboot will run the full manifest"
+    case "$_prof" in
+        custom) note "No level chosen -- the menu it is." ;;
+        *)      auto_run ;;
+    esac
+}
+
 install_frontdoor
 install_log_tools
+
+# First contact: a virgin system (no apkovl means stage 1 has never run) with
+# a person at the terminal is offered the guided install once, before the
+# menu. Every later run -- and every run that already chose, 'custom'
+# included -- goes straight to the menu, which stays the whole truth.
+if [ ! -f "$BOOT/copal-profile" ] && [ "${HAVE_TTY:-0}" = 1 ] && ! apkovl_exists; then
+    guided_install
+fi
 
 while :; do
     state_report
@@ -15901,7 +16749,9 @@ while :; do
     5) Compressed RAM swap     zram -- the biggest win available on 512 MB
     6) Authorise the SSH key   the Mac's public key for '$PI_USER'
     7) Development environment gcc/make/gdb, nvim configured for building and
-                               breakpoints, python, geany, AVR, TUI tooling
+                               breakpoints, python, geany, AVR, TUI tooling,
+                               and Claude Code (installed by default, where
+                               node runs -- not on a Zero)
     8) Grow COPALROOT             extend p2 into the unallocated space after it.
                                Non-destructive; works on a mounted root
     9) Retro emulators         Mini vMac (Mac Plus, fast) and VICE (C64,
@@ -15923,6 +16773,12 @@ while :; do
                                and SID. Each bundle says what this port lacks
    15) SD card and logs       what actually wears a card and what does not;
                                log policy, and a genuinely read-only root
+   16) The Antiquity desktop  Hyprland on Wayland, themed as diinki's Linux
+                              Antiquity -- the full monty. Takes the session
+                              from X (one word in /etc/copal/session flips
+                              it back). aarch64/x86_64 only; needs 3 done
+    g) Guided install         the three levels -- server, medium, full --
+                              described, then run unattended
     r) Reboot
     v) Verify and show state
     q) Quit
@@ -15930,7 +16786,7 @@ while :; do
     Suggested next: $SUGGEST
 MSG
 
-    ask "Choose [1/2/3/4/5/6/7/8/9/10/11/12/13/14/15/a/r/v/q]:"
+    ask "Choose [1/2/3/4/5/6/7/8/9/10/11/12/13/14/15/16/a/g/r/v/q]:"
     case "$REPLY" in
         r|R) if confirm_yes "Reboot now?"; then
                  say "Rebooting. Log back in as ROOT (not $PI_USER), then run:  sh /boot/copal-init.sh"
@@ -15954,6 +16810,8 @@ MSG
         13) stage_lockroot ;;
         14) stage_workshop ;;
         15) stage_sdcard ;;
+        16) stage_hyprland ;;
+        g|G) guided_install ;;
         a|A) auto_run ;;
         v|V) stage_verify ;;
         q|Q|"") say "Nothing further changed. Transcript: $LOG"; exit 0 ;;
@@ -15984,6 +16842,7 @@ step "Verify the card, then flush and eject" \
     "this finishes: macOS buffers writes, and removing it early truncates" \
     "files that appear to have copied successfully."
 
+phase "Verify and flush"
 info "Verifying required boot files on the card..."
 MISSING=0
 case "$PLATFORM" in
