@@ -6110,13 +6110,29 @@ if [ "$(cat /etc/copal/session 2>/dev/null)" = wayland ] \
         echo "copal-session: $XDG_RUNTIME_DIR is not owned by you -- refusing." >&2
         exit 1
     }
+    # WHICH LAUNCHER, and it is start-hyprland where there is one. Launching
+    # the compositor bare gets a toast in the corner of a freshly installed
+    # desktop, every time:
+    #
+    #     Hyprland was started without start-hyprland. This is highly not
+    #     recommended unless you are in a debugging environment.
+    #
+    # It was bare because start-hyprland used to be unusable here: it needs
+    # XDG_RUNTIME_DIR and nothing on this system set it, so it died with
+    # "XDG_RUNTIME_DIR is not set!" before reaching the compositor. The block
+    # above fixes that, and /etc/profile.d does it for every other login --
+    # so upstream's launcher works now and there is no reason left to skip
+    # it. It is the wrapper upstream tests against and the one its own
+    # warning asks for.
+    _hypr=Hyprland
+    command -v start-hyprland >/dev/null 2>&1 && _hypr=start-hyprland
     # mako, the portal and hyprpolkitagent all find each other over the
     # session bus; dbus-run-session gives the compositor and everything it
     # spawns one bus and tears it down with the session.
     if command -v dbus-run-session >/dev/null 2>&1; then
-        exec dbus-run-session Hyprland
+        exec dbus-run-session "$_hypr"
     fi
-    exec Hyprland
+    exec "$_hypr"
 fi
 
 # The X path. If the session says x11 but X's privileged helper has been left
@@ -8655,7 +8671,50 @@ else
     row "3D (VirGL)" "cannot tell -- no dmesg"
 fi
 
-# ---- 3. which driver X chose ----------------------------------------------
+# ---- 3. which compositor or server, and what it is drawing with ------------
+#
+# THE WAYLAND HALF COMES FIRST, because on this system it is the more likely
+# answer and because the X half cannot see it at all. Hyprland never opens an
+# X server, so a machine running the Wayland desktop has no Xorg.0.log and an
+# X-only report says "cannot tell yet" on a desktop that is running perfectly
+# well in front of you. That was this script's first real bug, found by
+# running it against a live guest.
+#
+# aquamarine -- Hyprland's backend -- names the renderer it got in its log,
+# and that one line is the whole answer:
+#
+#     Renderer: llvmpipe (LLVM 22.1.3, 128 bits)   -> software, drawing on CPU
+#     Renderer: virgl (Apple M2)                   -> the host's GPU
+#
+# There is no glamor and no X driver in this path: the compositor talks to
+# KMS and EGL itself, so the renderer line replaces both rows.
+HLOG=$(ls -t "${XDG_RUNTIME_DIR:-/tmp}"/hypr/*/hyprland.log \
+              /tmp/xdg-runtime-*/hypr/*/hyprland.log \
+              /run/user/*/hypr/*/hyprland.log 2>/dev/null | head -1)
+if [ -n "$HLOG" ]; then
+    row "compositor" "Hyprland (Wayland)  ($HLOG)"
+    _r=$(sed -n 's/.*Renderer: //p' "$HLOG" | tail -1)
+    case "$_r" in
+        "") row "renderer" "cannot tell -- no Renderer line in the log" ;;
+        *llvmpipe*|*softpipe*|*swrast*)
+            row "renderer" "$_r -- SOFTWARE, drawing on the CPU"
+            blame "Hyprland is compositing in software. Every frame is drawn by the
+CPU, which is what a slow desktop feels like. This is decided by the display
+device the host offers, not by anything in here: re-create the machine and let
+it take the default (virtio-ramfb-gl). See 'When the display is slow' in the
+handbook." 1 ;;
+        *) row "renderer" "$_r -- on the GPU" ;;
+    esac
+    echo
+    case "$VERDICT" in
+        0) echo "Accelerated. The drawing is happening on the host's GPU." ;;
+        1) echo "NOT accelerated -- working, but drawing on the CPU."; echo; echo "$WHY" ;;
+        2) echo "Cannot tell yet."; echo; echo "$WHY" ;;
+    esac
+    exit "$VERDICT"
+fi
+
+# ---- 3b. the X half: which driver X chose ---------------------------------
 # Read from the log rather than from the running server, so this answers over
 # ssh and after the session has exited.
 XLOG=""
@@ -10484,6 +10543,31 @@ CURSORENV
             note "  (Xwayland is a different binary and keeps every X program working)"
         fi
         configure_desktop_autostart Hyprland
+        # THE TOAST YOU WILL SEE, said here so it does not read as a fault.
+        #
+        #     Your system does not have hyprland-qtutils installed. This is a
+        #     runtime dependency for some dialogs. Consider installing it.
+        #
+        # There is nothing to install. hyprland-qtutils is not packaged in any
+        # Alpine repository -- checked on a real guest: apk has
+        # hyprland-qt-support, which is the QML style and NOT the binaries,
+        # and hyprpolkitagent, which is something else again. Neither provides
+        # hyprland-dialog, which is the program the warning is looking for.
+        #
+        # Nor can it be switched off: misc:disable_hyprland_qtutils_check
+        # arrives after this version, and 0.54.3 answers "no such option".
+        #
+        # What it costs is nothing that is used here. The dialogs are the
+        # update screen and the donate screen; Copal updates through 'copal
+        # -U' and shows its own key list. So it is a notice about a component
+        # this system does not use, that Alpine does not ship, with no way to
+        # silence it -- which is worth one line of output rather than a
+        # bug report.
+        if ! command -v hyprland-dialog >/dev/null 2>&1; then
+            note "Hyprland will warn about missing hyprland-qtutils on every start."
+            note "  Alpine does not package it, 0.54.3 has no way to switch the"
+            note "  warning off, and nothing here uses the dialogs it provides."
+        fi
     else
         warn "Hyprland is not on PATH -- the session is being left as it was."
         note "The theme's configs are installed and will be used the moment a"

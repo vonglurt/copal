@@ -1279,8 +1279,20 @@ file: modesetting then draws on the CPU, which is still far quicker than fbdev.
 On a Pi nothing changes — `is_vm()` answers *no* for a Raspberry Pi before it
 looks at anything else, so the tested path stays the tested path.
 
-The host end is worth touching only once the guest end is right. `GPU=` picks
-the display device at create time:
+**On the Wayland desktop none of the above applies**, and this is worth saying
+plainly because it inverts the advice: Hyprland never opens an X server, so the
+X driver is irrelevant to it. It talks to KMS and EGL itself. What decides its
+speed is whether the host offered 3D at all — and when it did not, mesa hands it
+`llvmpipe` and every frame is composited by the CPU. Measured on a real guest:
+
+```
+  renderer       llvmpipe (LLVM 22.1.3, 128 bits) -- SOFTWARE, drawing on the CPU
+```
+
+That is what a slow Antiquity desktop is, and no guest-side change fixes it. It
+is the display device, so the fix is on the host.
+
+The host end. `GPU=` picks the display device at create time:
 
 ```sh
 GPU=ramfb-gl utm/utm-vm.sh create --target aarch64 --name Copal-gl
@@ -1339,8 +1351,10 @@ Display stack
 Accelerated. The drawing is happening on the host's GPU.
 ```
 
-It exits 0 when accelerated, 1 when the display works but draws on the CPU, and
-2 when it cannot tell yet — which normally means X has not run since boot, since
+It reports whichever session is running. On Wayland the compositor's own log
+gives the answer in one line, so the X driver and glamor rows are replaced by a
+`renderer` row; on X it reads `Xorg.0.log`. It exits 0 when accelerated, 1 when
+the display works but draws on the CPU, and 2 when it cannot tell yet — which normally means X has not run since boot, since
 the X half of the answer is read out of `Xorg.0.log` rather than from the
 running server. That also makes it answer over SSH and after the session has
 exited. It is in the app menu under **System → Display and acceleration**.
@@ -1349,6 +1363,26 @@ The last layer is the one that lies most convincingly: mesa can quietly resolve
 to `llvmpipe`, which is software rendering with a hardware-sounding name, while
 the kernel, the driver and glamor all report success. `mesa-demos` is installed
 in a guest so that `glxinfo` is there to catch it.
+
+### The two toasts on a fresh Antiquity desktop
+
+Both are expected, and one of them is now gone.
+
+**"Hyprland was started without start-hyprland."** `copal-session` used to launch
+the compositor bare, because upstream's launcher needs `XDG_RUNTIME_DIR` and
+nothing on this system set it — `start-hyprland` died with *XDG_RUNTIME_DIR is
+not set!* before it ever reached Hyprland. Now that the variable is set for the
+session, the launcher works and `copal-session` uses it.
+
+**"Your system does not have hyprland-qtutils installed."** This one stays, and
+there is nothing to install. Alpine packages no `hyprland-qtutils`: it has
+`hyprland-qt-support`, which is the QML style and not the binaries, and
+`hyprpolkitagent`, which is something else again — neither provides
+`hyprland-dialog`, the program the warning looks for. Nor can it be switched
+off; `misc:disable_hyprland_qtutils_check` postdates 0.54.3, which answers *no
+such option*. What it powers is the update screen and the donate screen, and
+Copal updates through `copal -U`. Stage 16 says so in its output so it does not
+read as a fault.
 
 Stage 4 reports the kernel half of the same answer at install time, when
 somebody is actually watching — the host's VirGL offer is knowable then, and it
