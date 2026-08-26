@@ -244,6 +244,49 @@ still ship a stale still. Check the output.
 
 ---
 
+## The guided release, and the human steps in it
+
+`make release` is automatic right up to two things a script cannot do on this
+Mac. Left implicit, they turn "just run make release" into a job that quietly
+produces a page with two empty slots and no explanation. `make walkthrough`
+runs the same pipeline and stops at each one:
+
+```sh
+make walkthrough
+```
+
+| Step | Who | What happens |
+|---|---|---|
+| Purge | you confirm | The only destructive step. Announced with exactly what it deletes; Enter proceeds, `s` skips. |
+| Build + record | automatic | `make release`, unattended — image, install recording, GIF, mp4, stills. |
+| **A — Accessibility** | **you, once ever** | The first `make utm-type` is denied to this terminal; the AppleScript opens in Script Editor. Read it, Cmd+R, approve. Silent from then on. |
+| **B — Hyprland shot** | **you** | Frame a desktop worth looking at and save `docs/media/antiquity-desktop.png`. |
+| **C — i3 shot** | **you** | `doas copal-desktop x11`, log back in, save `docs/media/i3-desktop.png`. |
+| Gallery | automatic | Regenerated from what is actually in `docs/media`. |
+
+Each screenshot step **checks that the file appeared** before carrying on. Skip
+one and it says so, and the page shows an empty slot — which is ugly and
+honest, rather than tidy and false.
+
+**Why B and C cannot be automated away.** The bounded capture stops after
+`MINUTES` minutes, long before a desktop exists; photographing one needs an
+install that actually finished, which is hours. `make screens` can then take
+it through QEMU's monitor with no window and no camera — but *which* workspace,
+*which* windows, menu up or not, is a judgement nobody has automated.
+
+### Recording the pipeline itself
+
+```sh
+make release-cast          # records `make release` on the Mac side
+```
+
+Note the cast is written to `/tmp`, not `build/`. The first attempt recorded
+into `build/` and `make release PURGE=1` deleted the file mid-recipe — purging
+`build/` is one of the steps being recorded. A recording of a process that
+destroys a directory cannot live in that directory.
+
+---
+
 ## Verifying before publishing or tagging
 
 ```sh

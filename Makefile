@@ -86,7 +86,7 @@ model_of = $(patsubst pizero%,zero%,$(1))
 .PHONY: alldebug build-all-debug imagedebug freshdebug purge \
 	help menu flow targets boards configure require-tools vm graphical check \
         fresh auto image refresh utm utm-x86 layout layout-auto answers answers-show lint space clean distclean \
-        all cache build-all release capture video screens verify gallery chain utm-type
+        all cache build-all release capture video screens verify gallery chain utm-type walkthrough release-cast
 
 help:
 	@printf '\nCopal Linux -- make targets\n\n'
@@ -414,6 +414,7 @@ MINUTES ?= 12
 # So a release build is given a neutral identity instead of this Mac's. It is
 # not a redaction after the fact -- the identity never reaches the image, so
 # there is nothing in the transcript to scrub and no way to forget.
+PURGE ?= 0
 CAPTURE_NAME  ?= Copal
 CAPTURE_EMAIL ?= copal@example.invalid
 
@@ -455,6 +456,32 @@ verify-boot:
 # maintained by hand -- so it can never list an image the last capture
 # renamed or never produced.
 gallery:
+	@python3 tools/build-gallery.py
+
+# The guided version of `make release`: runs the automatic parts and stops at
+# the two things a script cannot do on this Mac -- approving an Accessibility
+# prompt, and photographing a desktop. Both are announced, waited for, and
+# checked afterwards, so a skipped screenshot leaves an honest empty slot
+# rather than a silent one. See docs/AUTOMATION.md.
+walkthrough:
+	@tools/release-walkthrough.sh --minutes $(MINUTES) --level $(LEVEL)
+
+# Record the release pipeline ITSELF -- the Mac side, not the guest's install.
+#
+# The cast is written OUTSIDE build/, and that is not a preference: the first
+# attempt recorded into build/ and `make release PURGE=1` deleted the file
+# mid-recipe, because purging build/ is one of the steps being recorded. A
+# recording of a process that destroys the directory it is being written to
+# has to live somewhere that process does not touch.
+RELEASE_CAST ?= /tmp/copal-release-pipeline.cast
+release-cast:
+	@asciinema rec --overwrite \
+	    --command "make release PURGE=$(PURGE) MINUTES=$(MINUTES)" \
+	    "$(RELEASE_CAST)"
+	@agg --speed 6 --font-family "JetBrains Mono,Menlo,monospace" \
+	    --theme "181818,d0daed,121212,ff723e,a0675d,fccf8a,666c93,87704f,92bbcc,d0daed,5e5e5e,ff723e,a0675d,fccf8a,666c93,87704f,92bbcc,fce2ab" \
+	    "$(RELEASE_CAST)" docs/media/release-pipeline.gif
+	@printf '\033[36m==>\033[0m docs/media/release-pipeline.gif\n'
 	@python3 tools/build-gallery.py
 
 # ----------------------------------------------------------------- chain ---
