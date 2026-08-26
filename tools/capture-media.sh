@@ -33,6 +33,7 @@ LEVEL="f"
 MINUTES=12
 KEEP=0
 SPEED=8
+VIDEO=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -41,6 +42,7 @@ while [ $# -gt 0 ]; do
         --image)   IMAGE="$2"; shift 2 ;;
         --speed)   SPEED="$2"; shift 2 ;;
         --keep)    KEEP=1; shift ;;
+        --video)   VIDEO=1; shift ;;
         -h|--help) sed -n '2,30p' "$0"; exit 0 ;;
         *) echo "capture-media.sh: unknown argument '$1'" >&2; exit 2 ;;
     esac
@@ -141,6 +143,46 @@ if grep -q 'media/install-cast.svg' docs/index.html; then
 fi
 
 info "Rendered: $OUT/install-cast.gif ($(du -h "$OUT/install-cast.gif" | cut -f1))"
+
+# --- the video, when asked for -------------------------------------------
+#
+# A GIF is the right thing for a web page: it plays inline, needs no player
+# and no controls, and 364 kB is nothing. A video is the right thing for
+# everywhere else -- a release page, a talk, anything that wants scrubbing,
+# pausing, or a length a GIF would be absurd at.
+#
+# Rendered FROM THE GIF rather than from a second agg pass, because agg only
+# emits GIF and re-rendering would be a second interpretation of the same
+# cast. Going through the GIF means the video is provably the same frames.
+# The colour survives: this is a palette-limited source, so the encode uses
+# yuv420p for players that insist on it and keeps the palette otherwise.
+if [ "$VIDEO" = 1 ]; then
+    if ! command -v ffmpeg >/dev/null 2>&1; then
+        warn "ffmpeg is not installed -- no video (brew install ffmpeg)"
+    else
+        info "Encoding the video"
+        # -vf pad: H.264 needs even dimensions and a terminal render is
+        # whatever the font produced. Padding rather than scaling keeps the
+        # text pixel-exact instead of resampling it into mush.
+        ffmpeg -y -loglevel error \
+            -i "$OUT/install-cast.gif" \
+            -movflags +faststart -pix_fmt yuv420p \
+            -vf "pad=ceil(iw/2)*2:ceil(ih/2)*2" \
+            -c:v libx264 -crf 20 -preset slow \
+            "$OUT/install.mp4" \
+          && info "Rendered: $OUT/install.mp4 ($(du -h "$OUT/install.mp4" | cut -f1))" \
+          || warn "ffmpeg could not encode the video"
+
+        # webm alongside, because it is smaller and every browser that
+        # matters plays one of the two.
+        ffmpeg -y -loglevel error \
+            -i "$OUT/install-cast.gif" \
+            -c:v libvpx-vp9 -crf 34 -b:v 0 \
+            "$OUT/install.webm" >/dev/null 2>&1 \
+          && info "Rendered: $OUT/install.webm ($(du -h "$OUT/install.webm" | cut -f1))" \
+          || true
+    fi
+fi
 
 # --- the still, cut from the same recording ------------------------------
 #

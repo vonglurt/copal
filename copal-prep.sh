@@ -719,6 +719,35 @@ esac
 # UTC, and ISO 8601, because this gets compared against timestamps written on
 # the machine itself and a local time with no offset cannot be.
 BUILD_DATE="${BUILD_DATE:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
+
+# WHICH SOURCE BUILT IT. BUILD_ID answers "is this the image I built an hour
+# ago"; this answers the different and more useful question "what was the
+# installer when it did". Without it, an image and a checkout can disagree by
+# a hundred commits and nothing on either side can tell.
+#
+# Three fields, because they fail differently:
+#   REV       the exact commit, for looking the source up later
+#   DESCRIBE  the nearest tag, which is what a person calls a version
+#   DIRTY     whether the tree had uncommitted edits at build time -- the
+#             one field that makes REV a lie when it is set, and therefore
+#             the one worth recording rather than quietly dropping
+#
+# Every one degrades to "(not a git checkout)" rather than failing: this
+# script is meant to work from a tarball with no .git at all.
+_git_here() { git -C "$(dirname "$0")" "$@" 2>/dev/null; }
+if _git_here rev-parse --git-dir >/dev/null; then
+    BUILD_GIT_REV="${BUILD_GIT_REV:-$(_git_here rev-parse HEAD)}"
+    BUILD_GIT_DESCRIBE="${BUILD_GIT_DESCRIBE:-$(_git_here describe --tags --always --dirty 2>/dev/null || echo "$BUILD_GIT_REV")}"
+    if [ -n "$(_git_here status --porcelain 2>/dev/null)" ]; then
+        BUILD_GIT_DIRTY=yes
+    else
+        BUILD_GIT_DIRTY=no
+    fi
+else
+    BUILD_GIT_REV="(not a git checkout)"
+    BUILD_GIT_DESCRIBE="(not a git checkout)"
+    BUILD_GIT_DIRTY="unknown"
+fi
 # An explicit ARCH wins, but only silently when it agrees with MODEL. A board
 # and an architecture that contradict each other is a mistake worth stopping
 # for -- it is the exact mistake that produced the rainbow-screen hang.
@@ -2130,8 +2159,12 @@ COPAL_BUILD_TARGET="${MODEL:-$ARCH}"
 COPAL_BUILD_ARCH="${ARCH}"
 COPAL_ALPINE_VER="${ALPINE_VER}"
 COPAL_PAYLOAD_FETCHED="${PAYLOAD_DATE}"
+COPAL_GIT_REV="${BUILD_GIT_REV}"
+COPAL_GIT_DESCRIBE="${BUILD_GIT_DESCRIBE}"
+COPAL_GIT_DIRTY="${BUILD_GIT_DIRTY}"
 BUILDINFO
 info "Build ${BUILD_ID} -- ${BUILD_DATE}, Alpine ${ALPINE_VER}, payload ${PAYLOAD_DATE}"
+info "Source  ${BUILD_GIT_DESCRIBE}$([ "$BUILD_GIT_DIRTY" = yes ] && printf ' (UNCOMMITTED CHANGES)')"
 
 # The debug marker, on the FAT partition where stage 1 will find it. A file
 # rather than a line in copal.conf, so that deleting it is the whole of

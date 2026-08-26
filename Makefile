@@ -86,7 +86,7 @@ model_of = $(patsubst pizero%,zero%,$(1))
 .PHONY: alldebug build-all-debug imagedebug freshdebug purge \
 	help menu flow targets boards configure require-tools vm graphical check \
         fresh auto image refresh utm utm-x86 layout layout-auto answers answers-show lint space clean distclean \
-        all cache build-all release capture
+        all cache build-all release capture video screens verify gallery
 
 help:
 	@printf '\nCopal Linux -- make targets\n\n'
@@ -406,6 +406,43 @@ CAPTURE_EMAIL ?= copal@example.invalid
 capture:
 	@tools/capture-media.sh --image $(IMG) --level $(LEVEL) --minutes $(MINUTES)
 
+# The same recording, encoded as video as well as GIF. A GIF belongs on the
+# web page -- it plays inline with no player and no controls -- and a video
+# belongs everywhere else: a release page, a talk, anything that wants
+# scrubbing or a length a GIF would be absurd at. Both come out of one cast,
+# so they cannot show different installs.
+video:
+	@tools/capture-media.sh --image $(IMG) --level $(LEVEL) --minutes $(MINUTES) --video
+
+# Real screenshots of the graphical console, taken by QEMU's own monitor
+# rather than by a person with a camera. The serial console is text and a
+# compositor does not draw to it, so this is the only automatic route to a
+# picture of the desktop -- see tools/capture-screens.sh.
+#
+# Wants an image with a desktop ALREADY INSTALLED: it boots one and
+# photographs what comes up, which is not the same job as installing it.
+SHOTS    ?= 6
+SHOTWAIT ?= 150
+screens:
+	@tools/capture-screens.sh --image $(IMG) --out docs/media \
+	    --shots $(SHOTS) --wait $(SHOTWAIT)
+
+# Is this image the one this checkout would build, and is this checkout the
+# newest there is? Six questions nobody can answer from memory. --boot also
+# runs it, which is the difference between "an image exists" and "a system
+# was built".
+verify:
+	@tools/verify-build.sh --image $(IMG)
+
+verify-boot:
+	@tools/verify-build.sh --image $(IMG) --boot
+
+# The gallery, generated from whatever docs/media actually holds rather than
+# maintained by hand -- so it can never list an image the last capture
+# renamed or never produced.
+gallery:
+	@python3 tools/build-gallery.py
+
 # A CLEAN IMAGE, and it has to be clean rather than merely current: the guided
 # screen is the first thing the page shows, and it only appears on a machine
 # that has never been installed -- no apkovl, root still a tmpfs. Capturing
@@ -421,7 +458,9 @@ release: | require-tools $(BUILDDIR)
 	@rm -f $(IMG)
 	@CFG_GIT_NAME='$(CAPTURE_NAME)' CFG_GIT_EMAIL='$(CAPTURE_EMAIL)' \
 	    $(MAKE) --no-print-directory auto MODEL=$(MODEL)
-	@$(MAKE) --no-print-directory capture
+	@$(MAKE) --no-print-directory verify
+	@$(MAKE) --no-print-directory video
+	@$(MAKE) --no-print-directory gallery
 	@printf '\033[36m==>\033[0m Media regenerated in docs/media. Review, then commit.\n'
 
 # Collect the answers an unattended install needs -- identity, login name, and
