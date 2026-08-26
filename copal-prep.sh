@@ -7663,6 +7663,23 @@ count()    { rows "$1" "$2" | grep -c . || true; }
 : > "$CSV"
 
 # ----- top level -----
+# THE KEY LIST FIRST, and at the TOP LEVEL rather than three entries down
+# inside System, where it used to be. This is a desktop with no menus and no
+# icons; the list of what the keys do is the single most useful thing in here
+# and it was the hardest to find. Omarchy puts its keybindings under Learn,
+# near the top, for the same reason.
+#
+# WHICH LIST, asked of the session. Stage 4 writes the i3 one and stage 16
+# writes the Antiquity one, and offering the wrong one is worse than offering
+# none -- somebody who gets a list they believe and that does not match their
+# desktop is further from working than somebody who got nothing.
+if wayland && [ -f /usr/local/share/copal/guides/antiquity-keys.txt ]; then
+    out "Key bindings,$TERM_EMU -e copal-guide antiquity-keys"
+elif [ -f "$HOME/.config/i3/keys.txt" ]; then
+    out "Key bindings,$TERM_EMU -e less $HOME/.config/i3/keys.txt"
+elif [ -f /usr/local/share/copal/guides/i3-keys.txt ]; then
+    out "Key bindings,$TERM_EMU -e copal-guide i3-keys"
+fi
 out "Run a program...,dmenu_run"
 out "Terminal,$TERM_EMU"
 have copal-center && out "Copal Center,copal-center" || true
@@ -7790,11 +7807,6 @@ have alsamixer && out "Volume,$TERM_EMU -e alsamixer" || true
 out "Logs,$TERM_EMU -e sh -c 'copal-logs; echo; echo Press Enter to close; read x'"
 out "Setup and stages,$TERM_EMU -e sh -c 'copal; echo; echo Press Enter to close; read x'"
 out "Update Copal,$TERM_EMU -e sh -c 'copal -U; echo; echo Press Enter to close; read x'"
-# The key list lives in the i3 config directory on both desktops -- stage 4
-# writes it and stage 16 does not write a second one -- so it is offered
-# wherever it exists rather than wherever i3 is.
-[ -f "$HOME/.config/i3/keys.txt" ] \
-    && out "Key bindings,$TERM_EMU -e less $HOME/.config/i3/keys.txt" || true
 have copal-gpu && out "Display and acceleration,$TERM_EMU -e sh -c 'copal-gpu; echo; echo Press Enter to close; read x'" || true
 
 # ----- Session -----
@@ -10957,6 +10969,10 @@ bind = $mainMod SHIFT, N, exec, $terminal -e sh -c 'command -v nvim >/dev/null &
 # The wallpaper picker, with thumbnails. Also in the menu under Style, and on
 # the same chord as stage 4's i3 config so the two desktops agree.
 bind = $mainMod SHIFT, W, exec, copal-wallpaper --pick
+# THE KEY LIST, on the same two keys stage 4's i3 config uses. It opens the
+# ANTIQUITY list, not i3's: same modifier, almost nothing else the same.
+bind = $mainMod, slash, exec, $terminal -e copal-guide antiquity-keys
+bind = $mainMod, F1,    exec, $terminal -e copal-guide antiquity-keys
 
 # Copal's additions, so both desktops end the day the same way: copal-halt
 # asks, closes the session, syncs, powers down. The keyboard power key
@@ -11050,6 +11066,110 @@ layerrule = blur on, ignore_alpha 0.19, match:namespace diinki_celestialantiquit
 # listed so the file does not have to know which shell started.
 layerrule = blur on, ignore_alpha 0.19, match:namespace waybar
 ANTIQHYPR
+    # ----------------------------------------------------------------------
+    # THE KEY LIST FOR THIS DESKTOP, which did not exist.
+    #
+    # Stage 4 writes ~/.config/i3/keys.txt and binds Super+/ to it, and that
+    # file is the i3 key list. On the Antiquity desktop it is the WRONG list:
+    # the modifier is the same and almost nothing else is -- Super+Q closes a
+    # window here and quits nothing there, Super+E is the file manager rather
+    # than exit, the resize mode does not exist, and Alt+Tab does. Somebody
+    # pressing Super+/ on this desktop and getting the i3 list is worse off
+    # than somebody who found no list at all, because now they have one they
+    # believe.
+    #
+    # So: a second list, for this desktop, bound to the same key. Written from
+    # the binds in the file above -- if you add one there, add it here.
+    say "Writing the Antiquity key list"
+    mkdir -p /usr/local/share/copal/guides
+    cat > /usr/local/share/copal/guides/antiquity-keys.txt <<'GUIDE'
+ ======================================================================
+   THE ANTIQUITY DESKTOP -- key bindings
+ ======================================================================
+                                                     press q to close
+
+ "Super" is the Windows key, and Caps Lock is a second one -- see the
+ note at the end if this machine is a VM on a Mac.
+
+ Show this list again:   Super + /      or   copal-guide antiquity-keys
+ The menu:               Super + Z      or the button in the top-left
+
+ START SOMETHING
+   Super + Space        run a program. Super + D does the same.
+   Super + Return       a terminal
+   Super + E            the file manager
+   Super + Z            the menu -- everything installed, sorted, plus an
+                        Install branch for everything that is not
+   Super + Shift + N    the editor (nvim)
+   Super + Shift + M    music (cmus, or mpv on ~/Music)
+   Super + Shift + W    the wallpaper picker, with thumbnails
+   Super + Ctrl + A     volume (alsamixer)
+   Super + Ctrl + T     what the machine is doing (btop, or htop)
+
+ COPY AND PASTE -- THE SAME KEYS EVERYWHERE, TERMINAL INCLUDED
+   Super + C            copy
+   Super + X            cut
+   Super + V            paste
+   Super + Ctrl + V     the clipboard history -- the last hundred things
+
+ WINDOWS
+   Super + Q            close this window
+   Alt + Tab            switch window   (Super + Tab does the same)
+   Alt + Shift + Tab    switch backwards
+   Super + arrows       move focus
+   Super + H J K L      move focus, on the home row
+   Super + Shift +      move the WINDOW rather than the focus
+     arrows or HJKL
+   Super + Ctrl +       resize. Hold it down; there is no resize mode
+     arrows             here the way there is in i3.
+   Super + F            fullscreen
+   Super + Shift + Space  float this window / put it back
+
+ WORKSPACES
+   Super + 1 .. 0       go to workspace 1 to 10
+   Super + Shift + 1..0 send this window there
+   Super + scroll       next / previous workspace
+
+   The numbers along the top-left of the bar are these. All five of the
+   first five are shown whether or not anything is on them.
+
+ THE BAR AND THE SCREEN
+   Super + B            hide / show the bar
+   Super + Shift + S    screenshot
+   Super + Shift + W    change the wallpaper
+
+ ENDING THINGS
+   Super + Shift + P    power down (asks first)
+   Super + Shift + Del  reboot
+   Super + Shift + E    log out of the desktop
+
+ IF THIS IS A VM ON A MAC
+   The Mac's Command key arrives here as Super, so every binding above is
+   also a macOS shortcut -- and three of them end the session before this
+   machine ever sees the key: Cmd+W closes the VM window, Cmd+Q quits UTM,
+   Cmd+Shift+Q logs out of macOS.
+
+   Press CAPS LOCK instead of Super. It is a second Super here and macOS
+   reserves nothing on it.
+
+   Failing that, EVERY binding above has a second one, by two rules:
+
+       WHERE SUPER IS EATEN, PRESS CTRL+ALT INSTEAD.
+       WHERE THE BINDING ALSO HAS CTRL IN IT, PRESS CTRL+ALT+SHIFT.
+
+   So Super+Space is Ctrl+Alt+Space, Super+Shift+Q is Ctrl+Alt+Shift+Q,
+   and Super+Ctrl+V is Ctrl+Alt+Shift+V. The launcher also answers to
+   plain Alt+Space and plain Ctrl+Space, because it is reached more often
+   than anything else.
+
+ WHERE THINGS ARE
+   ~/.config/hypr/hyprland.conf    these bindings
+   ~/.config/waybar/config         what is on the bar
+   ~/.config/wofi/style.css        the launcher and the menu
+   copal-guide widgets             how to change the bar
+   copal-guide wallpapers          how to change the wallpaper
+GUIDE
+
     # The file manager the theme wants, if this machine has it; the one stage
     # 4 installed otherwise. Substituted here, not left for Hyprland to
     # expand, for the same reason as stage 4's TERMEMU_PLACEHOLDER.
