@@ -6141,6 +6141,74 @@ SESSION
     note "copal-session -- starts whichever desktop /etc/copal/session names"
 
     # ------------------------------------------------------------------
+    # XDG_RUNTIME_DIR, for the LOGIN SESSION rather than for one launcher.
+    #
+    # copal-session above creates this directory before it starts Hyprland,
+    # and for a long time that looked like enough. It is not, and the way you
+    # find out is this:
+    #
+    #     $ start-hyprland
+    #     ERR from start-hyprland ]: failed to obtain hyprland version string
+    #     CRIT ]: Critical error thrown: XDG_RUNTIME_DIR is not set!
+    #     terminate called after throwing an instance of 'std::runtime_error'
+    #
+    # start-hyprland is upstream's launcher, shipped in Alpine's hyprland
+    # package, sitting on PATH -- and it tab-completes from "start" alongside
+    # startx, so it is the FIRST thing a person finds. It knows nothing about
+    # copal-session. Neither does bare `Hyprland`, nor `wl-paste` over ssh,
+    # nor `hyprctl`. Both errors above are the same root cause, incidentally:
+    # hyprctl looks for the compositor's socket under $XDG_RUNTIME_DIR/hypr,
+    # so with the variable unset it cannot find an instance either, and
+    # reports that as bad JSON.
+    #
+    # The mistake was scoping the fix to the program we happened to write.
+    # This variable belongs to the session: on a systemd or elogind machine,
+    # logind creates /run/user/<uid> at login and exports it, and everything
+    # downstream simply assumes it. Copal carries seatd instead -- seatd
+    # brokers the DRM and input devices, which is the other half of what
+    # logind does, and it does not do this half. So nothing sets it, and
+    # every Wayland program on the box fails in its own dialect.
+    #
+    # Setting it here fixes all of them at once, including the ones that do
+    # not exist yet. copal-session keeps its own copy of the ceremony: this
+    # file is only read by LOGIN shells, and defence in depth costs six lines.
+    cat > /etc/profile.d/copal-xdg-runtime.sh <<'XDGENV'
+# Written by copal-init.sh. See the essay in configure_desktop_autostart().
+#
+# Wayland puts its socket here, and wl-clipboard, hyprctl, wofi, mako and the
+# portal all find each other through it. logind would create /run/user/<uid>;
+# Copal has seatd, which does not, so a private directory under /tmp does the
+# same job.
+if [ -z "${XDG_RUNTIME_DIR:-}" ]; then
+    XDG_RUNTIME_DIR="/tmp/xdg-runtime-$(id -u)"
+    export XDG_RUNTIME_DIR
+fi
+
+# Created, not merely named -- every program above expects it to exist.
+[ -d "$XDG_RUNTIME_DIR" ] || mkdir -p "$XDG_RUNTIME_DIR" 2>/dev/null || true
+
+# And CHECKED, not trusted. /tmp is world-writable and this path is
+# predictable, so somebody else's account can create /tmp/xdg-runtime-1000
+# before you log in and then read every clipboard selection and keystroke
+# that goes through the socket you put in it. A directory you do not own is
+# exactly what this variable exists to prevent, so refuse it.
+#
+# A warning and an unset, not an exit: this file runs on EVERY login,
+# including the one you need in order to fix the problem. A shell you cannot
+# get into is worse than a Wayland session that will not start.
+if [ -d "$XDG_RUNTIME_DIR" ] && [ -O "$XDG_RUNTIME_DIR" ]; then
+    chmod 700 "$XDG_RUNTIME_DIR" 2>/dev/null || true
+else
+    echo "warning: XDG_RUNTIME_DIR ($XDG_RUNTIME_DIR) is missing, or is not yours." >&2
+    echo "  Wayland programs will refuse to start until that is true. Check with:" >&2
+    echo "      ls -ld $XDG_RUNTIME_DIR" >&2
+    unset XDG_RUNTIME_DIR
+fi
+XDGENV
+    chmod 0644 /etc/profile.d/copal-xdg-runtime.sh
+    note "XDG_RUNTIME_DIR is set at login -- start-hyprland and wl-paste work too"
+
+    # ------------------------------------------------------------------
     # copal-desktop: the privileged half of the switch.
     #
     # WHY THIS IS A SEPARATE PROGRAM. copal-session runs as the admin user --
@@ -9249,7 +9317,26 @@ CURSORENV
     re-running stage 4) brings it back. The two cannot run at once -- one
     seat, one compositor -- which is why it is a switch and not a menu.
 
-    Super+Return terminal (kitty)   Super+d      launcher
+    THE BAR IS WAYBAR, NOT QUICKSHELL. The Antiquity theme's bar, radial
+    taskbar, widgets and launcher are 99 QML files for quickshell, and no
+    Alpine repository packages quickshell -- so without a stand-in this
+    desktop is the wallpaper and your windows, with no clock, no workspace
+    indicator and no list of what is open. waybar fills that in, in the
+    theme's own helios palette, with a real window list on the left. The day
+    quickshell is packaged, copal-bar prefers it and nothing here changes.
+
+        Super+b            hide and show the bar
+        waybar -l debug    why the bar did not appear, if it did not
+
+    COPAL-SESSION, NOT START-HYPRLAND. Alpine's hyprland package puts its own
+    launcher on PATH, and it tab-completes from 'start' next to startx, so it
+    is easy to find first. It starts the compositor with no session bus, so
+    notifications, the portal and the polkit agent have nothing to talk over.
+    copal-session wraps it in dbus-run-session, which is the difference.
+    (It will no longer FAIL, at least: XDG_RUNTIME_DIR is now set for every
+    login shell, which is what start-hyprland used to die without.)
+
+    Super+Return terminal (kitty)   Super+d/Space launcher
     Super+e      file manager       Super+Shift+s screenshot region
     Super+q      close window       Super+f      fullscreen
     Super+1..9,0 workspaces         Super+Shift+p power down (copal-halt)

@@ -1054,6 +1054,37 @@ The order to try things in, cheapest first:
    stop it for good, `doas rm /etc/copal/autostart-desktop`. If X fails while
    autostart is on you land at a shell on `tty1` rather than a black screen:
    the block runs `startx` and lets it fail, and `/var/log/Xorg.0.log` says why.
+10. **Start the desktop with `copal-session`, not with `start-hyprland`.** Both
+    are on `PATH` and both tab-complete from `start`, which is how people find
+    the wrong one. `copal-session` reads `/etc/copal/session` and does two
+    things upstream's launcher does not: it wraps the compositor in
+    `dbus-run-session`, so `mako`, the portal and the polkit agent can find each
+    other, and it creates `XDG_RUNTIME_DIR`.
+
+    That second one used to be the difference between a session and this:
+
+    ```
+    ERR from start-hyprland ]: failed to obtain hyprland version string (bad json)
+    CRIT ]: Critical error thrown: XDG_RUNTIME_DIR is not set!
+    ```
+
+    Both lines are the same root cause. On a systemd or elogind machine,
+    `logind` creates `/run/user/<uid>` at login and exports that variable;
+    Copal carries **seatd**, which brokers the DRM and input devices — the
+    other half of what `logind` does — and not this half. So nothing set it,
+    and `hyprctl` could not find the compositor's socket under
+    `$XDG_RUNTIME_DIR/hypr` either, which it reported as bad JSON.
+
+    It is now set for **every login shell** in
+    `/etc/profile.d/copal-xdg-runtime.sh`, which fixes `start-hyprland`, bare
+    `Hyprland`, `wl-copy` / `wl-paste` (and therefore the unified clipboard),
+    `wofi` and `hyprctl` in one place. The directory is `/tmp/xdg-runtime-<uid>`,
+    created 0700, and its ownership is *checked* rather than assumed — `/tmp` is
+    world-writable and that path is predictable, so a directory you do not own is
+    refused rather than used. `copal-session` keeps its own copy of the same
+    ceremony, because `profile.d` is only read by login shells.
+
+    `copal-session` is still the front door, for the `dbus-run-session` half.
 
 
 ### Cleaning up — disk space, and the files that carry your name
