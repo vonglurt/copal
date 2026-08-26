@@ -39,6 +39,7 @@
 #   utm/utm-vm.sh layout                         # arrange the VM windows on screen
 #   utm/utm-vm.sh layout --autotype              # ...and log in and start the install
 #   utm/utm-vm.sh layout --no-start              # arrange only; do not start VMs
+#   utm/utm-vm.sh layout --probe                 # can the consoles be read? moves nothing
 #
 set -euo pipefail
 
@@ -60,6 +61,13 @@ UTM_PREFS="$HOME/Library/Containers/com.utmapp.UTM/Data/Library/Preferences/com.
 # regenerated from the current screen size on every run and is therefore
 # disposable -- make purge is free to take it.
 UTM_LAYOUT_SCRIPT="${BUILDDIR:-build}/copal-utm-layout.applescript"
+# --autotype writes to its OWN file, and this separation is not tidiness. When
+# macOS refuses this terminal the script is opened in Script Editor for the
+# person to run by hand -- and Script Editor is then holding a path, not a
+# copy. A plain "make layout" afterwards would rewrite that same path with the
+# version that does no typing, and the Cmd+R that follows would place the
+# windows and silently type nothing. Two names, two files, no surprise.
+UTM_LAYOUT_AUTO_SCRIPT="${BUILDDIR:-build}/copal-utm-layout-autotype.applescript"
 
 ACTION=""
 TARGET=""
@@ -79,6 +87,11 @@ NO_SHARE=0
 # install is an hour of work, and the two should not share one command by
 # accident.
 AUTOTYPE=0
+# layout only: --probe answers the one question the autotype depends on --
+# whether UTM publishes its terminal text to accessibility on THIS Mac, with
+# THIS version of UTM. It reads and reports; it moves nothing and types
+# nothing. Everything else here is guesswork until this has been run once.
+PROBE=0
 INIT_PATH="/media/vda1/copal-init.sh"
 # layout starts the machines before arranging them. --no-start skips that, for
 # rearranging windows that are already up.
@@ -95,6 +108,87 @@ ACTION="$1"; shift
 # the interface when the direct route is refused: someone is going to read it
 # before granting it control of their desktop. The header says what it does,
 # and the geometry is derived from the real screen size rather than baked in.
+# The probe. Deliberately tiny and deliberately read-only, because its whole
+# job is to be trustworthy enough to run without reading it closely: it lists
+# UTM's windows, walks each one's accessibility tree, and reports how many
+# elements carried text and what the last of that text looked like. It sets
+# nothing, clicks nothing and types nothing.
+_probe_script() {
+    cat <<'APPLESCRIPT'
+-- Can the Copal serial consoles be read? Written by utm/utm-vm.sh layout --probe.
+--
+-- READ-ONLY. It gets the name of every UTM window and the text of the
+-- elements inside them. It does not move a window, click, type, or touch any
+-- other application. Cmd+R to run; the answer appears in the Result pane.
+--
+-- WHY IT EXISTS: the autotype waits for "login:" to appear in the console
+-- before typing at it. That only works if UTM publishes the terminal's text
+-- to accessibility -- which some versions do and some do not. This says
+-- which, in about a second, instead of a ten-minute wait finding out.
+
+on walk(el, depth, counter)
+	if depth > 7 then return ""
+	set acc to ""
+	tell application "System Events"
+		try
+			set v to value of el
+			if class of v is text and v is not "" then
+				set acc to acc & v & " "
+			end if
+		end try
+		try
+			set kids to UI elements of el
+		on error
+			set kids to {}
+		end try
+	end tell
+	repeat with c in kids
+		set acc to acc & my walk(c, depth + 1, counter)
+	end repeat
+	return acc
+end walk
+
+set out to {}
+tell application "System Events"
+	if not (exists process "UTM") then return "UTM is not running -- start a machine first."
+	tell process "UTM" to set names to name of every window
+end tell
+if (count of names) is 0 then return "UTM is running but has no windows open."
+
+repeat with n in names
+	set t0 to current date
+	set winRef to missing value
+	tell application "System Events" to tell process "UTM"
+		repeat with w in windows
+			if name of w is n then
+				set winRef to w
+				exit repeat
+			end if
+		end repeat
+	end tell
+	set txt to ""
+	if winRef is not missing value then set txt to my walk(winRef, 0, 0)
+	set secs to (current date) - t0
+	set verdict to "NO TEXT -- this console cannot be watched"
+	if (count of characters of txt) > 0 then
+		-- Text on the LEFT of every "&". A number on the left makes a LIST,
+		-- not a string: 5 & " chars" is {5, " chars"}, which prints as
+		-- "5,  chars" and quietly ruins the report.
+		set verdict to "readable: " & (count of characters of txt) & " characters in " & secs & "s"
+		if txt contains "login:" then set verdict to verdict & "; the login prompt IS visible"
+	end if
+	set tail to txt
+	if (count of characters of tail) > 300 then
+		set tail to text -300 thru -1 of tail
+	end if
+	set end of out to (n & return & "    " & verdict & return & "    last of it: " & tail)
+end repeat
+
+set AppleScript's text item delimiters to return
+return (out as text)
+APPLESCRIPT
+}
+
 _layout_script() {
     local _w="$1" _h="$2" _autotype="${3:-0}" _initpath="${4:-/media/vda1/copal-init.sh}"
     cat <<APPLESCRIPT
@@ -168,9 +262,150 @@ end tell
 -- answers.txt, which is far steadier than timing keystrokes against a stage
 -- that can take twenty minutes on the emulated x86_64 machine.
 --
--- Keystrokes go to whichever window is frontmost, so each console is raised
--- first and given a moment to actually come forward.
-on driveConsole(winName, initPath)
+-- Each thing typed waits for the prompt that reads it -- the login prompt,
+-- the password prompt, the installer's first question -- rather than for a
+-- number of seconds someone guessed. See waitFor above for what happens when
+-- the console cannot be read at all.
+--
+-- THE RULE THAT MATTERS, and it is a safety rule rather than a nicety:
+-- keystrokes go to whichever window is frontmost AT THE MOMENT THEY ARE SENT,
+-- and these waits are long -- ten minutes for a login prompt, five for the
+-- installer's question. Whoever started this has every right to go and use
+-- their Mac in the meantime. So the window is raised and proved frontmost
+-- immediately before every single keystroke, never once at the start, and if
+-- it cannot be proved the console is abandoned with nothing typed.
+--
+-- And a wait that simply runs out types NOTHING. The old behaviour -- wait,
+-- give up, type anyway -- is how "root" ends up in somebody's browser ten
+-- minutes after they stopped watching. A prompt that never came is a reason
+-- to stop and say so, not a reason to type into the dark.
+-- ------------------------------------------------ reading the console ---
+-- WHY READ AT ALL: the machines do not boot at the same speed. The aarch64
+-- one reaches a login prompt in seconds; the emulated x86_64 one can take
+-- minutes, and how many minutes depends on what else this Mac is doing. Any
+-- fixed delay is therefore either a wait that is too long every single time
+-- or a wait that is too short on the day it matters, and a keystroke sent
+-- early is not queued -- it lands in the boot messages scrolling past and is
+-- gone. So: watch the window, and type when the prompt is actually there.
+--
+-- WHAT IS READ: the accessibility text of the serial console window, the
+-- same thing VoiceOver would say. Nothing is read from disk and nothing
+-- leaves this Mac.
+--
+-- WHEN IT CANNOT BE READ: UTM is free to draw its terminal in a way that
+-- exposes no text to accessibility, and older versions do. That is not
+-- treated as an error -- grabText simply comes back empty, waitFor says so,
+-- and the typing falls back to the fixed delays this script used before.
+-- Slower and blinder, but it still works.
+
+-- Walk a window's UI elements and collect whatever text they carry. Depth
+-- limited because the tree is not ours and need not be shallow; every access
+-- is wrapped because elements come and go while a terminal is redrawing, and
+-- a vanished element throws rather than returning missing value.
+on grabText(el, depth)
+	if depth > 7 then return ""
+	set acc to ""
+	-- The explicit timeout is the point: an AppleEvent gives up after two
+	-- minutes by default, and a terminal in the middle of a redraw can be
+	-- slow to answer. Timing out here would abort the whole run for a reason
+	-- that has nothing to do with the machine being watched.
+	with timeout of 600 seconds
+		tell application "System Events"
+			try
+				set v to value of el
+				if class of v is text then set acc to acc & v & " "
+			end try
+			try
+				set kids to UI elements of el
+			on error
+				set kids to {}
+			end try
+		end tell
+	end timeout
+	repeat with c in kids
+		set acc to acc & my grabText(c, depth + 1)
+	end repeat
+	return acc
+end grabText
+
+on paneText(winName)
+	set acc to ""
+	tell application "System Events" to tell process "UTM"
+		repeat with w in windows
+			if name of w is winName then
+				try
+					set acc to my grabText(w, 0)
+				end try
+				exit repeat
+			end if
+		end repeat
+	end tell
+	return acc
+end paneText
+
+-- Poll until the console shows "needle", and say which of the three things
+-- happened: the text arrived, the wait ran out, or there was never any text
+-- to read in the first place. The caller does something different for each,
+-- which is why this returns a word and not a boolean.
+--
+-- "contains" is case-insensitive in AppleScript, so "login:" also matches
+-- "Login:" -- which is what a getty prints on some of these images.
+on waitFor(winName, needle, timeoutSecs)
+	set sawAnyText to false
+	set emptyReads to 0
+	set startedAt to current date
+	set deadline to startedAt + timeoutSecs
+	log "waiting for \"" & needle & "\" on " & winName & " (up to " & timeoutSecs & "s)"
+	repeat while (current date) < deadline
+		-- Time the read. A window whose text takes seconds to walk cannot be
+		-- polled once a second, and the loop would then be a slow, silent
+		-- crawl that looks exactly like a hang.
+		set t0 to current date
+		set t to my paneText(winName)
+		set cost to (current date) - t0
+		if t is "" then
+			-- THE IMPORTANT BAIL-OUT. A console that exposes no text at all
+			-- reads empty instantly, every time, so nothing above ever fires
+			-- and the loop would sit here for the full timeout before
+			-- admitting it was never going to see anything. Five empty reads
+			-- is enough to know: UTM is not publishing this terminal to
+			-- accessibility, and the answer is to say so in five seconds
+			-- rather than ten minutes.
+			set emptyReads to emptyReads + 1
+			if emptyReads is 5 and not sawAnyText then
+				log "  nothing readable here after 5 tries -- this console cannot be watched"
+				return "unreadable"
+			end if
+		else
+			set sawAnyText to true
+			if t contains needle then
+				log "  found \"" & needle & "\" after " & ((current date) - startedAt) & "s"
+				return "found"
+			end if
+		end if
+		if cost > 5 and not sawAnyText then
+			log "  reading this console takes " & cost & "s -- too slow to watch"
+			return "unreadable"
+		end if
+		-- A heartbeat, so the Script Editor log shows the difference between
+		-- waiting and wedged.
+		set waited to (current date) - startedAt
+		if waited > 0 and waited mod 10 is 0 then log "  still waiting (" & waited & "s)"
+		delay 1
+	end repeat
+	if sawAnyText then
+		log "  gave up after " & timeoutSecs & "s"
+		return "timeout"
+	end if
+	log "  no readable text on this console at all"
+	return "unreadable"
+end waitFor
+
+-- Put the named console in front and PROVE it is there, because everything
+-- typed afterwards depends on it and nothing later can detect a miss.
+-- Returns false rather than raising: a console that cannot be focused is a
+-- console that gets left alone, which is the safe outcome.
+on focusConsole(winName)
 	tell application "System Events" to tell process "UTM"
 		set matched to false
 		set wpos to {0, 0}
@@ -184,7 +419,7 @@ on driveConsole(winName, initPath)
 				exit repeat
 			end if
 		end repeat
-		if not matched then return "  not found: " & winName
+		if not matched then return false
 		set frontmost to true
 		delay 1
 
@@ -197,49 +432,137 @@ on driveConsole(winName, initPath)
 		-- Safe HERE because these are the serial windows: a serial console is
 		-- a text view and UTM does not capture the pointer over it. The same
 		-- click into a graphical VM display would grab the mouse and need
-		-- Ctrl-Option to get it back, which is why nothing below goes near
-		-- the graphical windows.
+		-- Ctrl-Option to get it back, which is why nothing here goes near the
+		-- graphical windows.
 		--
 		-- 100 points below the TOP of the window, not a fraction of its
 		-- height. The title bar is about 28 points and UTM puts a toolbar
 		-- under it; 100 clears both and lands in the text view itself,
 		-- whatever size the window is. A fraction of the height moves with
 		-- the window and can land on a control.
+		--
+		-- Wrapped because "click at" is the one step here that can be refused
+		-- outright on some macOS versions, and a raised window that was never
+		-- clicked still usually takes the keystrokes. The check below is what
+		-- decides whether to trust it, so failing softly here is safe.
 		set cx to (item 1 of wpos) + ((item 1 of wsize) div 2)
 		set cy to (item 2 of wpos) + 100
-		click at {cx, cy}
+		try
+			click at {cx, cy}
+		end try
 		delay 1
 
-		-- root, with a blank password until stage 1 sets one. Enter twice:
-		-- the login prompt takes the name, and the password prompt takes an
-		-- empty line.
+		-- The proof. Asking for the front window by name catches both halves
+		-- of the failure: another application in front, and the right
+		-- application with the wrong window of its own in front.
+		if not frontmost then return false
+		try
+			if name of window 1 is not winName then return false
+		on error
+			return false
+		end try
+	end tell
+	return true
+end focusConsole
+
+on driveConsole(winName, initPath)
+	set how to ""
+
+	-- Looked up without raising anything. Reading a window's text needs no
+	-- focus, and taking focus now -- before a wait that may run for ten
+	-- minutes -- is exactly the mistake this handler is arranged to avoid.
+	set found to false
+	tell application "System Events" to tell process "UTM"
+		repeat with w in windows
+			if name of w is winName then set found to true
+		end repeat
+	end tell
+	if not found then return "  not found: " & winName
+
+	-- ---------------------------------------------------- the login prompt --
+	-- Ten minutes because that is the honest worst case: the x86_64 machine
+	-- is emulated, not virtualised, and a cold boot on a busy Mac is minutes
+	-- of work. Waiting costs nothing when the prompt comes up in five
+	-- seconds; the timeout is only for the day it never comes -- and on that
+	-- day the answer is to stop, not to type.
+	set seen to my waitFor(winName, "login:", 600)
+	if seen is "timeout" then return "  gave up: " & winName & " -- no login prompt in 10 minutes; nothing typed"
+	if seen is "unreadable" then
+		-- UTM is not exposing this console's text to accessibility. Fall back
+		-- to blind timing, and say so in the report so that a failed login
+		-- has a visible reason rather than being a mystery.
+		set how to how & " (console text unreadable -- typed on a timer)"
+		delay 5
+	end if
+
+	-- root, with a blank password until stage 1 sets one. Enter twice: the
+	-- login prompt takes the name, and the password prompt takes an empty
+	-- line.
+	if not my focusConsole(winName) then return "  could not focus: " & winName & "; nothing typed"
+	tell application "System Events"
 		keystroke "root"
 		keystroke return
-		delay 2
-		keystroke return
-		delay 2
+	end tell
 
-		-- 'sh <path>', which is what the boot notes and the handbook tell a
-		-- person to type. The file is on a FAT partition, where the execute
-		-- bit is a mount option rather than a property of the file, so naming
-		-- the interpreter is the form that always works.
+	-- ------------------------------------------------- the password prompt --
+	-- This follows immediately, so the wait is short and its expiry is not
+	-- interesting: an empty line at a login prompt is harmless, it just asks
+	-- again.
+	if my waitFor(winName, "assword", 30) is not "found" then delay 2
+	if not my focusConsole(winName) then return "  focus lost after the name: " & winName & how
+	tell application "System Events" to keystroke return
+
+	-- ------------------------------------------------------- logged in yet --
+	-- The needle is the root shell prompt, ":~#" -- busybox ash builds it
+	-- from hostname, directory and privilege, so the middle of it is the same
+	-- on every one of these machines whatever they are called. NOT the Alpine
+	-- greeting: "Welcome to Alpine Linux" is /etc/issue, which getty prints
+	-- ABOVE the login prompt, before anyone has logged in at all. Watching
+	-- for that would report success the moment the machine finished booting,
+	-- which is precisely the thing being checked for.
+	--
+	-- This is also the one honest check that the keystrokes reached the
+	-- console at all, so a miss stops the run here. Typing an install command
+	-- at a machine that is still sitting on a login prompt achieves nothing,
+	-- and typing it somewhere else achieves worse.
+	set landed to my waitFor(winName, ":~#", 60)
+	if landed is "timeout" then return "  stopped: " & winName & how & " (no root prompt -- the login did not take; the installer was not started)"
+	if landed is "unreadable" then delay 3
+
+	-- 'sh <path>', which is what the boot notes and the handbook tell a
+	-- person to type. The file is on a FAT partition, where the execute bit
+	-- is a mount option rather than a property of the file, so naming the
+	-- interpreter is the form that always works.
+	if not my focusConsole(winName) then return "  focus lost before the installer: " & winName & how
+	tell application "System Events"
 		keystroke "sh " & initPath
 		keystroke return
+	end tell
 
-		-- "Do a full automatic install?" -- the first thing copal-init.sh
-		-- asks, and it defaults to NO, so the y is not decoration: without it
-		-- the machine sits on the ordinary stage menu waiting for a person.
-		--
-		-- The wait is long because the question comes after a screen of
-		-- explanation that takes a moment to print, and on the emulated
-		-- x86_64 machine everything is several times slower than on the
-		-- aarch64 one. Typing early would send the y into the scrolling text
-		-- above the prompt, where it is simply lost.
-		delay 8
+	-- ------------------------------------------ the installer's first ask --
+	-- "Start the automatic install? [Y/n]" -- the first thing copal-init.sh
+	-- asks. Answering it is not decoration: unanswered, the machine sits on
+	-- the ordinary stage menu waiting for a person.
+	--
+	-- The question comes after a screen of explanation, and printing that
+	-- screen through an emulated serial port is not instant. "[Y/n]" is the
+	-- thing to watch for rather than the question text, because it is the
+	-- last characters written before the prompt starts reading -- see it and
+	-- the y is certain to land in the prompt and not in the text scrolling
+	-- above it.
+	--
+	-- Five minutes of waiting, and then no y at all: the installer is running
+	-- either way, and a question a person answers by hand is a far better
+	-- outcome than a y sent into whatever they happened to be typing in.
+	set asked to my waitFor(winName, "[Y/n]", 300)
+	if asked is "timeout" then return "  started: " & winName & how & " (the [Y/n] question never appeared -- answer it by hand)"
+	if asked is "unreadable" then delay 8
+	if not my focusConsole(winName) then return "  focus lost at the question: " & winName & how & " (answer [Y/n] by hand)"
+	tell application "System Events"
 		keystroke "y"
 		keystroke return
 	end tell
-	return "  started: " & winName
+	return "  started: " & winName & how
 end driveConsole
 
 set typed to {}
@@ -253,8 +576,24 @@ if $_autotype is 1 then
 			end if
 		end repeat
 	end tell
+	if (count of consoles) is 0 then
+		-- Said out loud rather than left as silence. The commonest cause is
+		-- a machine whose window is showing the graphical display instead of
+		-- the serial one: there is then nothing named "...Term..." to type
+		-- into, and the run looks like it simply ignored --autotype. The
+		-- "left alone" list above names every window that was seen.
+		set end of typed to "  no serial console window found -- nothing was typed"
+	end if
 	repeat with n in consoles
-		set end of typed to my driveConsole(n as text, "$_initpath")
+		-- One console failing must not take the other down with it, and the
+		-- reason has to survive into the report. An uncaught error here ends
+		-- the whole script, and the shell then prints "osascript failed"
+		-- with no clue as to which console or why.
+		try
+			set end of typed to my driveConsole(n as text, "$_initpath")
+		on error errMsg number errNum
+			set end of typed to "  failed: " & n & " -- " & errMsg & " (" & errNum & ")"
+		end try
 	end repeat
 end if
 
@@ -319,8 +658,43 @@ layout_start_vms() {
     fi
 }
 
+# Runs the probe, or hands it over when this terminal is not allowed to. Same
+# two routes as the layout itself, for the same reason: the grant belongs to
+# whichever application is asking, and a terminal usually has not got it.
+do_probe() {
+    local _script="${BUILDDIR:-build}/copal-utm-probe.applescript"
+    mkdir -p "$(dirname "$_script")"
+    _probe_script > "$_script"
+    local _out _rc=0
+    _out=$(osascript "$_script" 2>&1) || _rc=$?
+    if [ "$_rc" -eq 0 ]; then
+        printf '%s\n' "$_out" | sed 's/^/    /'
+        info "A console reported NO TEXT cannot be watched -- --autotype falls back to timers there."
+        return 0
+    fi
+    case "$_out" in
+        *-1743*|*'not authorized'*|*'not allowed'*|*1002*)
+            warn "This terminal is not allowed to read other apps' windows (macOS denied it)."
+            note "Opening the probe in Script Editor. It only reads -- Cmd+R, then read"
+            note "the Result pane and tell me what each console says."
+            note ""
+            note "  $_script"
+            open -a "Script Editor" "$_script" \
+                || die "could not open Script Editor. Run it by hand: osascript $_script"
+            ;;
+        *)
+            printf '%s\n' "$_out" >&2
+            die "the probe failed. The script is at $_script"
+            ;;
+    esac
+}
+
 do_layout() {
     command -v osascript >/dev/null 2>&1 || die "osascript not found -- this action is macOS only"
+
+    # Before anything else, and before starting anything: --probe is a
+    # question, not an action.
+    if [ "$PROBE" -eq 1 ]; then do_probe; return 0; fi
 
     [ "$NO_START" -eq 1 ] || layout_start_vms
 
@@ -345,6 +719,9 @@ do_layout() {
     info "Screen is ${_w}x${_h} points"
 
     local _script="$UTM_LAYOUT_SCRIPT"
+    # An "if", not a "&&": set -e is on, and a && that comes out false is a
+    # failed command that would end the run right here when autotype is off.
+    if [ "$AUTOTYPE" -eq 1 ]; then _script="$UTM_LAYOUT_AUTO_SCRIPT"; fi
     mkdir -p "$(dirname "$_script")"
     _layout_script "$_w" "$_h" "$AUTOTYPE" "$INIT_PATH" > "$_script"
 
@@ -368,6 +745,10 @@ do_layout() {
                 note ""
                 note "This one also TYPES: it logs in as root on both serial consoles"
                 note "and starts the installer. Worth reading before you run it."
+                note ""
+                note "It waits for each prompt before typing at it, so it stays running"
+                note "until both machines have booted -- minutes on the emulated x86_64"
+                note "one. A script that looks stuck is usually one that is waiting."
             }
             note ""
             note "If it runs but nothing moves, tick Script Editor in System Settings"
@@ -402,6 +783,7 @@ while [ $# -gt 0 ]; do
         --net)      NET_MODE="${2:-}"; shift 2 ;;
         --screen)   SCREEN="${2:-}"; shift 2 ;;
         --autotype) AUTOTYPE=1; shift ;;
+        --probe)    PROBE=1; shift ;;
         --no-start) NO_START=1; shift ;;
         --init-path) INIT_PATH="${2:-}"; shift 2 ;;
         --force)    FORCE=1; shift ;;
