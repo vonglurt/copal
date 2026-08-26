@@ -6027,10 +6027,143 @@ if [ "$(cat /etc/copal/session 2>/dev/null)" = wayland ] \
     exec Hyprland
 fi
 
+# The X path. If the session says x11 but X's privileged helper has been left
+# disarmed -- someone edited /etc/copal/session by hand instead of using
+# copal-desktop -- startx fails with a permission error that says nothing
+# about why. Catch it here and name the one command that fixes it, because
+# "Only console users are allowed to run the X server" is not a message
+# anybody can act on.
+if [ -e /usr/libexec/Xorg.wrap ] && [ ! -u /usr/libexec/Xorg.wrap ]; then
+    echo "copal-session: X's setuid server is disarmed, so startx cannot work." >&2
+    echo "  That is what Wayland's turn on this machine left behind." >&2
+    echo "  Re-arm it and set the session in one step:" >&2
+    echo >&2
+    echo "      doas copal-desktop x11" >&2
+    echo >&2
+    exit 1
+fi
+
 exec startx
 SESSION
     chmod 0755 /usr/local/bin/copal-session
     note "copal-session -- starts whichever desktop /etc/copal/session names"
+
+    # ------------------------------------------------------------------
+    # copal-desktop: the privileged half of the switch.
+    #
+    # WHY THIS IS A SEPARATE PROGRAM. copal-session runs as the admin user --
+    # it has to, it is starting that user's desktop -- and the setuid bit on
+    # a root-owned binary is not the user's to change. So the two halves are
+    # split by privilege rather than by tidiness: copal-session READS the
+    # word, copal-desktop WRITES it, and only the second one needs doas.
+    #
+    # WHAT THE SETUID BIT HAS TO DO WITH IT. Stage 4 pins
+    # needs_root_rights=yes in Xwrapper.config, because this board draws
+    # through fbdev with no seat manager for X to ask instead -- so the X
+    # server runs as uid 0, reached through the setuid helper
+    # /usr/libexec/Xorg.wrap. That is a large parser (video drivers, input
+    # drivers, config files, fonts) running with full privilege, and it is
+    # the classic local-escalation surface: CVE-2018-14665 is the well-known
+    # one, where -logfile and -modulepath against a setuid X got you root.
+    #
+    # Under Wayland none of that is being used. The compositor owns the DRM
+    # device itself and Xwayland -- which is what keeps every X program on
+    # this machine running -- needs no setuid and no root at all. Xwayland is
+    # not Xorg; that distinction is the whole reason this is cheap. So while
+    # the session is Wayland the bit comes off, and every X application keeps
+    # working through Xwayland exactly as before.
+    #
+    # HOW BIG A DEAL IS IT, HONESTLY. Modest, today. allowed_users=console
+    # already stops an SSH session from starting X, which is the vector that
+    # matters most on a networked machine; and the admin user is in wheel and
+    # can type `doas sh`, so an escalation to root gains that account nothing
+    # it does not already have. It matters for the accounts that come later:
+    # a second user not in wheel, or a network service running as its own
+    # uid. Removing a privileged path that nothing is currently using is the
+    # cheap half of defence in depth, and it is fully reversible -- which is
+    # the other half of why it is done this way rather than by uninstalling
+    # X, whose value as a fallback when the compositor will not start is
+    # real.
+    cat > /usr/local/bin/copal-desktop <<'DESKTOPSW'
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# copal-desktop -- choose which desktop owns the screen. Needs root.
+#
+#   doas copal-desktop wayland   Hyprland at the next login, and X's setuid
+#                                server disarmed while it is not in use.
+#   doas copal-desktop x11       startx at the next login, X re-armed.
+#   copal-desktop status         what is set now, and what is armed.
+#
+# Written by copal-init.sh. Both desktop stages call it rather than writing
+# /etc/copal/session by hand, so the word and the setuid bit can never
+# disagree -- which they would the first time somebody edited only one.
+set -eu
+
+WRAP=/usr/libexec/Xorg.wrap
+SESSFILE=/etc/copal/session
+
+# Is X's privileged helper armed? No file is a perfectly good answer: it
+# means xorg-server is not installed, and there is nothing to arm.
+wrap_armed() { [ -u "$WRAP" ]; }
+
+say_status() {
+    printf 'session : %s\n' "$(cat "$SESSFILE" 2>/dev/null || echo '(unset)')"
+    if [ ! -e "$WRAP" ]; then
+        printf 'X server: not installed (%s absent)\n' "$WRAP"
+    elif wrap_armed; then
+        printf 'X server: armed -- %s is setuid root\n' "$WRAP"
+    else
+        printf 'X server: disarmed -- %s is not setuid\n' "$WRAP"
+        printf '          startx will not work until: doas copal-desktop x11\n'
+    fi
+}
+
+need_root() {
+    [ "$(id -u)" = 0 ] || {
+        echo "copal-desktop: this changes system state -- run it with doas:" >&2
+        echo "  doas copal-desktop $1" >&2
+        exit 1
+    }
+}
+
+case "${1:-status}" in
+  wayland)
+    need_root wayland
+    command -v Hyprland >/dev/null 2>&1 || {
+        echo "copal-desktop: no Hyprland on PATH -- refusing to hand it the screen." >&2
+        echo "  Run stage 16 first. Nothing has been changed." >&2
+        exit 1
+    }
+    mkdir -p /etc/copal
+    printf 'wayland\n' > "$SESSFILE"
+    # Disarm X's privileged path. It is not being used under Wayland, and a
+    # setuid binary nothing runs is pure attack surface. Xwayland is
+    # unaffected -- it is a different binary and has never been setuid.
+    if [ -e "$WRAP" ] && wrap_armed; then
+        chmod u-s "$WRAP"
+        echo "X's setuid server disarmed ($WRAP) -- Xwayland is unaffected."
+    fi
+    echo "Next login: Hyprland."
+    ;;
+  x11)
+    need_root x11
+    mkdir -p /etc/copal
+    printf 'x11\n' > "$SESSFILE"
+    # Put it back. needs_root_rights=yes in Xwrapper.config means the server
+    # cannot start without this, so re-arming is not optional on the X path.
+    if [ -e "$WRAP" ] && ! wrap_armed; then
+        chmod u+s "$WRAP"
+        echo "X's setuid server re-armed ($WRAP)."
+    fi
+    echo "Next login: startx."
+    ;;
+  status) say_status ;;
+  *) echo "usage: copal-desktop [wayland|x11|status]" >&2; exit 2 ;;
+esac
+DESKTOPSW
+    chmod 0755 /usr/local/bin/copal-desktop
+    note "copal-desktop -- 'doas copal-desktop wayland|x11' switches the desktop"
 
     confirm_yes "Start the desktop automatically at boot (autologin as '$PI_USER', then $_sess_word)?" || {
         note "Desktop autostart declined -- log in and run copal-session"
@@ -8261,8 +8394,15 @@ XRES
 
     # Claim the session for X11. Stage 16 writes 'wayland' over this if it
     # runs later -- last writer wins, see the note above copal-session.
+    #
+    # Through copal-desktop rather than by writing the file, because the word
+    # is only half the state: this is also what re-arms X's setuid server if
+    # a previous turn under Wayland disarmed it. Writing 'x11' by hand and
+    # leaving the bit off produces a desktop that will not start and an error
+    # message about console users that explains nothing.
     mkdir -p /etc/copal
-    printf 'x11\n' > /etc/copal/session
+    copal-desktop x11 >/dev/null 2>&1 || printf 'x11\n' > /etc/copal/session
+    note "/etc/copal/session = x11$([ -u /usr/libexec/Xorg.wrap ] 2>/dev/null && printf ', X armed')"
     configure_desktop_autostart startx
 
     say "Stage 4 complete."
@@ -8773,10 +8913,22 @@ bind = CTRL ALT, left, workspace, e-1
 
 # The theme's own layer rules: quickshell's bars ask for blur behind their
 # translucent regions, by the namespaces the QML declares.
-layerrule = blur, diinki_celestialantiquity:bars
-layerrule = ignorealpha 0.19, diinki_celestialantiquity:bars
-layerrule = blur, diinki_celestialantiquity:no_blur
-layerrule = ignorealpha 0.19, diinki_celestialantiquity:no_blur
+#
+# THE STRUCTURED SYNTAX, and it is not optional on this version. An earlier
+# draft used the older positional form -- `layerrule = blur, <namespace>` --
+# and Hyprland 0.54.3 rejected all four lines on a real install:
+#
+#     invalid field blur: missing a value
+#     invalid field type ignorealpha
+#
+# which is the parser saying both halves of what is wrong: `blur` is a field
+# that takes a value (`blur on`), and the field is spelled `ignore_alpha`,
+# not `ignorealpha`. Upstream's hyprland.lua had it right all along --
+# `blur = true, ignore_alpha = 0.19, match = { namespace = ... }` -- so this
+# is the faithful translation of it and the older form was the mistake.
+# Both properties belong to one rule per namespace, as they do in the Lua.
+layerrule = blur on, ignore_alpha 0.19, match:namespace diinki_celestialantiquity:bars
+layerrule = blur on, ignore_alpha 0.19, match:namespace diinki_celestialantiquity:no_blur
 ANTIQHYPR
     # The file manager the theme wants, if this machine has it; the one stage
     # 4 installed otherwise. Substituted here, not left for Hyprland to
@@ -8820,6 +8972,154 @@ ANTIQPAPER
     fi
 
     # ------------------------------------------------------------------
+    # THE LAYERS THE THEME DOES NOT REACH BY ITSELF.
+    #
+    # A theme is not the window manager; it is every layer that draws. The
+    # vendored configs cover four of them -- compositor, shell, terminal,
+    # notifications -- and stop, because upstream deliberately leaves GTK,
+    # icons and cursors to the user (its README says so). That leaves a
+    # desktop where kitty and the shell are Antiquity and the file manager is
+    # stock Adwaita, which is the exact failure diinki demonstrates in the
+    # ricing guide: "if we open up our file explorer, you may notice it
+    # doesn't adhere to our theme at all."
+    #
+    # It matters more here than in a one-person rice. Copal's catalogue is
+    # 316 programs and most of the graphical ones are GTK, so this is the
+    # difference between a themed desktop and a themed compositor with 300
+    # unthemed windows in it.
+    say "Theming the layers the configs do not reach: fonts, GTK, cursor"
+
+    # 1. FONTS, SYSTEM-WIDE. The theme bundles its display faces -- Boska,
+    #    Recia, Charcoal, Monaco, Quilon, Dominica and Material Symbols --
+    #    and quickshell loads them from its own config tree with FontLoader,
+    #    which is why the shell's type is right even on a machine with no
+    #    fonts installed. Nothing else can see them that way. Installing them
+    #    where fontconfig looks is what lets kitty, GTK applications and the
+    #    X desktop use the same faces, which is the difference between a
+    #    themed shell and a themed system.
+    #
+    #    Copied from the installed copy rather than the archive, so this is
+    #    the same set the shell is using.
+    _fontsrc="$(user_home)/.config/quickshell/fonts"
+    [ -d "$_fontsrc" ] || _fontsrc=/root/.config/quickshell/fonts
+    if [ -d "$_fontsrc" ]; then
+        add_optional fontconfig
+        mkdir -p /usr/share/fonts/copal-antiquity
+        # -f: a re-run should replace, not fail. The .TTF spelling is
+        # upstream's on one of the files, and a case-sensitive filesystem
+        # will not match it against *.ttf.
+        cp -f "$_fontsrc"/*.ttf "$_fontsrc"/*.TTF \
+              /usr/share/fonts/copal-antiquity/ 2>/dev/null || true
+        chmod 0644 /usr/share/fonts/copal-antiquity/* 2>/dev/null || true
+        if command -v fc-cache >/dev/null 2>&1; then
+            fc-cache -f >/dev/null 2>&1 || true
+            note "fonts installed system-wide: $(ls /usr/share/fonts/copal-antiquity 2>/dev/null | wc -l | tr -d ' ') faces, cache rebuilt"
+        else
+            note "fonts copied to /usr/share/fonts/copal-antiquity (no fc-cache to refresh)"
+        fi
+    fi
+
+    # 2. GTK. There is no Antiquity GTK theme to install -- upstream does not
+    #    ship one, and writing a GTK4 theme is, as the guide puts it, "a very
+    #    extensive task". So this does the honest, portable half: dark
+    #    preference, a matching icon and cursor theme, and the theme's own
+    #    font. adw-gtk3 IS packaged here and is the closest neutral dark that
+    #    does not fight the palette; where it is missing, the dark preference
+    #    alone still stops a white file manager on a dark desktop.
+    #
+    #    BOTH VERSIONS, and that is the point of writing two files. GTK3 and
+    #    GTK4 read separate settings.ini and a GTK3-only answer leaves every
+    #    newer application unthemed -- the second half of the guide's GTK
+    #    chapter, and the thing its author had to solve with a hand-written
+    #    GTK4 theme.
+    _gtktheme=Adwaita-dark
+    try_add adw-gtk3 && _gtktheme=adw-gtk3-dark
+    add_optional adwaita-icon-theme
+    # Alpine packages no Hackneyed (upstream's choice), so the cursor is
+    # whatever Adwaita provides -- named explicitly rather than left unset,
+    # because an unset cursor theme under Wayland is the one that renders as
+    # a black X on some drivers.
+    for _h in /root "$(user_home)"; do
+        [ -n "$_h" ] && [ -d "$_h" ] || continue
+        for _v in 3.0 4.0; do
+            mkdir -p "$_h/.config/gtk-$_v"
+            cat > "$_h/.config/gtk-$_v/settings.ini" <<GTKINI
+# Written by copal-init.sh (stage 16). GTK3 and GTK4 read separate copies of
+# this file; both are written so newer applications are themed too.
+[Settings]
+gtk-theme-name=$_gtktheme
+gtk-icon-theme-name=Adwaita
+gtk-cursor-theme-name=Adwaita
+gtk-cursor-theme-size=24
+gtk-application-prefer-dark-theme=1
+gtk-font-name=Recia 11
+GTKINI
+        done
+        _own=$(stat -c '%u:%g' "$_h" 2>/dev/null) \
+            && chown -R "$_own" "$_h/.config/gtk-3.0" "$_h/.config/gtk-4.0" 2>/dev/null || true
+    done
+    note "GTK 3 and 4: $_gtktheme, dark, Adwaita icons and cursor"
+
+    # gsettings is what GTK4 and libadwaita actually consult at runtime on a
+    # machine with dconf; settings.ini is the fallback for everything else.
+    # Writing both is belt and braces, and neither is fatal if absent.
+    if command -v gsettings >/dev/null 2>&1; then
+        for _k in "gtk-theme $_gtktheme" "icon-theme Adwaita" "cursor-theme Adwaita" "font-name 'Recia 11'"; do
+            gsettings set org.gnome.desktop.interface ${_k%% *} "${_k#* }" 2>/dev/null || true
+        done
+        gsettings set org.gnome.desktop.interface color-scheme prefer-dark 2>/dev/null || true
+    fi
+
+    # 3. THE CURSOR, for the compositor itself rather than for GTK. Hyprland
+    #    reads these from the environment, and the generated hyprland.conf
+    #    already exports the sizes; the theme name goes here so an X session
+    #    on the same machine agrees with the Wayland one.
+    cat > /etc/profile.d/copal-cursor.sh <<'CURSORENV'
+# Written by copal-init.sh. One cursor theme for both sessions.
+export XCURSOR_THEME=Adwaita
+export XCURSOR_SIZE=24
+CURSORENV
+    chmod 0644 /etc/profile.d/copal-cursor.sh
+
+    # 4. AND THE X DESKTOP, which is still installed and still one word away.
+    #    Stage 4 dresses i3 and the terminal in Tokyo Night; leaving it that
+    #    way means flipping the session also flips the entire palette, which
+    #    makes the fallback feel like a different machine rather than the
+    #    same one without a compositor. Recolouring by hex substitution is
+    #    exact and idempotent -- every one of these is a literal that stage 4
+    #    wrote, so running this twice changes nothing the second time.
+    #
+    #    Tokyo Night          ->  Antiquity helios
+    #      #7aa2f7 blue           #fccf8a  accent      (focused border)
+    #      #7dcfff cyan           #fccf8a  accent      (indicator)
+    #      #1a1b26 bg             #181818  base
+    #      #16161e bar bg         #121212  shadow
+    #      #292e42 inactive       #2a2a2a  highlight
+    #      #c0caf5 fg             #d0daed  textLight
+    #      #565f89 dim            #87704f  accentDark
+    #      #f7768e red            #ff723e  urgent
+    if [ -f "$(user_home)/.config/i3/config" ] || [ -f /root/.config/i3/config ]; then
+        for _h in /root "$(user_home)"; do
+            [ -n "$_h" ] && [ -d "$_h" ] || continue
+            for _f in "$_h/.config/i3/config" "$_h/.Xresources"; do
+                [ -f "$_f" ] || continue
+                sed -i -e 's/#7aa2f7/#fccf8a/g' -e 's/#7dcfff/#fccf8a/g' \
+                       -e 's/#1a1b26/#181818/g' -e 's/#16161e/#121212/g' \
+                       -e 's/#292e42/#2a2a2a/g' -e 's/#c0caf5/#d0daed/g' \
+                       -e 's/#565f89/#87704f/g' -e 's/#f7768e/#ff723e/g' \
+                       -e 's/#9ece6a/#a0675d/g' -e 's/#bb9af7/#666c93/g' \
+                       "$_f" 2>/dev/null || true
+            done
+            # The X session's own background, so the first frame before i3
+            # starts is the theme's ground rather than Tokyo Night's.
+            [ -f "$_h/.xinitrc" ] && sed -i 's/xsetroot -solid .#1a1b26./xsetroot -solid "#181818"/' \
+                "$_h/.xinitrc" 2>/dev/null || true
+        done
+        note "the X desktop recoloured to match -- i3, Xresources and the root window"
+        note "  so switching session changes the compositor, not the palette"
+    fi
+
+    # ------------------------------------------------------------------
     # Claim the session -- but only if there is something to claim it FOR.
     # This is the one exclusive act in the whole stage: from the next boot
     # (or the next copal-session) the console belongs to Hyprland, and
@@ -8835,8 +9135,16 @@ ANTIQPAPER
     # once, while someone is reading the output.
     mkdir -p /etc/copal
     if command -v Hyprland >/dev/null 2>&1; then
-        printf 'wayland\n' > /etc/copal/session
-        note "/etc/copal/session = wayland -- re-run stage 4 (or write 'x11') to switch back"
+        # Through copal-desktop, which also disarms X's setuid server -- see
+        # the long note above that script. Nothing about the X desktop is
+        # uninstalled; the privileged path is simply taken away while nothing
+        # is using it, and `doas copal-desktop x11` puts both back together.
+        copal-desktop wayland >/dev/null 2>&1 || printf 'wayland\n' > /etc/copal/session
+        note "/etc/copal/session = wayland -- 'doas copal-desktop x11' switches back"
+        if [ -e /usr/libexec/Xorg.wrap ] && [ ! -u /usr/libexec/Xorg.wrap ]; then
+            note "X's setuid server disarmed while Wayland has the screen"
+            note "  (Xwayland is a different binary and keeps every X program working)"
+        fi
         configure_desktop_autostart Hyprland
     else
         warn "Hyprland is not on PATH -- the session is being left as it was."

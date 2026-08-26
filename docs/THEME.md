@@ -271,7 +271,31 @@ dialect has no loops — mouse drag/resize binds, media-key binds verbatim).
 | launcher = `quickshell ipc call appLauncher_$(hyprctl … jq …)` | `bind = $mainMod, D, exec, copal-launcher` | wrapper: quickshell IPC → wofi → dmenu |
 | `hyprshot --mode region` | `bind = … copal-shot` | wrapper: hyprshot → grim+slurp |
 | *(none)* | `copal-halt` binds (Super+Shift+P, XF86PowerOff, Super+Shift+Del), Super+Shift+E exit, Ctrl+Alt fallbacks for UTM-stolen keys | Copal conventions carried over from the i3 config so both desktops share one habit set |
-| layer rules (Lua) | `layerrule = blur/ignorealpha 0.19` for `diinki_celestialantiquity:{bars,no_blur}` | same values, `.conf` spelling |
+| `hl.layer_rule({match={namespace=…}, blur=true, ignore_alpha=0.19})` | `layerrule = blur on, ignore_alpha 0.19, match:namespace …` | same values, structured `.conf` spelling — see the note below |
+
+**A correction worth recording, because it was caught by a real install
+rather than by review.** The first draft of this translation used Hyprland's
+*older positional* layerrule form, `layerrule = blur, <namespace>`, and 0.54.3
+rejected every one of them at login:
+
+    Config error in file ~/.config/hypr/hyprland.conf at line 167:
+        invalid field blur: missing a value
+    Config error in file ~/.config/hypr/hyprland.conf at line 168:
+        invalid field type ignorealpha
+
+The parser is naming both faults precisely: `blur` is a field that takes a
+value (`blur on`), and the field is spelled `ignore_alpha`, not `ignorealpha`.
+The irony is that **upstream's Lua was already correct** — `blur = true`,
+`ignore_alpha = 0.19`, `match = { namespace = … }` map one-to-one onto the
+structured syntax — so the error came from translating into a dialect older
+than the file being translated. The fix is one rule per namespace carrying
+both properties, exactly as the Lua expresses it, which also takes four lines
+down to two.
+
+The lesson generalises to the rest of §V: a translation is only verified when
+the target has parsed it. Nothing else in the generated `.conf` produced a
+config error on that install, which is the evidence that the remaining rows
+of Table II are right.
 
 ### D. Quickshell (the honest gap)
 Not packaged anywhere in Alpine (v3.24 or edge). The configs are installed
@@ -296,7 +320,262 @@ swaybg takes the image path from `copal-wallpaper` directly).
 
 ---
 
-## VI. Licence and provenance
+## VI. The configuration files, and what each one does to the screen
+
+§V lists what we *changed*. This section is the other half: what the vendored
+files actually **are**, where each lands, which process reads it, and what a
+person sees on the display as a result. It is the map to have open when
+editing the theme on an installed machine.
+
+Everything below is installed by the copy in §V-B — `configs/<name>/` goes to
+`~/.config/<name>/` whole, into both `/root` and the admin home, with any
+pre-existing directory moved aside to `~/copal-theme-backups/`.
+
+### A. The four trees, at a glance
+
+| Config tree | Read by | Owns, on screen |
+|---|---|---|
+| `~/.config/hypr/` | Hyprland | window frames, gaps, corners, blur, shadow, animations, every key binding, what autostarts |
+| `~/.config/quickshell/` | `qs` (quickshell) | the whole shell: taskbar, sidebar, menus, launcher, widgets, settings window, colour schemes |
+| `~/.config/kitty/` | kitty | the terminal — palette, font, padding, transparency |
+| `~/.config/mako/` | mako | notification popups |
+
+The division matters when something looks wrong: **if it has a window border,
+it is hypr; if it is furniture floating over the desktop, it is quickshell.**
+
+### B. `hypr/` — the compositor's own look
+
+Read at login and on `hyprctl reload`. Our generated `hyprland.conf` (§V-C)
+carries these values from upstream unchanged; each one is visible:
+
+| Setting | Value | What you see |
+|---|---|---|
+| `gaps_in` / `gaps_out` | 4 / 8 | tiles do not touch — 4 px between windows, 8 px to the screen edge, so the wallpaper reads as a mount around the work |
+| `border_size` + `col.active_border` | 1, `rgb(1c1c1c)` | a 1 px near-black hairline on **both** focused and unfocused windows. Deliberate: focus is shown by the taskbar planet, not by a coloured frame — which is why the border is the same colour either way |
+| `rounding` / `rounding_power` | 9 / 4 | 9 px corners, but `rounding_power 4` makes them *squircles* — a superellipse rather than a circular arc, which is the difference between "rounded box" and the drawn look the theme wants |
+| `blur` | size 3, passes 2, noise `0.023`, contrast `0.9` | what makes kitty's `background_opacity 0.2` readable: the desktop behind a terminal is blurred rather than merely dimmed. The noise is film grain — it stops the blur banding into flat plates |
+| `shadow` | range 12, power 6, `rgba(0,0,0,0.19)`, offset 0 | a soft even shadow under every window with no light direction — the window lifts off the wallpaper without implying a lamp |
+| `animation windows/fade` | speed 3, bezier `smooth` | ~0.3 s ease-out on open and close |
+| `animation workspaces` | speed 8, `slide` | workspace changes slide rather than cut; slower than the window animation on purpose, because it moves more of the screen |
+| `layout = dwindle` + `preserve_split` | — | each new window halves the focused one, alternating direction, and the split ratio survives a window closing |
+| `layerrule blur … :bars` | ignorealpha 0.19 | tells the compositor to blur *behind quickshell's own panels* — without this rule the taskbar's translucency shows raw wallpaper and the shell stops looking attached to the desktop |
+
+The `$mainMod` bindings (§V-C) are what makes it keyboard-driven; the mouse
+binds `SUPER + LMB/RMB` are the only pointer gestures the theme defines.
+
+### C. `quickshell/` — the shell, and where the artwork lives
+
+`shell.qml` is the root of a QML scene graph; `qs` loads it and everything
+below it. This is the part with no Alpine package yet (§V-D), so on Copal
+today these files are installed and dormant — the section describes what they
+do when a `qs` binary exists.
+
+**`Config.qml` is the single source of colour and preference.** Two distinct
+things live in it:
+
+1. **Five complete colour schemes**, hard-coded as QML maps: `helios`
+   (default — the warm amber one this project's page borrows), `eris`,
+   `priapus`, `eros`, `hades`. Each defines ~30 named roles, not just a
+   foreground and background. The roles that decide the look:
+
+   | Role | In `helios` | Paints |
+   |---|---|---|
+   | `base` / `shadow` | `#181818` / `#121212` | panel fill and the line under it |
+   | `accent` / `accentDark` | `#fccf8a` / `#87704f` | the amber of a lit celestial body; the muted amber of an unlit one |
+   | `textLight` / `text` | `#d0daed` / `#121212` | type on dark panels; type on amber |
+   | `glassTintColor` | `#fce2ab` | the wash over blurred regions — the "glass" |
+   | `cbodyBackground` / `cbodyStroke` | `#fccf8a` / `#000000` | **the celestial bodies themselves: amber disc, black outline.** This pair is the theme's whole visual signature |
+   | `cbodyPowerMenu`, `cbodyThemingMenu`, `cbodyFavoriteApps`, `cbodyMainMenu` | `#fccf8a`, `#a0675d`, `#5e5e5e`, `#666c93` | one colour per sidebar button, so the four planets on the arc are told apart by hue before you read any label |
+   | `humorWet/Dry/Cold/Hot`, `elementAir/Water/Earth/Fire` | blues, ochres, reds | the weather widget's humoral chart (§I) — these are the only colours in the scheme that encode *data* rather than chrome |
+
+   Switching scheme is `currentTheme` in `settings.json`, or the theming menu
+   in the sidebar; a scheme added to the map appears in that menu by itself.
+
+2. **A persisted settings object**, written to
+   `~/.config/quickshell/settings.json` — this is the file to edit by hand:
+
+   | Setting | Default | Effect |
+   |---|---|---|
+   | `currentTheme` | `helios` | which of the five schemes above is live |
+   | `militaryTimeClockFormat` | `true` | 24-hour clock in the bar and the clock widget |
+   | `defaultWindowRadius` | `12` | corner radius of the shell's *own* windows (settings, launcher) — separate from Hyprland's `rounding`, which only affects application windows |
+   | `appLauncherBackground` | `true` | blur behind the launcher; turn off on slow hardware |
+   | `bar.fontSize` | `12` | type size in the taskbar |
+   | `bar.workspacePadding` | `0.032` | **spacing of the planets along the orbital curve**, as a fraction of arc length — the single number that tunes the signature layout |
+   | `bar.trayIconSize` / `monochromeTrayIcons` | `12` / `true` | tray icon size; monochrome by default so third-party icons do not break the palette |
+   | `openWeatherMap.{apiKey,city,unit,enableWeather}` | empty / `Umeå` / metric / `false` | the weather widget is **off until you put a free OpenWeatherMap key here** — the one piece of the theme that needs an account |
+   | `execCommands.{terminal,files}` | `kitty` / `nemo` | what the shell launches; on a machine where stage 16 fell back to `pcmanfm`, change `files` here too |
+   | `favoriteApps`, `widgets` | `{}` | populated by the UI; `widgets` is keyed per monitor |
+
+**The components, and what each draws:**
+
+- `taskbar/RadialTaskbar.qml`, `Workspaces.qml`, `Planet.qml` — the bottom
+  curve. `RadialTaskbar` is the bespoke curve primitive (§I: nothing radial
+  exists in Qt Quick, so it was written from scratch); `Workspaces` places one
+  planet per workspace along it, and the active one grows flares.
+- `taskbar/Sidebar.qml`, `Bar.qml`, `SysTray.qml`, `ClockWidget.qml` — the
+  side arc with the four coloured planet buttons, plus tray and clock.
+- `sidebarPopups/` — what those buttons open: `PowerMenu.qml` (the three
+  tarot cards), `MainMenu.qml`, `FavoriteAppsMenu.qml`, `ThemingMenu.qml`
+  (the scheme picker), all inside `SidebarPopupWindow.qml`, which is what
+  implements click-outside-to-close and blocks input to what is behind.
+- `widgets/` — desktop widgets, placed per monitor: `WeatherWidget.qml` (the
+  humoral chart), `ClockWidget.qml`, `CPUTemperatureWidget.qml`, laid out by
+  `WidgetScreen.qml`.
+- `assets/` and `smallicons/` — the drawn artwork: celestial bodies, faces,
+  the star-chart/armillary background (`BackgroundPatternOne.qml`, 476 kB of
+  vector data, the largest single QML file in the theme).
+- `fonts/` — Boska, Recia, Charcoal, Monaco and Material Symbols, loaded by
+  `FontLoader` **from the config tree itself**, so the shell's type is correct
+  with no system font package installed.
+
+The `//@ pragma IconTheme buuf-nestort` lines at the head of `shell.qml` name
+an icon set we deliberately do not ship (§VII-B); with it absent, icon lookups
+fall back to hicolor/adwaita, which stage 4 already installed.
+
+### D. `kitty/` — the terminal
+
+`kitty.conf` is the live file; the palette is pulled in by a single
+`include <scheme>.conf` line inside its `BEGIN_KITTY_THEME` block, and the
+five scheme files match the five quickshell schemes by name. **Changing
+terminal palette is editing that one `include` line.**
+
+| Setting | Value | Effect |
+|---|---|---|
+| `background_opacity` | `0.2` | the terminal is 80 % transparent — legible only because Hyprland blurs behind it (§VI-B). Set to `1.0` if you disable blur, or the text becomes unreadable |
+| `window_padding_width/height` | 12 | breathing room inside the frame, matching the theme's gap rhythm |
+| `font_family` | `maple mono` → **`JetBrains Mono`** | our one substitution (§V-E); Maple Mono is not packaged for Alpine |
+| `cursor_shape` / `shell_integration` | `block` / `no-cursor` | a block cursor the shell is told not to override |
+| `background` / `foreground` (helios) | `#fce2ab` / `#000000` | **note the inversion**: the *terminal* is the light half of the palette — ink on aged paper — while the shell chrome is the dark half. That contrast is intentional and is what the project's own web page borrows |
+
+### E. `mako/` — notifications
+
+`~/.config/mako/config`, INI with `[urgency=…]` sections. Used exactly as
+vendored — no Alpine changes were needed, it being the one component whose
+upstream assumptions are all portable.
+
+| Setting | Value | Effect |
+|---|---|---|
+| `anchor` / `width` / `height` | top-right, 370×140 | where popups appear and how big |
+| `border-radius` / `border-size` | 9 / 1 | **matched to Hyprland's `rounding 9` and `border_size 1`** so a notification reads as the same material as a window |
+| `background-color` | `#181818f0` | `base` with `f0` alpha — slightly translucent, blurred by the compositor like everything else |
+| `text-color` / `border-color` | `#d0daed` / `#121212` | `textLight` on the dark panel; the black key line |
+| `progress-color` | `over #fccf8a` | volume/brightness bars fill in `accent` amber |
+| `default-timeout` | 6000 | six seconds |
+| `[urgency=high]` | `#ff723e` border, **no timeout** | urgent notifications turn the border `urgent` orange and stay until dismissed |
+| `[urgency=low]` | `accentDark` text, 4 s | quieter and quicker to leave |
+
+### F. The layers the vendored configs do not reach
+
+The four trees above are the theme as shipped. They are not the whole screen.
+diinki's own ricing guide [8] makes this the pivot of its second half — after
+Sway, kitty, the bar and the launcher are all themed, it opens the file
+manager and finds it "doesn't adhere to our theme at all," because **GTK is a
+system-wide setting that no window-manager config touches.** Upstream leaves
+GTK, icons and cursors out of the repository deliberately ("those are highly
+up to you"), which is a reasonable choice for a personal rice and the wrong
+one for an installer.
+
+It matters more on Copal than in a one-person setup: the catalogue is 316
+programs and most of the graphical ones are GTK. Untreated, the full level
+produces a themed *compositor* with three hundred unthemed windows in it.
+
+Stage 16 therefore closes four layers the theme does not carry, after the
+copy and before it claims the session:
+
+| Layer | What stage 16 does | Why it is not in the vendored tree |
+|---|---|---|
+| **Fonts** | copies the theme's nine bundled faces (Boska, Recia, Charcoal, Monaco, Quilon, Dominica, Material Symbols) to `/usr/share/fonts/copal-antiquity/` and runs `fc-cache -f` | quickshell loads them with `FontLoader` from its *own config tree*, so the shell has correct type on a machine where fontconfig has never heard of them. Nothing else can see them that way — this is what lets kitty, GTK and X use the same faces. It is the guide's "move them to the global font directory, then refresh the font cache", done by the installer |
+| **GTK 3 *and* 4** | writes `~/.config/gtk-3.0/settings.ini` **and** `gtk-4.0/settings.ini`: `adw-gtk3-dark` (packaged; `Adwaita-dark` if not), dark preference, Adwaita icons and cursor, `Recia 11` | the guide's own GTK chapter ends on this exact wall: its theme editor only emits GTK 3.22, so Nautilus and anything newer stayed unthemed until a GTK4 theme was hand-written. Two files is the cheap half of that fix; **we do not ship a GTK theme**, because upstream has none and authoring one is out of scope |
+| **gsettings / dconf** | the same four values through `gsettings org.gnome.desktop.interface`, plus `color-scheme prefer-dark` | GTK4 and libadwaita consult dconf at runtime, not `settings.ini`; the guide reaches this with the dconf *editor*, by hand. Both are written — belt and braces, neither fatal if absent |
+| **Cursor** | `/etc/profile.d/copal-cursor.sh` exporting `XCURSOR_THEME=Adwaita`, `XCURSOR_SIZE=24` | upstream sets a cursor with `hyprctl setcursor Hackneyed-24px`, which Alpine does not package. Naming one explicitly also avoids the unset-cursor-theme case that renders as a black X on some Wayland drivers |
+
+**And the X desktop, deliberately.** Stage 4 dresses i3, `i3status` and
+`.Xresources` in Tokyo Night. Left alone, flipping `/etc/copal/session` would
+flip the entire palette too, so the fallback would feel like a different
+machine rather than the same one without a compositor. Stage 16 recolours it
+by exact hex substitution on the installed files — every value is a literal
+stage 4 wrote, so the operation is idempotent:
+
+| Tokyo Night | → Antiquity `helios` | Where it shows |
+|---|---|---|
+| `#7aa2f7`, `#7dcfff` | `#fccf8a` `accent` | focused window border, indicator, active workspace |
+| `#1a1b26` | `#181818` `base` | window background, root window, terminal ground |
+| `#16161e` | `#121212` `shadow` | the bar |
+| `#292e42` | `#2a2a2a` `highlight` | focused-inactive |
+| `#c0caf5` | `#d0daed` `textLight` | status line and terminal foreground |
+| `#565f89` | `#87704f` `accentDark` | separators, inactive workspace text |
+| `#f7768e` | `#ff723e` `urgent` | urgent window and workspace |
+| `#9ece6a`, `#bb9af7` | `#a0675d`, `#666c93` | the two accent slots, to `cbodyThemingMenu` / `cbodyMainMenu` |
+
+`~/.xinitrc`'s `xsetroot -solid` is repointed at the same time, so the first
+frame of an X session — before i3 has drawn anything — is already the theme's
+ground.
+
+What this does **not** give the X session is the shell: there is no i3 port
+of the radial taskbar, and there will not be one, because quickshell is a
+Wayland client. The X fallback is Antiquity's *palette and type*, not its
+artwork. That is the honest boundary, and it is why the full level is the
+Wayland one.
+
+### G. The method, generalised
+
+Both of diinki's videos describe the same procedure, and it is worth stating
+plainly because it is the checklist stage 16 implements:
+
+1. **Choose the aesthetic before the software**, and write it down — sketches
+   and concept art first [2]; a handful of hex values and reference images
+   [8]. Copal inherits this step rather than performing it: the palette
+   arrives already decided, in `Config.qml`.
+2. **Pick components that are themable**, not merely light. Both videos
+   converge on the same set — a Wayland compositor, kitty, a GTK file
+   manager, a CSS-or-QML-styled bar and launcher — for the single reason
+   that every one of them takes a config file you can put a colour in.
+3. **Apply the palette outward, layer by layer**: compositor borders and
+   gaps → terminal → bar → launcher → **GTK** → widgets → cursor and icons.
+   The order matters because each layer makes the next one's mismatch more
+   obvious; the guide's file-manager reveal lands precisely because
+   everything around it was already right.
+4. **Then do art passes.** The Antiquity video is explicit that after the
+   first cohesive result the theme still "looks kind of modern", and that
+   what fixes it is layered additions — the star-chart backgrounds, the
+   redrawn sliders and radio buttons, the tarot cards — rather than another
+   pass at the colours.
+5. **Keep the configs in version control**, because a rice is never
+   finished [8]. Copal's version of that advice is §IX: vendoring as a
+   subtree of a fork we own, so the theme is a tracked dependency rather
+   than a pile of dotfiles.
+
+Where Copal departs, and why:
+
+- **No login manager.** The guide installs `ly` to pick a session at boot.
+  Copal has one word in `/etc/copal/session` and `copal-session` reading it
+  (§IV-A) — a display manager is a daemon and a login screen on a machine
+  whose whole premise is that neither is needed to run one desktop.
+- **No AUR-equivalent.** The guide reaches for `yay` when the repositories
+  come up short. Alpine has no such thing, which is why the gaps in Table I
+  are answered with substitutes and wrappers rather than a source build in
+  the install path.
+- **The design step is inherited, not repeated.** Copal is applying someone
+  else's finished aesthetic. Everything in §V exists to keep that
+  distinction intact: upstream's files stay upstream's, and our deviations
+  stay legible as deviations.
+
+### H. Editing any of it, on the machine
+
+- **Hyprland**: edit `~/.config/hypr/hyprland.conf`, then `hyprctl reload` —
+  no logout. (Editing `hyprland.lua` does nothing on Alpine's 0.54; see §V-C.)
+- **quickshell**: edit `settings.json` for preferences, `Config.qml` for
+  colours; `qs` hot-reloads QML.
+- **kitty**: change the `include` line; new windows pick it up.
+- **mako**: `makoctl reload`.
+- **Everything at once**: re-running stage 16 reinstalls the vendored configs
+  and moves your edited ones aside to `~/copal-theme-backups/` rather than
+  overwriting them, so re-running is never destructive.
+
+---
+
+## VII. Licence and provenance
 
 - Upstream is **MIT** (© 2026 diinki); vendoring, modification and
   redistribution with the notice are all granted. The notice travels: in the
@@ -317,7 +596,7 @@ swaybg takes the image path from `copal-wallpaper` directly).
 
 ---
 
-## VII. Survey of public forks (feature deltas vs. upstream `main`)
+## VIII. Survey of public forks (feature deltas vs. upstream `main`)
 
 Measured with the GitHub compare API, 2026-08-25. Most of the twenty forks
 are unmodified; the divergent ones:
@@ -340,7 +619,7 @@ wrapper). Stage 16 follows the same grain, which should keep future
 
 ---
 
-## VIII. Forking and vendoring: controlling both sides
+## IX. Forking and vendoring: controlling both sides
 
 The current state is a plain unzipped snapshot (`vendor/linux-antiquity-main`,
 no git history). The intended end state is **a GitHub fork we own, vendored
@@ -386,7 +665,7 @@ stage 16 to acquisition + packages + session.
 
 ---
 
-## IX. Limitations and future work
+## X. Limitations and future work
 
 - **Untested on target.** This work is code-and-survey complete but has not
   yet booted: the next `make`/`copal-prep.sh` run with `MODEL=vm` is the
