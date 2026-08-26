@@ -1606,8 +1606,12 @@ multi-core machine.
 | Walker | dmenu | GTK4 + Wayland |
 | Nautilus | pcmanfm | GNOME stack is far too heavy |
 | Btop | btop, htop fallback | fine if the armhf build exists |
+| Waybar | **waybar**, same as Omarchy | the Antiquity theme's own bar is quickshell QML, and quickshell is packaged in no Alpine repository — so waybar draws the bar, the widgets and the window list, in the theme's helios palette. `copal-bar` prefers quickshell the moment it exists |
+| Walker (launcher) | wofi | GTK4 + Wayland; bound to `Super`+`Space` and `Super`+`D` |
 | Lazygit, ripgrep, fzf, bat, eza, zoxide, tmux | same, best-effort | Rust/Go armhf availability varies; installed individually so a miss cannot fail the stage |
-| 19 themes | Tokyo Night, everywhere | one palette across i3, terminal, nvim, i3status |
+| 19 themes | two: tokyo-night and antiquity | `copal-theme` switches them the way `omarchy-theme-set` does — by moving a symlink; nvim hot-reloads |
+| `cliphist` + Walker | `copal-clip` | `cliphist` is Go and has no armhf build; the fallback records the history in 50 lines of `sh` |
+| Universal clipboard (Super+C/X/V) | same, unchanged | the one thing adopted outright — and Caps Lock is already a second Super here, so it reads as `Cmd`+`C` |
 
 The menu structure is borrowed too: a short top level of categories, each a
 submenu with a Back entry, and Install as a sibling of the applications rather
