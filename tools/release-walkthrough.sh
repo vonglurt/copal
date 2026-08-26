@@ -72,29 +72,19 @@ pause_for() {  # <what they should have done>
     return 0
 }
 
-# Did a file appear? The only honest way to know a screenshot step happened.
-expect_file() {  # <path> <what it is>
-    if [ -s "$1" ]; then
-        done_ "$2 -> $1 ($(du -h "$1" | cut -f1))"
-        return 0
-    fi
-    printf '%s└─%s %snot found: %s%s\n' "$C" "$N" "$Y" "$1" "$N"
-    printf '   %sthe page will show an empty slot for it, which is honest but ugly%s\n' "$D" "$N"
-    return 1
-}
-
 cat <<BANNER
 
 ${B}Copal -- guided release${N}
 
-  This runs ${B}make release${N} and stops at the parts a script cannot do here.
-  There are ${B}two${N} of those, and both are screenshots:
+  This runs ${B}make release${N} end to end and photographs the result.
 
-    ${B}B${N}  photograph the Hyprland desktop
-    ${B}C${N}  photograph the i3 desktop
+  ${B}One${N} thing asks you anything: whether to purge, because that is the only
+  step that destroys something. Everything else -- building, verifying,
+  recording the install, rendering, and taking the screenshots through QEMU's
+  monitor -- happens without you.
 
-  Everything else runs by itself. Steps can be skipped with 's'; a skipped
-  screenshot leaves that slot empty on the page rather than faking it.
+  The screenshots are real frames of whatever the image actually contains. If
+  the install never reached a desktop, they show a console, honestly.
 
 BANNER
 
@@ -157,50 +147,73 @@ fi  # SHOTS_ONLY
 #
 # The two images the serial capture cannot produce. A compositor draws to a
 # framebuffer; asciinema records a tty; the two never meet.
-step "The desktops — the two pictures a recording cannot take"
-say "The install you just recorded was ${B}bounded${N} -- it stopped after"
-say "$MINUTES minutes, long before a desktop existed. To photograph one you"
-say "need an install that actually finished, which is hours, not minutes."
+step "The desktops — taken automatically, where that is possible"
+say "A compositor draws to a framebuffer, not to a serial console, so the"
+say "recording above cannot contain a desktop. QEMU's own monitor can"
+say "photograph one though -- ${D}screendump${N} writes the guest's framebuffer"
+say "exactly as the guest is drawing it, headless, needing no permission"
+say "from macOS and nothing on your screen."
 blank
-say "${B}Two ways, and the second is the one to use:${N}"
-blank
-say "  ${B}1. Let it finish in UTM${N}, then photograph it:"
-say "     ${D}make utm${N}                             register and start"
-say "     ${D}${N}   then in the UTM window: log in as root and run"
-say "     ${D}   sh /media/vda1/copal-init.sh${N}   and pick level $LEVEL"
-say "     ${D}... hours ...${N}   ${D}utm-vm.sh progress --target aarch64${N} to check"
-say "     then screenshot the UTM window with ${B}Cmd+Shift+4${N}, space, click"
-blank
-say "  ${B}2. Or let QEMU take it${N}, once an install has finished:"
-say "     ${D}make screens${N}                         QEMU screendump, headless"
-say "     ${D}${N}                                    real pixels, no window, no camera"
-blank
-step "B — the Hyprland desktop"
-say "Wanted: ${B}docs/media/antiquity-desktop.png${N}"
-blank
-say "Frame it with something on screen worth looking at:"
-say "  ${D}Super+Return${N}   a kitty terminal or two, tiled"
-say "  ${D}Super+D${N}        the launcher open, if quickshell is installed"
-say "  ${D}${N}               otherwise the wallpaper and a terminal is plenty"
-blank
-say "From inside the guest:    ${D}grim ~/Pictures/shot.png${N}"
-say "From the Mac, on the VM:  ${D}Cmd+Shift+4${N}, space, click the window"
-say "Then save or copy it to:  ${B}docs/media/antiquity-desktop.png${N}"
-pause_for "saved the Hyprland screenshot" \
-    && expect_file docs/media/antiquity-desktop.png "Hyprland desktop"
+say "So this step does not ask you to take a picture. It takes them."
 
-step "C — the i3 desktop"
-say "Wanted: ${B}docs/media/i3-desktop.png${N}"
+# WHAT THIS CANNOT DO, and why it is worth saying rather than silently
+# skipping: photographing the UTM window would need macOS Screen Recording
+# permission, which this process does not have and cannot ask for usefully
+# (the request is denied without a dialog and the denial is remembered).
+# QEMU's monitor sidesteps the whole question -- it is the hypervisor writing
+# a file, not an application reading somebody's screen.
+if screencapture -x -R 0,0,8,8 /tmp/copal-cap-probe.$$.png 2>/dev/null \
+   && [ -s /tmp/copal-cap-probe.$$.png ]; then
+    say "${D}(this terminal also has Screen Recording, so a UTM window could be${N}"
+    say "${D} captured with screencapture if you would rather frame it by hand)${N}"
+fi
+rm -f /tmp/copal-cap-probe.$$.png
+
+# Only worth attempting on an image with a desktop on it. The level recorded
+# on the boot partition is the best signal available from here -- the root is
+# ext4 and macOS cannot read it, so the FAT partition is all there is to ask.
+_lvl=""
+_att=$(hdiutil attach -imagekey diskimage-class=CRawDiskImage "build/copal-$(sed -n 's/^MODEL *?= *//p' Makefile | head -1).img" 2>/dev/null) || true
+_mnt=$(printf '%s\n' "$_att" | awk -F'\t' '/COPALBOOT/{print $NF}' | head -1)
+if [ -n "${_mnt:-}" ]; then
+    [ -f "$_mnt/copal-profile" ] && _lvl=$(cat "$_mnt/copal-profile" 2>/dev/null)
+    _dev=$(printf '%s\n' "$_att" | awk '/^\/dev\/disk[0-9]+ /{print $1; exit}')
+    hdiutil detach "$_dev" >/dev/null 2>&1 || true
+fi
+[ -n "$_lvl" ] && say "install level recorded on the card: ${B}$_lvl${N}"
+
 blank
-say "This is the medium level -- X on the framebuffer. If the same machine"
-say "has both, switch to it without reinstalling anything:"
-say "  ${D}doas copal-desktop x11${N}     then log out and back in"
+say "Booting the image and photographing what comes up..."
+if tools/capture-screens.sh --shots 4 --wait 150 --interval 25 --prefix screen; then
+    _n=$(ls docs/media/screen-*.png 2>/dev/null | wc -l | tr -d ' ')
+    done_ "$_n frame(s) captured -- docs/media/screen-*.png"
+    blank
+    say "${B}These are real frames, whatever they show.${N} If the install that"
+    say "produced this image never reached a desktop -- and a bounded capture"
+    say "does not -- they will be a console, honestly."
+    blank
+    say "To promote one to the page's hero slot once a desktop IS in it:"
+    say "  ${D}cp docs/media/screen-3.png docs/media/antiquity-desktop.png${N}"
+    say "  ${D}cp docs/media/screen-3.png docs/media/i3-desktop.png${N}"
+    say "  ${D}make gallery${N}"
+else
+    printf '%s└─%s %sno frames -- the guest drew nothing in time%s\n' "$C" "$N" "$Y" "$N"
+    say "Raise the wait (${D}make screens SHOTWAIT=300${N}) or check"
+    say "${D}build/copal-screens-serial.log${N} to see how far it booted."
+fi
+
+step "A finished desktop, when you want one"
+say "The frames above come from whatever state the image is in. A ${B}complete${N}"
+say "install -- the one that reaches stage 16 and a compositor -- takes hours"
+say "and is a separate job from this release:"
 blank
-say "The key bindings are painted onto the root window at first login, which"
-say "is the frame worth catching -- it is what the desktop looks like to"
-say "somebody seeing it for the first time."
-pause_for "saved the i3 screenshot" \
-    && expect_file docs/media/i3-desktop.png "i3 desktop"
+say "  ${D}make utm${N}         start it in UTM"
+say "  ${D}${N}                 log in as root in the window, then run"
+say "  ${D}   sh /media/vda1/copal-init.sh${N}   and pick level f"
+say "  ${D}utm/utm-vm.sh progress --target aarch64${N}   how far it has got"
+blank
+say "When it has finished, ${B}make screens${N} photographs the real desktop"
+say "with no window, no camera and no permission of any kind."
 
 # ------------------------------------------------------------- 4. the gallery
 step "Gallery and pages"
