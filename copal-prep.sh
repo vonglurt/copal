@@ -9335,6 +9335,85 @@ bind = $mainMod, E, exec, $fileManager
 bind = $mainMod SHIFT, SPACE, togglefloating,
 bind = $mainMod, F, fullscreen,
 bind = $mainMod, D, exec, $menu
+# Omarchy's launcher key as well as upstream's, because Super+Space is the one
+# people arrive already knowing and stage 4's i3 config binds it too.
+bind = $mainMod, SPACE, exec, $menu
+
+# MOVING BETWEEN WINDOWS, which this config did not bind AT ALL until now.
+# Upstream's hyprland.conf assumes you will add your own; the result on a
+# fresh install is a tiling compositor in which the keyboard cannot change
+# which window has focus, so the only way to reach a window is the mouse.
+# That is the single biggest gap between this desktop and stage 4's i3, which
+# has had these since the beginning.
+#
+# Both spellings, exactly as the i3 config does it: arrows for people who
+# want arrows, hjkl for people with vi in their fingers.
+bind = $mainMod, left,  movefocus, l
+bind = $mainMod, right, movefocus, r
+bind = $mainMod, up,    movefocus, u
+bind = $mainMod, down,  movefocus, d
+bind = $mainMod, H, movefocus, l
+bind = $mainMod, L, movefocus, r
+bind = $mainMod, K, movefocus, u
+bind = $mainMod, J, movefocus, d
+
+# And moving the window itself, rather than the focus.
+bind = $mainMod SHIFT, left,  movewindow, l
+bind = $mainMod SHIFT, right, movewindow, r
+bind = $mainMod SHIFT, up,    movewindow, u
+bind = $mainMod SHIFT, down,  movewindow, d
+bind = $mainMod SHIFT, H, movewindow, l
+bind = $mainMod SHIFT, L, movewindow, r
+bind = $mainMod SHIFT, K, movewindow, u
+bind = $mainMod SHIFT, J, movewindow, d
+
+# Resizing, on the same keys as the i3 config's resize mode but without the
+# mode -- Hyprland has no modal resize, so Ctrl is the modifier.
+binde = $mainMod CTRL, left,  resizeactive, -40 0
+binde = $mainMod CTRL, right, resizeactive,  40 0
+binde = $mainMod CTRL, up,    resizeactive,  0 -40
+binde = $mainMod CTRL, down,  resizeactive,  0  40
+
+# THE APPLICATION SWITCHER. Alt+Tab is the one every person who has ever used
+# a computer tries first, and it did not exist here either. cyclenext walks
+# the windows on the active workspace; bringactivetotop keeps the one you
+# land on visible while you are cycling through floating windows.
+bind = ALT, Tab, cyclenext,
+bind = ALT, Tab, bringactivetotop,
+bind = ALT SHIFT, Tab, cyclenext, prev
+bind = ALT SHIFT, Tab, bringactivetotop,
+# The same thing on Super, because under UTM the Mac eats Alt+Tab before this
+# machine sees it -- the same reason stage 4's i3 config carries a second set
+# of bindings on Ctrl+Alt.
+bind = $mainMod, Tab, cyclenext,
+bind = $mainMod, Tab, bringactivetotop,
+
+# Workspaces on the scroll wheel, and the bar out of the way when you want
+# the whole screen. Super+B for the bar: Super+Shift+Space is togglefloating
+# here, unlike Omarchy, and moving an existing binding to match a different
+# system is how people lose muscle memory.
+bind = $mainMod, mouse_down, workspace, e+1
+bind = $mainMod, mouse_up,   workspace, e-1
+bind = $mainMod, B, exec, pkill -SIGUSR1 waybar
+
+# THE UNIFIED CLIPBOARD -- the same four keys stage 4's i3 config binds, so
+# the two desktops do not disagree about copy and paste.
+#
+# Omarchy writes these as pairs of 'sendshortcut' binds with a class filter,
+# which is Hyprland-only and repeats the list of terminal emulators four
+# times. copal-clip asks hyprctl what has focus and dispatches sendshortcut
+# itself, so there is one list, it is shared with the X desktop, and this
+# file stays four lines long. See write_copal_clip() in copal-prep.sh.
+bind = $mainMod, C, exec, copal-clip copy
+bind = $mainMod, X, exec, copal-clip cut
+bind = $mainMod, V, exec, copal-clip paste
+bind = $mainMod CTRL, V, exec, copal-clip history
+
+# System controls, on Omarchy's chords, with the programs this system has.
+bind = $mainMod CTRL, A, exec, $terminal -e alsamixer
+bind = $mainMod CTRL, T, exec, $terminal -e sh -c 'command -v btop >/dev/null && exec btop; exec htop'
+bind = $mainMod SHIFT, M, exec, $terminal -e sh -c 'command -v cmus >/dev/null && exec cmus; exec mpv --no-video ~/Music'
+bind = $mainMod SHIFT, N, exec, $terminal -e sh -c 'command -v nvim >/dev/null && exec nvim; exec vi'
 
 # Copal's additions, so both desktops end the day the same way: copal-halt
 # asks, closes the session, syncs, powers down. The keyboard power key
@@ -9687,6 +9766,10 @@ CURSORENV
     Super+e      file manager       Super+Shift+s screenshot region
     Super+q      close window       Super+f      fullscreen
     Super+1..9,0 workspaces         Super+Shift+p power down (copal-halt)
+    Super+arrows move focus         Super+Shift+arrows move the window
+    Alt+Tab      switch window      Super+Ctrl+arrows resize
+    Super+c/v    copy / paste       Super+Ctrl+v clipboard history
+    Super+b      hide/show the bar
 
     What is missing, honestly: quickshell -- the theme's radial taskbar and
     widgets -- has no Alpine package yet. Its configs are in place and
