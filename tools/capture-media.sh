@@ -174,13 +174,20 @@ if [ "$VIDEO" = 1 ]; then
           || warn "ffmpeg could not encode the video"
 
         # webm alongside, because it is smaller and every browser that
-        # matters plays one of the two.
+        # matters plays one of the two. A build of ffmpeg without libvpx
+        # writes a zero-byte file and exits 0, so success is judged on the
+        # file having contents rather than on the exit status -- and an empty
+        # one is removed rather than left to be published as a dead <source>.
         ffmpeg -y -loglevel error \
             -i "$OUT/install-cast.gif" \
             -c:v libvpx-vp9 -crf 34 -b:v 0 \
-            "$OUT/install.webm" >/dev/null 2>&1 \
-          && info "Rendered: $OUT/install.webm ($(du -h "$OUT/install.webm" | cut -f1))" \
-          || true
+            "$OUT/install.webm" >/dev/null 2>&1 || true
+        if [ -s "$OUT/install.webm" ]; then
+            info "Rendered: $OUT/install.webm ($(du -h "$OUT/install.webm" | cut -f1))"
+        else
+            rm -f "$OUT/install.webm"
+            warn "no webm -- this ffmpeg cannot encode VP9. The mp4 is fine."
+        fi
     fi
 fi
 

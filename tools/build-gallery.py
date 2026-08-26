@@ -21,6 +21,21 @@ import sys
 MEDIA = pathlib.Path("docs/media")
 OUT = pathlib.Path("docs/gallery.html")
 
+# Video counts as media. It is the same recording as the GIF, so it belongs in
+# the gallery rather than hidden in the repository -- somebody who wants to
+# scrub through the install should not have to go looking for it.
+IMG_EXT = {".png", ".gif", ".jpg", ".jpeg", ".webp"}
+VID_EXT = {".mp4", ".webm"}
+
+
+def media_tag(name, title, present):
+    """An <img> or a <video>, decided by the file rather than by a flag."""
+    if present[name].suffix.lower() in VID_EXT:
+        return (f'<video src="media/{html.escape(name)}" controls '
+                'preload="metadata" playsinline></video>')
+    return (f'<img src="media/{html.escape(name)}" '
+            f'alt="{html.escape(title)}" loading="lazy">')
+
 # Ordered: the gallery reads as the install does, start to finish. Anything
 # not named here is appended at the end in filename order.
 CAPTIONS = [
@@ -36,6 +51,9 @@ CAPTIONS = [
     ("i3-desktop.png", "i3 on the framebuffer",
      "The medium level — the desktop that fits a Pi Zero, recoloured to the "
      "same palette so switching session changes the compositor, not the look."),
+    ("install.mp4", "The same install, as video",
+     "For scrubbing and pausing. The GIF above is the same frames, encoded "
+     "for a page rather than for a player."),
     ("screen-1.png", "First frame after boot",
      "Taken by QEMU's monitor: the guest's own framebuffer, at the guest's "
      "own resolution."),
@@ -93,7 +111,7 @@ figure { margin: 0; display: flex; flex-direction: column; gap: .7rem; }
   border: 1px solid var(--ink-key); background: var(--paper-deep);
   box-shadow: 5px 5px 0 var(--paper-edge); overflow: hidden;
 }
-.frame img { display: block; width: 100%; height: auto; }
+.frame img, .frame video { display: block; width: 100%; height: auto; }
 figcaption { font-size: .82rem; color: var(--ink-dim); }
 figcaption b { display: block; color: var(--ink-body); font-weight: 700;
                font-size: .88rem; margin-bottom: .15rem; }
@@ -119,7 +137,7 @@ def main() -> int:
         return 1
 
     present = {p.name: p for p in sorted(MEDIA.iterdir())
-               if p.suffix.lower() in {".png", ".gif", ".jpg", ".jpeg", ".webp"}}
+               if p.suffix.lower() in IMG_EXT | VID_EXT}
 
     ordered, seen = [], set()
     for name, title, blurb in CAPTIONS:
@@ -147,8 +165,7 @@ def main() -> int:
             kb = f"{size / 1024:.0f} kB" if size < 1024 * 1024 else f"{size / 1048576:.1f} MB"
             parts.append(
                 "  <figure>\n"
-                f'    <div class="frame"><img src="media/{html.escape(name)}" '
-                f'alt="{html.escape(title)}" loading="lazy"></div>\n'
+                f'    <div class="frame">{media_tag(name, title, present)}</div>\n'
                 "    <figcaption>\n"
                 f"      <b>{html.escape(title)}</b>{html.escape(blurb)}\n"
                 f'      <span class="file">{html.escape(name)} · {kb}</span>\n'
@@ -163,7 +180,7 @@ def main() -> int:
         "</footer>\n</main>\n")
 
     OUT.write_text("".join(parts), encoding="utf-8")
-    print(f"build-gallery: {len(ordered)} image(s) -> {OUT}", file=sys.stderr)
+    print(f"build-gallery: {len(ordered)} item(s) -> {OUT}", file=sys.stderr)
     return 0
 
 
