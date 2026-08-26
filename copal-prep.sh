@@ -6983,6 +6983,9 @@ bindsym --release button3 exec --no-startup-id copal-menu --at-pointer
 # unified clipboard block below, which is the one Omarchy convention worth
 # breaking an existing binding for.
 bindsym $mod+Shift+c exec copal-center
+# The wallpaper picker. feh's thumbnail grid on X, which is the nicer of the
+# two pickers -- a wall of pictures, click one. Also in the menu under Style.
+bindsym $mod+Shift+w exec --no-startup-id copal-wallpaper --pick
 # System settings: users and groups, hostname, services, SSH, boot options.
 # It asks doas for the root it needs rather than assuming it has it.
 bindsym $mod+comma  exec copal-config
@@ -7606,8 +7609,22 @@ case "${1:-}" in
 esac
 
 have() { command -v "$1" >/dev/null 2>&1; }
+# Which session this is, which decides the picker at the bottom of the file.
+# WAYLAND_DISPLAY is set by the compositor for its own clients and by nothing
+# else, so it answers the question without asking what is installed.
+wayland() { [ -n "${WAYLAND_DISPLAY:-}" ]; }
 out()  { printf '%s\n' "$*" >> "$CSV"; }
-TERM_EMU="${TERMINAL:-$(have urxvt && echo urxvt || echo xterm)}"
+# The terminal, and on Wayland it cannot be an X one. xterm and urxvt would
+# come up through Xwayland if it happens to be installed and not at all if it
+# is not, so the Wayland session asks for the terminals that session has.
+if wayland; then
+    TERM_EMU="${TERMINAL:-$(have kitty && echo kitty \
+                            || (have foot && echo foot) \
+                            || (have alacritty && echo alacritty) \
+                            || echo xterm)}"
+else
+    TERM_EMU="${TERMINAL:-$(have urxvt && echo urxvt || echo xterm)}"
+fi
 
 # One entry: run it directly, wrap a terminal around it, or -- for the tools
 # that would exit before you could read anything -- show the help and hand
@@ -7661,6 +7678,10 @@ if [ -n "$(ls "$HOME"/minivmac/run-*.sh /root/minivmac/run-*.sh 2>/dev/null || t
     out "Emulators,^checkout(emu)"
 fi
 out '^sep()'
+# STYLE, which is Omarchy's own top-level entry and the one Copal did not
+# have. Everything here changes how the machine LOOKS rather than what is on
+# it, which is why it is a sibling of Install rather than an entry inside it.
+out "Style,^checkout(style)"
 out "Install software,^checkout(install)"
 [ -n "$(ls /usr/local/share/copal/guides/*.txt 2>/dev/null || true)" ] \
     && out "Guides,^checkout(guides)" || true
@@ -7746,6 +7767,15 @@ if grep -q '^Emulators,' "$CSV"; then
 fi
 
 # ----- System -----
+out '^tag(style)'
+out "Back,^back()"
+out '^sep(Style)'
+have copal-wallpaper && out "Wallpaper...,copal-wallpaper --pick" || true
+have copal-wallpaper && out "Get more wallpapers,$TERM_EMU -e sh -c 'copal-wallpaper --fetch; echo; echo Press Enter to close; read x'" || true
+have copal-theme && out "Theme (tokyo-night / antiquity),$TERM_EMU -e sh -c 'copal-theme list; echo; echo \"copal-theme NAME to switch\"; echo Press Enter to close; read x'" || true
+[ -f /usr/local/share/copal/guides/widgets.txt ] \
+    && out "Configure the bar and widgets,$TERM_EMU -e copal-guide widgets" || true
+
 out '^tag(system)'
 out "Back,^back()"
 out '^sep(System)'
@@ -7757,35 +7787,110 @@ have tcpdump  && out "Network capture,$TERM_EMU -e sh -c 'tcpdump -i eth0 -nn'" 
 have bluetoothctl && out "Bluetooth,$TERM_EMU -e bluetoothctl" || true
 have iw && out "Wifi scan,$TERM_EMU -e sh -c 'iw dev wlan0 scan | grep SSID; read x'" || true
 have alsamixer && out "Volume,$TERM_EMU -e alsamixer" || true
-have copal-gpu && out "Display and acceleration,$TERM_EMU -e sh -c 'copal-gpu; echo; echo Press Enter to close; read x'" || true
 out "Logs,$TERM_EMU -e sh -c 'copal-logs; echo; echo Press Enter to close; read x'"
 out "Setup and stages,$TERM_EMU -e sh -c 'copal; echo; echo Press Enter to close; read x'"
 out "Update Copal,$TERM_EMU -e sh -c 'copal -U; echo; echo Press Enter to close; read x'"
-out "Key bindings,$TERM_EMU -e less $HOME/.config/i3/keys.txt"
+# The key list lives in the i3 config directory on both desktops -- stage 4
+# writes it and stage 16 does not write a second one -- so it is offered
+# wherever it exists rather than wherever i3 is.
+[ -f "$HOME/.config/i3/keys.txt" ] \
+    && out "Key bindings,$TERM_EMU -e less $HOME/.config/i3/keys.txt" || true
+have copal-gpu && out "Display and acceleration,$TERM_EMU -e sh -c 'copal-gpu; echo; echo Press Enter to close; read x'" || true
 
 # ----- Session -----
 out '^tag(session)'
 out "Back,^back()"
 out '^sep(Session)'
-out "Reload i3,i3-msg restart"
-have i3lock && out "Lock screen,i3lock -c 1a1b26" || true
-out "Log out,i3-msg exit"
+# ASKED OF THE SESSION, not written once for i3. This menu is installed by
+# stage 4 and is also the menu the Antiquity desktop uses, where "Reload i3"
+# is an entry that cannot work and i3lock is an X program with no Wayland
+# session to lock. Reloading and logging out are the two things a session
+# menu is FOR, so getting them wrong on one of the two desktops is worse
+# than not offering them.
+if wayland; then
+    out "Reload Hyprland,hyprctl reload"
+    have hyprlock && out "Lock screen,hyprlock" || true
+    out "Log out,hyprctl dispatch exit"
+else
+    out "Reload i3,i3-msg restart"
+    have i3lock && out "Lock screen,i3lock -c 1a1b26" || true
+    out "Log out,i3-msg exit"
+fi
 # copal-halt rather than a bare poweroff: as $PI_USER the bare one cannot
 # signal init at all, and from a menu there is no terminal for doas to ask in.
 out "Reboot,copal-halt reboot"
 out "Shut down,copal-halt"
 
-if have jgmenu; then
+# ---------------------------------------------------------------------------
+# PRESENTING IT. jgmenu is a pointer menu and an X11 program; on Wayland there
+# is no jgmenu and there never will be, so the same CSV has to be walkable
+# from a keyboard-driven list as well.
+#
+# THE LIST WALKER IS THE OMARCHY SHAPE, and it is worth naming what that is,
+# because the first version of this fell short of it. Omarchy's menu is not a
+# tree drawn on screen: it is a flat picker shown ONE LEVEL AT A TIME, where
+# choosing a category redraws the same picker with that category's entries and
+# a Back at the top. Ten items on screen, arrow keys and Enter, type to filter.
+# The previous fallback flattened every level into one 300-line list instead,
+# which is a different thing wearing the same name -- everything visible at
+# once, no structure, and the Install branch's 300 packages drowning the eight
+# entries anybody wanted.
+#
+# So: navigate the tags rather than flattening them. ^tag(x) opens a section,
+# ^checkout(x) enters one, ^back() leaves it, and the loop below turns those
+# three markers into the walk. The CSV is unchanged and jgmenu still reads it
+# the way it always did.
+walk() {
+    _tag=""                       # "" is the top level, before any ^tag()
+    while :; do
+        # The entries belonging to $_tag: everything after its ^tag() line and
+        # before the next one. awk rather than sed, because the top level is
+        # the region BEFORE the first tag and that is an awkward sed address.
+        _items=$(awk -v want="$_tag" '
+            /^\^tag\(/ { cur = $0; sub(/^\^tag\(/, "", cur); sub(/\)$/, "", cur); next }
+            { if (cur == want || (want == "" && cur == "")) print }
+        ' "$CSV" | grep -v '^\^sep' | grep -v '^$')
+        [ -n "$_items" ] || return 0
+
+        # Labels only for the picker; the command half is looked up after.
+        _sel=$(printf '%s\n' "$_items" | cut -d, -f1 | menu_cmd "$_tag") || return 0
+        [ -n "$_sel" ] || return 0
+
+        # First match wins, and it is matched against the label field alone --
+        # a command containing a comma would otherwise be split by cut.
+        _line=$(printf '%s\n' "$_items" | awk -F, -v s="$_sel" '$1 == s { print; exit }')
+        _act=$(printf '%s' "$_line" | cut -d, -f2-)
+        case "$_act" in
+            '^checkout('*) _tag=$(printf '%s' "$_act" | sed 's/^\^checkout(//; s/)$//') ;;
+            '^back()')     _tag="" ;;
+            '')            return 0 ;;
+            *)             exec sh -c "$_act" ;;
+        esac
+    done
+}
+
+# The picker itself, chosen by what the session actually is rather than by
+# what is installed: wofi is a Wayland client and does not run on X, dmenu is
+# an X client and does not run on Wayland, and both are frequently present at
+# once on a machine that has had both desktops installed.
+menu_cmd() {  # <prompt>
+    if wayland && have wofi; then
+        wofi --dmenu --insensitive --prompt "${1:-menu}" --lines 15 --width 460
+    elif have dmenu; then
+        dmenu -i -l 15 -p "${1:-menu}"
+    else
+        echo "copal-menu: no menu program (jgmenu, wofi or dmenu)" >&2
+        return 1
+    fi
+}
+
+# jgmenu draws the whole tree with the mouse and is the nicer thing when it is
+# there AND this is X. On Wayland it is skipped even when installed: it would
+# open through Xwayland, on the wrong output, with the wrong scale.
+if have jgmenu && ! wayland; then
     exec jgmenu --simple $AT_POINTER --csv-file="$CSV"
-else
-    # No jgmenu: flatten to dmenu over the same list, so the menu still works
-    # and still shows every entry. Submenu markers and separators drop out;
-    # Back entries would be meaningless in a flat list, so they go too.
-    sel=$(grep -v '^\^' "$CSV" | grep -v '\^checkout(\|\^back()' \
-          | cut -d, -f1 | dmenu -i -l 20 -p 'menu') || exit 0
-    cmd=$(grep "^$sel," "$CSV" | grep -v '\^checkout(' | head -1 | cut -d, -f2-)
-    [ -n "$cmd" ] && exec sh -c "$cmd"
 fi
+walk
 COPALMENU
     chmod 0755 /usr/local/bin/copal-menu
 
@@ -8850,6 +8955,9 @@ COPALGPU
                         moment for its own key menu.
    Super + Shift + M    music -- cmus, or mpv on ~/Music if cmus is not
                         installed
+   Super + Shift + W    the wallpaper picker, with thumbnails. Also in the
+                        menu under Style, along with a way to download
+                        twenty more.
    Super + Ctrl + A     volume (alsamixer)
    Super + Ctrl + T     what the machine is doing (btop, or htop)
 
@@ -9114,6 +9222,254 @@ KEYS
 
  SEE ALSO
    copal-guide i3-keys        the window manager key bindings
+GUIDE
+
+    # ----------------------------------------------------------------------
+    # The widgets guide, written because "how do I configure the widgets" has
+    # no answer anywhere else: the theme's widgets are QML for a shell that is
+    # not installed, and waybar's own documentation is a man page organised by
+    # module rather than by what somebody wants to change.
+    cat > /usr/local/share/copal/guides/widgets.txt <<'GUIDE'
+ ======================================================================
+   THE BAR AND ITS WIDGETS -- reading it, changing it, adding to it
+ ======================================================================
+
+ WHAT THE BAR IS, AND WHY IT IS NOT THE ONE IN THE SCREENSHOTS
+
+   Linux Antiquity's bar is 99 QML files for quickshell, and no Alpine
+   repository packages quickshell. So Copal draws the bar with waybar
+   instead, in the same palette, carrying the same information. The
+   theme's own documentation names waybar as the alternative, so this is
+   the supported substitution rather than an improvisation.
+
+   copal-bar is the switch. It runs quickshell if a quickshell ever
+   appears on PATH and waybar otherwise, so the day Alpine packages one
+   you get the real bar and nothing here has to be edited.
+
+   The QML is installed even though nothing reads it yet:
+       ~/.config/quickshell/
+
+ THE TWO FILES
+
+   ~/.config/waybar/config      what is on the bar, and what each part does
+   ~/.config/waybar/style.css   what it looks like
+
+   Nothing regenerates either one after the install. They are yours.
+   Both have comments in them; the config is JSON-with-comments, which is
+   what waybar reads and the one place in this system that gets them.
+
+ SEEING A CHANGE
+
+   pkill waybar; copal-bar &
+
+   waybar re-reads nothing on its own -- there is no reload signal for the
+   config. If the bar does not come back:
+
+       waybar -l debug
+
+   which names the module that stopped it. Run it from a terminal INSIDE
+   the desktop, not over ssh: waybar is a Wayland client and needs the
+   session's WAYLAND_DISPLAY and its D-Bus address.
+
+ WHAT IS ON IT NOW
+
+   Left     the menu button, workspaces 1-5, the current submap, the
+            window list
+   Centre   the clock
+   Right    weather, temperature, cpu, memory, disk, network, volume,
+            battery, the system tray
+
+ MOVING THINGS
+
+   The three lists at the top of the config are the layout, and moving a
+   name between them moves the thing on screen:
+
+       "modules-left":   ["custom/menu", "hyprland/workspaces", ...]
+       "modules-center": ["clock"],
+       "modules-right":  ["custom/weather", "temperature", "cpu", ...]
+
+   Delete a name from all three and that widget is gone. The block that
+   configures it lower down can stay; an unlisted module is not drawn.
+
+ THE ONES MOST WORTH CHANGING
+
+   THE CLOCK. "format" is strftime:
+       "format": "{:%a %d %b  %H:%M}"      Wed 26 Aug  14:40
+       "format": "{:%H:%M}"                14:40
+       "format": "{:%I:%M %p}"             02:40 PM
+
+   THE WEATHER. It asks wttr.in, which needs no key and no account, and
+   which geolocates by IP -- so with no city in the URL it is right by
+   default on a machine that has not been told where it is. To pin it:
+
+       "exec": "curl -sS --max-time 8 'https://wttr.in/Lisbon?format=%c%t'"
+
+   %c is the condition glyph, %t the temperature. %f gives Fahrenheit,
+   %C spells the condition out. The full list: curl wttr.in/:help
+
+   THE INTERVAL IS 1800 SECONDS ON PURPOSE. Every tick is a request from
+   this machine to somebody else's server. A weather widget on a
+   one-minute interval phones out 1440 times a day for a number that
+   changes hourly. If you do not want it phoning out at all, delete
+   "custom/weather" from modules-right -- nothing else contacts anything.
+
+   THE TEMPERATURE. This is the one that shows nothing on some machines,
+   and it is not broken when it does. waybar reads a sensor file, and
+   which one differs per board -- a Pi has thermal_zone0, a PC has
+   whatever its chipset registered, and a VM usually has no sensor at all.
+   With none found the module removes itself and the rest of the bar is
+   untouched. To see whether this machine has one:
+
+       ls /sys/class/thermal/thermal_zone*/temp
+
+   If that lists something and the widget is still absent, name it:
+
+       "temperature": { "hwmon-path": "/sys/class/thermal/thermal_zone0/temp" }
+
+   THE WORKSPACE NUMBERS. All five are shown whether or not anything is on
+   them, which is what persistent-workspaces does:
+
+       "persistent-workspaces": { "*": 5 }
+
+   Without it waybar draws only the workspaces that already have a window,
+   so a fresh session shows a single "1" and Super+2 looks like it does
+   nothing. Change the 5 if you want more.
+
+   THE MENU BUTTON. Left-click opens copal-menu, right-click shuts down.
+   The glyph is the "exec" line -- it is echoed, not typed, so that the
+   file stays plain ASCII:
+
+       "exec": "echo '\u2261'"
+
+ ADDING ONE OF YOUR OWN
+
+   Any command that prints one line is a widget. This is the whole of it:
+
+       "custom/uptime": {
+         "format": "up {}",
+         "interval": 60,
+         "exec": "uptime | sed 's/.*up //; s/,.*//'"
+       }
+
+   Then put "custom/uptime" in one of the three lists, and give it a rule
+   in style.css if you want it coloured -- the id is the module name with
+   the slash turned into a dash:
+
+       #custom-uptime { color: #fccf8a; }
+
+   A widget that needs to react rather than poll can use "signal": N and
+   be refreshed with  pkill -RTMIN+N waybar  instead of an interval.
+
+ COLOURS
+
+   style.css carries the theme's palette at the top of this file's
+   comments. The ones you are most likely to want:
+
+       #181818   the bar itself          #fccf8a   accent (gold)
+       #d0daed   ordinary text           #87704f   accent, dimmed
+       #333333   hover highlight         #ff723e   urgent
+
+   One rule covers every readout, so adding a module does not mean adding
+   CSS unless you want it to look different from the rest.
+
+ THE WALLPAPER IS NOT A WIDGET
+
+   It has its own command, because it is not on the bar:
+
+       copal-wallpaper --pick     choose one, with thumbnails
+       copal-wallpaper --list     what is here and where it came from
+       copal-wallpaper --fetch    download diinki's published set
+
+   See 'copal-guide wallpapers'.
+GUIDE
+
+    cat > /usr/local/share/copal/guides/wallpapers.txt <<'GUIDE'
+ ======================================================================
+   WALLPAPERS -- choosing one, and getting more
+ ======================================================================
+
+ THE COMMAND
+
+   copal-wallpaper --pick     choose one, with thumbnails
+   copal-wallpaper --list     what is here, and where each came from
+   copal-wallpaper set FILE   use a particular file
+   copal-wallpaper --fetch    download diinki's published collection
+   copal-wallpaper            paint the chosen one (what the session runs)
+
+   The choice is remembered in ~/.config/copal/wallpaper -- one line, the
+   path. Delete it and the theme's default comes back.
+
+ THE PICKER
+
+   On the Wayland desktop it is wofi with the pictures turned on: a list
+   with a thumbnail beside each name, type to filter, Enter to set. On X
+   it is feh's thumbnail grid, which is nicer -- a wall of pictures, click
+   one. Neither is required; with no image-capable picker you still get a
+   plain list of names that still works.
+
+   Thumbnails are made once, at 240x135, and kept in
+   ~/.cache/copal/wallpaper-thumbs. That directory can be deleted at any
+   time; it rebuilds. The reason it exists is that the source images are
+   4K PNGs of twenty megabytes, and handing twenty of those to a launcher
+   on a machine with 512 MB of RAM ends the session rather than the menu.
+
+ WHAT IS ALREADY HERE
+
+   Three, in ~/.config/hypr/wallpapers_bundled/ -- carnation_collage,
+   georges_riom_collage and oc_the_blackboard. They arrive with the Linux
+   Antiquity theme, which is MIT-licensed, and they are what the desktop
+   looks like out of the box.
+
+ GETTING THE REST
+
+   The author publishes about twenty at github.com/diinki/wallpapers,
+   including the three above. copal-wallpaper --fetch downloads them:
+
+       copal-wallpaper --fetch                 all of them, ~240 MB
+       copal-wallpaper --fetch HIRAETH         just that one
+       copal-wallpaper --fetch kitty aquarium  anything matching either
+
+   Matching is case-insensitive and on any part of the name, so you do not
+   have to type STRAY_KITTY_CLUB-teal.png to get it.
+
+   THEY ARE DOWNSCALED ON ARRIVAL, to this screen, and the original is
+   discarded. A 4K PNG is between five and twenty-two megabytes; the same
+   picture at 1280x800 is about one. On a Pi that is the difference
+   between a wallpaper and a machine that swaps. If you want the originals
+   at full size, save them from the repository yourself -- this command is
+   not trying to be a download manager.
+
+ THE LICENCE, WHICH IS WHY THIS IS A COMMAND AND NOT A STAGE
+
+   That repository has NO LICENCE FILE. Its README says the wallpapers are
+   published "in case any of you want to use them", which is the author
+   inviting you to use them -- and is not a grant to redistribute them.
+
+   So Copal does not ship them. They are not in the image, not in the
+   repository, and not vendored the way the theme is (the theme IS MIT,
+   which is why that one can be). What --fetch does is bring them to YOUR
+   machine at YOUR request, which is the same act as saving them from that
+   page in a browser.
+
+   If you want to redistribute them -- put them in your own image, hand a
+   card to somebody -- that is a question for the author, and his Discord
+   and Ko-fi links are in that README. He also takes tips, which for
+   twenty wallpapers and a desktop theme is not an unreasonable thing to
+   consider.
+
+ USING YOUR OWN
+
+   Anything in ~/Pictures/wallpapers is offered by the picker: png, jpg,
+   jpeg or webp. No subdirectories are searched -- one directory, so that
+   a picture library dropped in there does not become the wallpaper menu.
+
+ HOW IT IS PAINTED
+
+   hyprpaper is what the theme uses and Alpine does not package it, so
+   swaybg paints instead and hyprpaper is preferred automatically if it
+   ever appears. swaybg has no IPC, so changing the wallpaper means
+   replacing the process -- which is why setting one kills only the swaybg
+   belonging to you and starts a new one.
 GUIDE
 
     cat > /usr/local/share/copal/guides/cli-games.txt <<'GUIDE'
@@ -9523,14 +9879,39 @@ hypr_write_waybar() {
   "height": 26,
   "spacing": 6,
 
-  "modules-left":   ["hyprland/workspaces", "hyprland/submap", "wlr/taskbar"],
+  // THE MENU BUTTON FIRST, then the workspaces immediately to its right.
+  // That order is the point rather than a preference: the button is the one
+  // thing on this bar that a person who knows no key bindings can find, so it
+  // goes in the corner every desktop has taught them to look at, and the
+  // workspace numbers sit beside it because Super+1..5 is the next thing to
+  // learn and seeing them switch is how that is learned.
+  "modules-left":   ["custom/menu", "hyprland/workspaces", "hyprland/submap", "wlr/taskbar"],
   "modules-center": ["clock"],
-  "modules-right":  ["cpu", "memory", "disk", "network", "wireplumber", "battery", "tray"],
+  "modules-right":  ["custom/weather", "temperature", "cpu", "memory", "disk", "network", "wireplumber", "battery", "tray"],
 
+  // The Omarchy menu, in a corner. Left-click opens it; right-click goes
+  // straight to the power entries, because "shut down" is the one thing
+  // people hunt for in a menu and it is two levels in.
+  "custom/menu": {
+    "format": "{}",
+    "exec": "echo '\u2261'",
+    "interval": "once",
+    "tooltip": true,
+    "tooltip-format": "Menu -- programs, settings, install, session (Super+Z). Right-click: shut down",
+    "on-click": "copal-menu",
+    "on-click-right": "copal-halt"
+  },
+
+  // WORKSPACES 1 TO 5, ALWAYS SHOWN. persistent-workspaces is what makes the
+  // numbers visible before anything is on them -- without it waybar draws
+  // only the workspaces that already have a window, so a fresh session shows
+  // a single "1" and Super+2 appears to do nothing at all. The bindings go
+  // 1..5 in both desktops, so the bar shows exactly those five.
   "hyprland/workspaces": {
     "format": "{name}",
     "on-click": "activate",
-    "sort-by-number": true
+    "sort-by-number": true,
+    "persistent-workspaces": { "*": 5 }
   },
 
   "hyprland/submap": { "format": "{}" },
@@ -9555,6 +9936,55 @@ hypr_write_waybar() {
   "cpu":    { "format": "cpu {usage}%", "interval": 5 },
   "memory": { "format": "mem {percentage}%", "interval": 5 },
   "disk":   { "format": "disk {percentage_used}%", "path": "/", "interval": 60 },
+
+  // THE THEME'S OTHER TWO WIDGETS. quickshell's bar carries a clock, a CPU
+  // temperature and a weather readout; the clock was here from the start and
+  // these two were the gap somebody noticed. See 'copal-guide widgets' for
+  // how to change or remove them.
+  //
+  // TEMPERATURE HAS NO PORTABLE SOURCE, and this is the one module that shows
+  // nothing on some machines. waybar reads a hwmon file, and which file that
+  // is differs per board: a Pi has thermal_zone0, a PC has whatever its
+  // chipset driver registered, and a VM usually has no thermal sensor at all.
+  //
+  // Verified on a real guest rather than assumed. With no sensor, waybar logs
+  //
+  //     module temperature: Disabling module "temperature",
+  //     Can't open /sys/class/thermal/thermal_zone0/temp
+  //
+  // and carries on -- the module removes itself and the bar is otherwise
+  // untouched, which is the right failure and the reason this ships
+  // unconditionally. If yours is missing and the machine does have a sensor,
+  //     ls /sys/class/thermal/thermal_zone*/temp
+  // and set hwmon-path here. See 'copal-guide widgets'.
+  "temperature": {
+    "critical-threshold": 80,
+    "format": "temp {temperatureC}°C",
+    "format-critical": "temp {temperatureC}°C !",
+    "interval": 10,
+    "tooltip": true
+  },
+
+  // WEATHER, and it is a custom module because waybar has none. wttr.in
+  // answers a one-line format over plain HTTP and needs no key and no
+  // account. Deliberately no location: wttr.in geolocates the caller's IP,
+  // which is the only way to be right by default on a machine that has not
+  // been told where it is. Put a city in the URL to override -- see the
+  // guide.
+  //
+  // THIRTY MINUTES, and that is not a stylistic choice. Every interval is a
+  // request from this machine to a third party, so a one-minute weather
+  // widget is a machine that phones out 1440 times a day for information
+  // that changes hourly. The timeout keeps a dead network from leaving the
+  // module hanging, and the || true keeps a failed fetch from painting an
+  // error into the bar: no network, no weather, no noise.
+  "custom/weather": {
+    "format": "{}",
+    "interval": 1800,
+    "exec": "curl -sS --max-time 8 'https://wttr.in/?format=%c%t' 2>/dev/null || true",
+    "tooltip": true,
+    "tooltip-format": "wttr.in -- edit the URL in ~/.config/waybar/config for another place"
+  },
 
   "network": {
     "format-ethernet": "eth {ipaddr}",
@@ -9609,11 +10039,34 @@ window#waybar {
 }
 
 /* One rule for every block, so adding a module does not mean adding CSS. */
-#workspaces, #submap, #taskbar, #clock, #cpu, #memory, #disk,
-#network, #wireplumber, #battery, #tray {
+#workspaces, #submap, #taskbar, #clock, #cpu, #memory, #disk, #temperature,
+#custom-weather, #network, #wireplumber, #battery, #tray {
     padding: 0 10px;
     color: #d0daed;
     background: transparent;
+}
+
+/* THE MENU BUTTON, in the top-left corner. It is given the accent colour and
+   a little more room than a readout, because it is the only thing on this bar
+   that is meant to be CLICKED by somebody who does not yet know that Super+Z
+   does the same job. Everything else here is a number you read. */
+#custom-menu {
+    padding: 0 14px 0 12px;
+    margin-right: 2px;
+    font-size: 15px;
+    color: #fccf8a;              /* accent */
+    background: transparent;
+}
+#custom-menu:hover {
+    background: #333333;         /* highlight, the same as a workspace hover */
+    color: #ffffff;
+}
+
+/* The temperature crosses its threshold and says so in the urgent colour --
+   the same one an urgent workspace uses, so the bar has one alarm colour
+   rather than one per module. */
+#temperature.critical {
+    color: #ff723e;
 }
 
 #workspaces button {
@@ -9667,6 +10120,76 @@ tooltip {
 WAYBARCSS
     install_home_file .config/waybar/style.css /tmp/waybarcss.$$
     rm -f /tmp/waybarcss.$$
+
+    # ----------------------------------------------------------------------
+    # wofi's stylesheet, and it is here rather than anywhere else because the
+    # bar's palette is here.
+    #
+    # WHY IT MATTERS MORE THAN A LAUNCHER'S LOOK USUALLY DOES. wofi is not
+    # just Super+D on this desktop: it is what copal-menu draws itself with
+    # when the session is Wayland, so it IS the menu -- the whole Omarchy-
+    # shaped thing, one level at a time. Unstyled it arrives as GTK default
+    # grey with a blue selection bar, which on a screen of muted greens and
+    # golds looks like a dialog from a different computer that has wandered in
+    # by mistake. Seen on a live guest, which is the only reason this exists.
+    #
+    # Same colours as the bar, from the theme's Config.qml.
+    say "Writing ~/.config/wofi/style.css (the launcher and the menu)"
+    cat > /tmp/woficss.$$ <<'WOFICSS'
+/* Generated by copal-init.sh. Linux Antiquity's helios palette, on wofi.
+   wofi is both the launcher (Super+D) and the menu copal-menu draws, so this
+   one file styles both. Edit freely; nothing regenerates it. */
+
+window {
+    background-color: #181818;
+    border: 1px solid #87704f;      /* accentDark */
+    border-radius: 2px;
+    font-family: "JetBrains Mono", "DejaVu Sans Mono", monospace;
+    font-size: 13px;
+}
+
+/* The search box. It is the first thing focused, so it gets the accent. */
+#input {
+    background-color: #121212;
+    color: #d0daed;
+    border: none;
+    border-bottom: 1px solid #333333;
+    padding: 8px 10px;
+    margin: 0;
+}
+#input image { color: #87704f; }
+
+#inner-box, #outer-box, #scroll { background-color: #181818; border: none; }
+
+#entry {
+    padding: 5px 10px;
+    color: #d0daed;
+    background-color: transparent;
+}
+
+/* The selected row. Left bar rather than a filled block: at 26px a solid
+   highlight across the whole width is louder than the wallpaper behind it. */
+#entry:selected, #entry:focus {
+    background-color: #333333;       /* highlight */
+    color: #fccf8a;                  /* accent */
+    border-left: 2px solid #fccf8a;
+    padding-left: 8px;
+    outline: none;
+}
+#text:selected { color: #fccf8a; }
+
+/* The picker with pictures in it -- copal-wallpaper --pick runs wofi with
+   --allow-images, and a thumbnail wants room around it. Without a height the
+   rows collapse to text height and take the picture with them -- a preview
+   too small to preview anything, which is what the first version shipped.
+   54px pairs with the image_size=96 copal-wallpaper defines. */
+#entry img {
+    margin-right: 12px;
+    min-height: 54px;
+}
+WOFICSS
+    install_home_file .config/wofi/style.css /tmp/woficss.$$
+    rm -f /tmp/woficss.$$
 
     # The wrapper the session starts, rather than naming waybar in
     # hyprland.conf. One place decides which shell runs, and it prefers the
@@ -9929,20 +10452,287 @@ ANTIQSHOT
 #!/bin/sh
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
-# copal-wallpaper -- paints the Antiquity wallpaper at session start.
+# copal-wallpaper -- paint the wallpaper, choose one, or fetch more.
+#
+#   copal-wallpaper              paint the chosen one and stay running.
+#                                This is what hyprland.conf exec-once's.
+#   copal-wallpaper --pick       choose one, with thumbnails.
+#   copal-wallpaper set FILE     use FILE from now on.
+#   copal-wallpaper --list       what is available, and where it came from.
+#   copal-wallpaper --fetch      download diinki's published collection.
 #
 # hyprpaper is what the theme uses and Alpine does not package it; swaybg
-# shows one image just as well. The image is the one upstream's
-# hyprpaper.conf names. Runs for the life of the session; exec'd from
-# hyprland.conf so the compositor owns it.
-WP="$HOME/.config/hypr/wallpapers_bundled/georges_riom_collage.png"
-if command -v hyprpaper >/dev/null 2>&1; then
-    exec hyprpaper
-fi
-if command -v swaybg >/dev/null 2>&1 && [ -f "$WP" ]; then
-    exec swaybg -i "$WP" -m fill
-fi
-exit 0
+# shows one image just as well.
+set -u
+have() { command -v "$1" >/dev/null 2>&1; }
+wayland() { [ -n "${WAYLAND_DISPLAY:-}" ]; }
+
+# WHERE THE CHOICE LIVES. One line naming a file, in the config directory
+# rather than in a dotfile of its own, so 'what is my wallpaper' has one
+# answer that both the picker and the session-start path read.
+STATE="${XDG_CONFIG_HOME:-$HOME/.config}/copal/wallpaper"
+BUNDLED="$HOME/.config/hypr/wallpapers_bundled"
+EXTRA="$HOME/Pictures/wallpapers"
+THUMBS="${XDG_CACHE_HOME:-$HOME/.cache}/copal/wallpaper-thumbs"
+DEFAULT="$BUNDLED/georges_riom_collage.png"
+
+# Every image in both places, deduplicated by name, newest directory last.
+# Nothing recursive: a wallpaper directory with a tree in it is somebody's
+# photo library and this is not a file manager.
+list_papers() {
+    for _d in "$BUNDLED" "$EXTRA"; do
+        [ -d "$_d" ] || continue
+        for _f in "$_d"/*.png "$_d"/*.jpg "$_d"/*.jpeg "$_d"/*.webp; do
+            [ -f "$_f" ] && printf '%s\n' "$_f"
+        done
+    done
+}
+
+current() {
+    if [ -s "$STATE" ]; then
+        _c=$(head -1 "$STATE")
+        [ -f "$_c" ] && { printf '%s\n' "$_c"; return 0; }
+    fi
+    [ -f "$DEFAULT" ] && { printf '%s\n' "$DEFAULT"; return 0; }
+    list_papers | head -1
+}
+
+# ---------------------------------------------------------------------------
+# Thumbnails. The pictures are 4K PNGs of twenty megabytes; handing twenty of
+# those to a launcher on a machine with 512 MB of RAM is how you find out what
+# the OOM killer does to a compositor. 240px versions, made once, kept in the
+# cache directory where they can be deleted without losing anything.
+thumb_for() {  # <image> -> path to its thumbnail (which may be the image)
+    have magick || have convert || { printf '%s\n' "$1"; return 0; }
+    _im=$(have magick && echo magick || echo convert)
+    mkdir -p "$THUMBS" 2>/dev/null || { printf '%s\n' "$1"; return 0; }
+    # Named after the source so the cache is self-cleaning by inspection, and
+    # regenerated only when the source is newer.
+    _t="$THUMBS/$(printf '%s' "$1" | md5sum 2>/dev/null | cut -c1-16).png"
+    [ -z "${_t##*/.png}" ] && { printf '%s\n' "$1"; return 0; }
+    if [ ! -f "$_t" ] || [ "$1" -nt "$_t" ]; then
+        "$_im" "$1" -thumbnail 240x135^ -gravity center -extent 240x135 \
+               "$_t" 2>/dev/null || { printf '%s\n' "$1"; return 0; }
+    fi
+    printf '%s\n' "$_t"
+}
+
+# ---------------------------------------------------------------------------
+# THE PICKER, and there are two because there is no one program that draws a
+# thumbnail on both desktops.
+#
+#   Wayland: wofi --allow-images, which reads "img:PATH:text:LABEL" and draws
+#            the picture beside the name. Same launcher as the menu, so it is
+#            already styled and already familiar.
+#
+#            HOW BIG THE PICTURE IS, is a config key and not a flag. wofi
+#            1.5.3 has --allow-images (-I) and no --image-size at all: the
+#            size is image_size, default 32, reachable only through the
+#            config file or -D/--define. Written as --image-size it is
+#            ignored in silence, which produces a picker whose thumbnails
+#            are the height of the text. Seen on a screenshot of the real
+#            thing; fixed here.
+#   X11:     feh -t, which IS a thumbnail browser -- a grid of pictures, and
+#            --action turns a click into a command. Nicer than the Wayland
+#            one, and it is the older desktop that gets it, which is a
+#            pleasant change.
+#
+# Neither is required: with no image-capable picker this falls back to the
+# plain list, which still works and still sets the wallpaper.
+pick() {
+    _n=$(list_papers | grep -c . || true)
+    [ "${_n:-0}" -gt 0 ] || {
+        echo "copal-wallpaper: no images in $BUNDLED or $EXTRA" >&2
+        echo "  'copal-wallpaper --fetch' downloads diinki's published set." >&2
+        return 1
+    }
+
+    if ! wayland && have feh; then
+        # feh runs the action itself, so this returns as soon as the grid is
+        # up and the setting happens on the click.
+        exec feh -t -y 200 -E 200 --index-info "%n" \
+                 --action "copal-wallpaper set %f" $(list_papers)
+    fi
+
+    if wayland && have wofi && { have magick || have convert; }; then
+        _sel=$(list_papers | while IFS= read -r _f; do
+                   printf 'img:%s:text:%s\n' "$(thumb_for "$_f")" "$(basename "$_f")"
+               done | wofi --dmenu --allow-images --define image_size=96 \
+                           --insensitive --prompt wallpaper \
+                           --lines 6 --width 660) || return 0
+        # wofi gives back the text half, which is the basename.
+        [ -n "$_sel" ] || return 0
+        _f=$(list_papers | awk -v b="$_sel" '{ n=$0; sub(/.*\//,"",n); if (n==b) { print; exit } }')
+        [ -n "$_f" ] && set_paper "$_f"
+        return 0
+    fi
+
+    # No pictures, then. Still a picker.
+    _sel=$(list_papers | while IFS= read -r _f; do basename "$_f"; done \
+           | { if wayland && have wofi; then wofi --dmenu --prompt wallpaper --lines 12
+               elif have dmenu; then dmenu -i -l 12 -p wallpaper
+               else cat; fi; }) || return 0
+    [ -n "$_sel" ] || return 0
+    _f=$(list_papers | awk -v b="$_sel" '{ n=$0; sub(/.*\//,"",n); if (n==b) { print; exit } }')
+    [ -n "$_f" ] && set_paper "$_f"
+}
+
+# Remember it, then repaint without restarting the session. swaybg has no IPC,
+# so repainting means replacing the process -- which is why this kills only
+# the swaybg it started rather than every swaybg on the machine.
+set_paper() {  # <image>
+    [ -f "$1" ] || { echo "copal-wallpaper: no such file: $1" >&2; return 1; }
+    mkdir -p "$(dirname "$STATE")"
+    printf '%s\n' "$1" > "$STATE"
+    echo "wallpaper: $1"
+    if have hyprctl && hyprctl version >/dev/null 2>&1 && have hyprpaper; then
+        hyprctl hyprpaper reload ,"$1" >/dev/null 2>&1 && return 0
+    fi
+    if have swaybg; then
+        pkill -x -U "$(id -u)" swaybg 2>/dev/null
+        (setsid swaybg -i "$1" -m fill >/dev/null 2>&1 &)
+        return 0
+    fi
+    have feh && exec feh --bg-fill "$1"
+    return 0
+}
+
+# ---------------------------------------------------------------------------
+# FETCHING THE PUBLISHED SET, and the two warnings below are the reason this
+# is a command you run rather than something an install stage does.
+#
+# LICENCE. github.com/diinki/wallpapers carries NO LICENCE FILE. Its README
+# says "These are the wallpapers that I've made & published, in case any of
+# you want to use them!" -- which is the author inviting you to use them, and
+# is not a grant to redistribute. So Copal does not ship them, does not put
+# them in the image, and does not vendor them into its repository the way it
+# vendors the theme, which IS MIT-licensed and can be. What it does is fetch
+# them onto YOUR machine at YOUR request, which is the same act as clicking
+# the pictures in that README. If you want to redistribute them, that is a
+# question for the author -- the Discord and Ko-fi links are in the README.
+#
+# SIZE. Twenty images, 240 MB, and they are 4K PNGs. On a Pi Zero with a
+# 720p framebuffer and 512 MB of RAM that is neither useful nor survivable,
+# so each one is downscaled to the screen and the original is discarded. The
+# download is still 240 MB over the wire if you take all of them, which is
+# why the default is to ask which.
+UPSTREAM="https://raw.githubusercontent.com/diinki/wallpapers/main"
+PAPERS="june2026/carnation_collage.png
+june2026/georges_riom_collage.png
+june2026/oc_the_blackboard.png
+may2025/2CB.png
+may2025/ALCHEMY-dark.png
+may2025/ALCHEMY-pink.png
+may2025/AQUARIUM.png
+may2025/ARCHPOOL.png
+may2025/HEART_NEBULA.png
+may2025/HIRAETH.png
+may2025/STRAY_KITTY_CLUB-beige.png
+may2025/STRAY_KITTY_CLUB-mint.png
+may2025/STRAY_KITTY_CLUB-pink.png
+may2025/STRAY_KITTY_CLUB-teal.png
+may2025/SYSTEMA.png
+may2025/colorshift.png
+april2026/terminal_glossary_4k_pastel-green.png
+april2026/terminal_glossary_4k_pastel-pink.png
+april2026/terminal_glossary_4k_pastel-purple.png
+april2026/terminal_glossary_4k_paw.png"
+
+screen_geom() {
+    if have hyprctl && hyprctl monitors -j >/dev/null 2>&1 && have jq; then
+        hyprctl monitors -j 2>/dev/null \
+            | jq -r '.[0] | "\(.width)x\(.height)"' 2>/dev/null && return 0
+    fi
+    have xrandr && xrandr 2>/dev/null | awk '/\*/ {print $1; exit}' && return 0
+    echo 1920x1080
+}
+
+fetch() {  # [name-fragment ...]
+    have curl || { echo "copal-wallpaper: curl is not installed." >&2; return 1; }
+    cat <<'NOTE'
+diinki's wallpapers -- https://github.com/diinki/wallpapers
+
+  That repository has NO LICENCE FILE. Its README says they are published
+  "in case any of you want to use them", which is an invitation to use them
+  and not a grant to redistribute them. Copal therefore does not ship them;
+  this fetches them onto this machine at your request, which is the same act
+  as saving them from the page yourself. Redistribution is a question for the
+  author -- his Discord and Ko-fi are linked in that README.
+
+  They are 4K PNGs, about 240 MB for the set. Each is downscaled to this
+  screen after download and the original is discarded, because a 22 MB image
+  on a machine with 512 MB of RAM is not a wallpaper, it is an incident.
+
+NOTE
+    _geom=$(screen_geom)
+    _want="$*"
+    mkdir -p "$EXTRA" || return 1
+    _got=0 _fail=0
+    for _p in $PAPERS; do
+        _name=$(basename "$_p")
+        # No arguments means all of them; otherwise match any fragment given.
+        if [ -n "$_want" ]; then
+            _hit=0
+            for _w in $_want; do
+                case "$_name" in *"$_w"*) _hit=1 ;; esac
+                # Case-insensitively too: nobody types STRAY_KITTY_CLUB.
+                case "$(echo "$_name" | tr 'A-Z' 'a-z')" in
+                    *"$(echo "$_w" | tr 'A-Z' 'a-z')"*) _hit=1 ;;
+                esac
+            done
+            [ "$_hit" = 1 ] || continue
+        fi
+        _out="$EXTRA/$_name"
+        [ -f "$_out" ] && { echo "  have    $_name"; continue; }
+        printf '  fetch   %s ... ' "$_name"
+        if curl -fsSL --max-time 300 -o "$_out.part" "$UPSTREAM/$_p"; then
+            if have magick || have convert; then
+                _im=$(have magick && echo magick || echo convert)
+                # >  means "only shrink": a picture already smaller than the
+                # screen is left alone rather than blown up into mush.
+                "$_im" "$_out.part" -resize "${_geom}^>" -strip "$_out" 2>/dev/null \
+                    || mv "$_out.part" "$_out"
+                rm -f "$_out.part"
+            else
+                mv "$_out.part" "$_out"
+            fi
+            echo "ok ($(du -h "$_out" 2>/dev/null | cut -f1))"
+            _got=$((_got + 1))
+        else
+            rm -f "$_out.part"
+            echo "FAILED"
+            _fail=$((_fail + 1))
+        fi
+    done
+    echo
+    echo "$_got fetched into $EXTRA (${_fail} failed), scaled to $_geom."
+    echo "Choose one with:  copal-wallpaper --pick"
+}
+
+case "${1:---paint}" in
+    --paint|'')
+        WP=$(current)
+        # hyprpaper reads its own config and is what the theme expects.
+        have hyprpaper && exec hyprpaper
+        [ -n "${WP:-}" ] && [ -f "$WP" ] || exit 0
+        have swaybg && exec swaybg -i "$WP" -m fill
+        have feh && exec feh --bg-fill "$WP"
+        exit 0 ;;
+    --pick|-p)   pick ;;
+    set)         shift; [ $# -ge 1 ] || { echo "usage: copal-wallpaper set FILE" >&2; exit 2; }
+                 set_paper "$1" ;;
+    --list|-l)
+        printf 'current: %s\n\n' "$(current)"
+        list_papers | while IFS= read -r _f; do
+            case "$_f" in
+                "$BUNDLED"/*) printf '  %-46s (bundled with the theme)\n' "$(basename "$_f")" ;;
+                *)            printf '  %-46s (%s)\n' "$(basename "$_f")" "$(dirname "$_f")" ;;
+            esac
+        done ;;
+    --fetch|-f)  shift; fetch "$@" ;;
+    -h|--help)   sed -n '5,14p' "$0" | sed 's/^# \{0,1\}//' ;;
+    *)           echo "copal-wallpaper: unknown option '$1' -- try --help" >&2; exit 2 ;;
+esac
 ANTIQWALL
     chmod 0755 /usr/local/bin/copal-wallpaper
 
@@ -10164,6 +10954,9 @@ bind = $mainMod CTRL, A, exec, $terminal -e alsamixer
 bind = $mainMod CTRL, T, exec, $terminal -e sh -c 'command -v btop >/dev/null && exec btop; exec htop'
 bind = $mainMod SHIFT, M, exec, $terminal -e sh -c 'command -v cmus >/dev/null && exec cmus; exec mpv --no-video ~/Music'
 bind = $mainMod SHIFT, N, exec, $terminal -e sh -c 'command -v nvim >/dev/null && exec nvim; exec vi'
+# The wallpaper picker, with thumbnails. Also in the menu under Style, and on
+# the same chord as stage 4's i3 config so the two desktops agree.
+bind = $mainMod SHIFT, W, exec, copal-wallpaper --pick
 
 # Copal's additions, so both desktops end the day the same way: copal-halt
 # asks, closes the session, syncs, powers down. The keyboard power key

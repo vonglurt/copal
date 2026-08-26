@@ -1364,6 +1364,69 @@ to `llvmpipe`, which is software rendering with a hardware-sounding name, while
 the kernel, the driver and glamor all report success. `mesa-demos` is installed
 in a guest so that `glxinfo` is there to catch it.
 
+### The bar, the menu button, and the widgets
+
+The Antiquity theme's bar is 99 QML files for quickshell, which no Alpine
+repository packages, so waybar draws it in the same palette. `copal-bar` prefers
+quickshell the moment one exists, so this is a stand-in rather than a fork.
+
+**Top left is a menu button** — `☰`, in the accent colour. Left-click opens
+`copal-menu`, right-click shuts down. It is there because it is the one thing on
+the bar a person who knows no key bindings can find; everything else is a number
+you read. **Workspaces 1–5 sit immediately to its right**, and all five are
+always drawn, not just the ones with windows on them — otherwise a fresh session
+shows a single `1` and `Super`+`2` looks like it does nothing.
+
+The menu is Omarchy-shaped: a flat picker shown **one level at a time**, arrow
+keys and Enter, type to filter, `Back` at the top of each branch. It gained a
+**Style** branch — wallpaper, theme, and the widgets guide — which is Omarchy's
+own top-level entry and the one Copal was missing.
+
+It also runs on Wayland now, which it previously could not. `copal-menu` drew
+itself with jgmenu or dmenu, both X11 programs, so on the Antiquity desktop the
+menu had nothing to draw with. It uses wofi there — the same launcher as
+`Super`+`D`, styled to the theme in `~/.config/wofi/style.css`.
+
+Two widgets were missing against the theme's own set, and both are now on the
+right of the bar: **temperature** and **weather**. Temperature shows nothing on a
+machine with no sensor — a VM usually has none — and removes itself cleanly when
+that happens. Weather asks wttr.in every 30 minutes, which needs no key and
+geolocates by IP; delete `custom/weather` from `modules-right` if you would
+rather the machine did not phone out at all.
+
+To change any of it: `copal-guide widgets`, which covers moving things between
+the three lists, the clock's format, pinning the weather to a city, naming a
+sensor path, and adding a widget of your own.
+
+### Wallpapers
+
+`copal-wallpaper --pick` (or `Super`+`Shift`+`W`, or the menu's Style branch)
+gives a picker with thumbnails: wofi with images on Wayland, feh's thumbnail
+grid on X. The choice is remembered in `~/.config/copal/wallpaper`.
+
+Three arrive with the theme. The author publishes about twenty more at
+[diinki/wallpapers](https://github.com/diinki/wallpapers), and
+`copal-wallpaper --fetch` downloads them — all of them, or any name fragment:
+
+```sh
+copal-wallpaper --fetch HIRAETH
+copal-wallpaper --fetch kitty aquarium
+```
+
+They arrive downscaled to your screen and the original is discarded. These are
+4K PNGs of five to twenty-two megabytes each; the same picture at 1280×800 is
+about one, which on a Pi is the difference between a wallpaper and a machine
+that swaps.
+
+**They are fetched, not shipped, and the reason is the licence.** That
+repository has no licence file. Its README says the wallpapers are published
+*"in case any of you want to use them"* — the author inviting you to use them,
+which is not a grant to redistribute. So they are not in the image, not in this
+repository, and not vendored the way the theme is; the theme *is* MIT, which is
+why that one can be. `--fetch` brings them to your machine at your request, the
+same act as saving them from that page in a browser. Redistributing them is a
+question for the author, whose Discord and Ko-fi are linked in that README.
+
 ### The two toasts on a fresh Antiquity desktop
 
 Both are expected, and one of them is now gone.
