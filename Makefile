@@ -86,7 +86,7 @@ model_of = $(patsubst pizero%,zero%,$(1))
 .PHONY: alldebug build-all-debug imagedebug freshdebug purge \
 	help menu flow targets boards configure require-tools vm graphical check \
         fresh auto image refresh utm utm-x86 layout layout-auto answers answers-show lint space clean distclean \
-        all cache build-all release capture video screens verify gallery chain utm-type walkthrough release-cast logs
+        all cache build-all release capture video screens verify gallery chain walkthrough release-cast logs
 
 help:
 	@printf '\nCopal Linux -- make targets\n\n'
@@ -365,19 +365,6 @@ layout:
 layout-auto:
 	@$(UTMRUN) layout --autotype
 
-# Type one line into the running UTM machine's serial console. UTM's serial is
-# a SPICE port rather than a pty -- there is no device to write to -- so the
-# only route to its tty input is the window, and this is that route made
-# scriptable. The Accessibility grant is a one-time human step; after it, this
-# is silent. See docs/AUTOMATION.md.
-#
-#   make utm-type TEXT=root
-#   make utm-type TEXT='sh /media/vda1/copal-init.sh'
-#   make utm-type TEXT=f
-TEXT ?=
-utm-type:
-	@[ -n '$(TEXT)' ] || { printf 'usage: make utm-type TEXT=...\n' >&2; exit 2; }
-	@$(UTMRUN) type --target aarch64 --text '$(TEXT)'
 
 # --------------------------------------------------------------- release ---
 #

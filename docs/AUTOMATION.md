@@ -41,7 +41,7 @@ you want is most of the navigation:
 | Kind | Targets | The question it answers |
 |---|---|---|
 | **Build** | `image` `fresh` `auto` `all` `cache` `refresh` | *make me something to boot* |
-| **Run** | `vm` `graphical` `check` `utm` `utm-x86` `layout` `utm-type` | *start it* |
+| **Run** | `vm` `graphical` `check` `utm` `utm-x86` `layout` | *start it* |
 | **Capture** | `capture` `video` `screens` `gallery` `release-cast` | *photograph it* |
 | **Inspect** | `verify` `verify-boot` `logs` `space` `lint` `chain` `help` | *is it right, and what happened* |
 | **Clear up** | `clean` `distclean` `purge` | *take it away* |
@@ -121,7 +121,7 @@ This is the decision that matters most, and it has a clean answer.
 | | `make vm` (QEMU) | `make utm` (UTM) |
 |---|---|---|
 | Serial console | **a real tty on your terminal** | inside UTM's own window |
-| Scriptable | yes — `expect`, pipes, redirection | yes, by typing into the window (`make utm-type`) |
+| Scriptable | yes — `expect`, pipes, redirection | no — drive it by hand |
 | Recordable | yes — `asciinema` wraps it | not directly |
 | Graphical desktop | a plain window | a proper app, clipboard, shared folder, NAT |
 | Use it for | automation, capture, CI, `--check` | actually using the machine |
@@ -134,86 +134,44 @@ its serial console is a file descriptor, so a script can read and write it.
 
 ## Controlling UTM: what is possible, and what is not
 
-Asked directly: **can UTM's tty input be controlled?** Yes — by typing into
-the window (§2 below), which needs one Accessibility approval and then works
-from a Makefile. What you cannot do is *open* its serial as a device, and the
-reason is worth writing down because it looks like you should be able to.
+Asked directly: **can UTM's serial tty be driven from a script?** No. The
+honest answer is that you drive UTM by hand, and anything that has to be
+scripted runs under QEMU instead.
 
-UTM launches QEMU with the serial wired to a SPICE port:
+UTM wires the guest's serial to a SPICE port, not a pty:
 
 ```
 -chardev spiceport,id=term0,name=com.utmapp.terminal.0 -serial chardev:term0
 ```
 
-Not a pty. There is no device node and no socket to write bytes into; UTM's
-own window is the only client that speaks to that port. Two things that look
-like escape hatches are not:
+There is no device node and no socket to write bytes into; UTM's own window is
+the only client of that port. Two things that look like escape hatches are
+not, and both were tried rather than assumed:
 
-- **`Serial:0:Mode = Ptty` in the VM's `config.plist`** is accepted and then
-  ignored for this backend. Setting it changes nothing: QEMU is still
-  launched with `spiceport`, and no new pty appears.
+- **`Serial:0:Mode = Ptty`** in the machine's `config.plist` is accepted and
+  then ignored for this backend. QEMU is still launched with `spiceport` and
+  no pty appears.
 - **`utmctl attach`** is documented as *"Redirect the serial input/output to
   this terminal"* and is a stub. In UTM 4.7.4 it prints
   `WARNING: attach command is not implemented yet!` and exits.
 
-So there are three real ways to make a UTM machine do something, in order of
-how much they are worth:
-
-### 1. Don't. Use QEMU for the part that must be scripted.
+### So: QEMU for scripts, UTM for hands
 
 `copal-vm.sh` boots the same image, from the same file, with a genuine tty.
-Anything you would have scripted against UTM can be scripted against that,
-and the capture pipeline already does. UTM's advantages — clipboard, shared
-folder, NAT, a window that survives the terminal closing — are all
-interactive advantages, and none of them matter to a script.
+Everything that must be automated — `make capture`, `make video`,
+`make check`, the whole release pipeline — goes through it, and that is not a
+workaround: a serial console that is a file descriptor is simply the right
+tool for a script. UTM's advantages are clipboard, shared folder, NAT and a
+window that outlives the terminal, and none of those matter to a script.
 
-### 2. Type into the window — `make utm-type`
+**Synthetic keystrokes are deliberately not part of this.** Driving another
+application's window through the Accessibility API is fragile — it depends on
+window titles, focus, and a permission grant that macOS records against
+whichever process asks — and it produces automation that fails in ways nobody
+can debug from a log. Where a script is wanted, use QEMU. Where UTM is
+wanted, type into it.
 
-**This is the answer to "can you control UTM's tty input".** You cannot open
-its serial, but you can type into the window, and the characters reach the
-guest's tty exactly as if a person had typed them.
-
-```sh
-make utm-type TEXT=root
-make utm-type TEXT='sh /media/vda1/copal-init.sh'
-make utm-type TEXT=f                 # a level, at the guided prompt
-```
-
-Each call raises the machine's serial window, types the line, and presses
-Return. It touches that window and nothing else — no windows are moved, and
-nothing is read back.
-
-**The human step — and there are two versions of it, which matter.**
-
-Sending keystrokes to another application needs an Accessibility grant, and
-macOS records that grant **against the process doing the asking**. That
-detail decides everything:
-
-| You grant | What happens | Good for |
-|---|---|---|
-| **Script Editor** (the fallback) | Each `make utm-type` writes the script and opens it; you press **Cmd+R**. The grant is Script Editor's, *not* your terminal's — so the next call opens Script Editor again. | One-off typing. Nothing to configure. |
-| **Your terminal app** (the real fix) | `make utm-type` types directly and prints `typed into …`. Fully scriptable. | Automating a sequence. |
-
-To get the second, add your terminal to **System Settings → Privacy &
-Security → Accessibility** and restart it. macOS often will not show the
-prompt for a terminal by itself — the request is made and denied without a
-dialog, and the denial is remembered — which is why the fallback exists and
-why adding it by hand is usually necessary.
-
-An earlier version of this document said the Script Editor approval made
-later runs silent. It does not: the grant belongs to Script Editor, so every
-call from the terminal still falls back until the *terminal* is granted.
-
-`make layout-auto` is the batch version of the same mechanism: it arranges
-the windows, waits for `login:` to appear in the console's *accessibility
-text*, and types the whole opening sequence. It is how an unattended install
-is started in UTM today.
-
-`make layout --probe` answers, in about a second and while touching nothing,
-whether UTM publishes its terminal text to accessibility on *this* Mac with
-*this* UTM — which is the assumption the whole autotype rests on.
-
-### 3. `utmctl exec` — the one that is not built yet, and should be
+### The next real improvement: `utmctl exec`
 
 UTM already gives every machine a QEMU guest agent channel:
 
@@ -230,35 +188,34 @@ utmctl file  <vm> ...                       # copy files in and out
 utmctl ip-address <vm>                      # what address did it get
 ```
 
-That is real programmatic control — better than keystrokes, because it
-returns the command's exit status and output instead of hoping the right
-characters landed in the right window.
+That is real programmatic control, and better than any keystroke scheme could
+be: it returns the command's exit status and its output instead of hoping the
+right characters landed in the right window.
 
 **It needs `qemu-guest-agent` running inside the guest, and Copal does not
 install it.** Alpine packages it. Adding it to a stage would make every UTM
-machine scriptable with no Accessibility grant and no AppleScript at all,
-and would also make `utmctl ip-address` work — which today is the reason
-`utm-vm.sh ip` has to guess. This is the obvious next improvement to the UTM
-path; it is written down here rather than done because it changes what gets
-installed on every machine, which is a decision rather than a fix.
+machine scriptable with no permission grant of any kind, and would also make
+`utmctl ip-address` work — which is today the reason `utm-vm.sh ip` has to
+guess. This is the obvious next step for the UTM path; it is written here
+rather than done because it changes what ships on every machine, which is a
+decision rather than a fix.
 
-### The UTM commands that do work today
+### The UTM commands that work today
 
 ```sh
 make utm                         # register (once) and start
-utm/utm-vm.sh status  --target aarch64
-utm/utm-vm.sh stop    --target aarch64
-utm/utm-vm.sh refresh --target aarch64 --image build/copal-vm.img
-utm/utm-vm.sh delete  --target aarch64
-utm/utm-vm.sh share   --target aarch64 --share ~/Downloads/SharedVM
+utm/utm-vm.sh status   --target aarch64
+utm/utm-vm.sh stop     --target aarch64
+utm/utm-vm.sh refresh  --target aarch64 --image build/copal-vm.img
+utm/utm-vm.sh delete   --target aarch64
+utm/utm-vm.sh share    --target aarch64 --share ~/Downloads/SharedVM
 utm/utm-vm.sh progress --target aarch64   # how far the install has got
 utm/utm-vm.sh log      --target aarch64   # follow the install transcript
-utm/utm-vm.sh type     --target aarch64 --text root    # type into the console
 ```
 
 `progress` and `log` reach the guest over **SSH**, not over the serial — which
-is the other honest answer to "can you control it": once stage 1 has run and
-the key is installed, the machine is reachable like any other machine, and
+is the other half of the answer to "can you control it". Once stage 1 has run
+and the key is installed, the machine is reachable like any other machine, and
 that is the supported way to drive an installed system.
 
 ---
@@ -273,15 +230,8 @@ The intended flow when you want to watch it rather than record it:
 4. `sh /media/vda1/copal-init.sh`
 5. Choose a level: `s`, `m` or `f`. Then walk away.
 
-Or drive those same four steps from the Makefile once the Accessibility
-grant is in place:
-
-```sh
-make utm
-sleep 20 && make utm-type TEXT=root
-make utm-type TEXT='sh /media/vda1/copal-init.sh'
-make utm-type TEXT=f
-```
+While it runs, `utm/utm-vm.sh progress --target aarch64` reports how far it
+has got over SSH, so you do not have to sit and read the console.
 
 Stage 3 reboots once, on its own, and resumes. When it is done,
 `utm/utm-vm.sh progress --target aarch64` will tell you how far it got
@@ -474,7 +424,6 @@ make walkthrough
 |---|---|---|
 | Purge | you confirm | The only destructive step. Announced with exactly what it deletes; Enter proceeds, `s` skips. |
 | Build + record | automatic | `make release`, unattended — image, install recording, GIF, mp4, stills. |
-| **A — Accessibility** | **you, once ever** | The first `make utm-type` is denied to this terminal; the AppleScript opens in Script Editor. Read it, Cmd+R, approve. Silent from then on. |
 | **B — Hyprland shot** | **you** | Frame a desktop worth looking at and save `docs/media/antiquity-desktop.png`. |
 | **C — i3 shot** | **you** | `doas copal-desktop x11`, log back in, save `docs/media/i3-desktop.png`. |
 | Gallery | automatic | Regenerated from what is actually in `docs/media`. |

@@ -5,16 +5,12 @@
 # release-walkthrough.sh -- run a release, and stop at the parts a person has
 # to do.
 #
-# WHY THIS EXISTS. `make release` is automatic right up to the two things a
-# script cannot do on this Mac:
-#
-#   1. Approve an Accessibility grant. macOS records that against whoever is
-#      asking, and a terminal is a poor asker -- so the AppleScript is handed
-#      to Script Editor for a human to read and run with Cmd+R.
-#   2. Photograph a desktop. `make screens` can do it through QEMU's monitor,
-#      but only once an install has FINISHED -- which is hours -- and the
-#      framing (which workspace, which windows open, menu up or not) is a
-#      judgement nobody has automated.
+# WHY THIS EXISTS. `make release` is automatic right up to the one thing a
+# script cannot do: photograph a desktop. `make screens` can take the picture
+# through QEMU's monitor, but only once an install has FINISHED -- which is
+# hours, not the minutes a bounded capture runs -- and the framing (which
+# workspace, which windows open, menu up or not) is a judgement nobody has
+# automated.
 #
 # Left implicit, those two turn a "just run make release" into a job that
 # quietly produces a page with two empty slots and no explanation. This walks
@@ -92,9 +88,8 @@ cat <<BANNER
 ${B}Copal -- guided release${N}
 
   This runs ${B}make release${N} and stops at the parts a script cannot do here.
-  There are ${B}three${N} of those, and none takes long:
+  There are ${B}two${N} of those, and both are screenshots:
 
-    ${B}A${N}  approve an Accessibility prompt (once, ever)
     ${B}B${N}  photograph the Hyprland desktop
     ${B}C${N}  photograph the i3 desktop
 
@@ -165,20 +160,15 @@ say "${B}Two ways, and the second is the one to use:${N}"
 blank
 say "  ${B}1. Let it finish in UTM${N}, then photograph it:"
 say "     ${D}make utm${N}                             register and start"
-say "     ${D}make utm-type TEXT=root${N}              log in    ${Y}(needs step A)${N}"
-say "     ${D}make utm-type TEXT='sh /media/vda1/copal-init.sh'${N}"
-say "     ${D}make utm-type TEXT=$LEVEL${N}                    pick the level"
-say "     ${D}... hours ...${N}"
+say "     ${D}${N}   then in the UTM window: log in as root and run"
+say "     ${D}   sh /media/vda1/copal-init.sh${N}   and pick level $LEVEL"
+say "     ${D}... hours ...${N}   ${D}utm-vm.sh progress --target aarch64${N} to check"
 say "     then screenshot the UTM window with ${B}Cmd+Shift+4${N}, space, click"
 blank
 say "  ${B}2. Or let QEMU take it${N}, once an install has finished:"
 say "     ${D}make screens${N}                         QEMU screendump, headless"
 say "     ${D}${N}                                    real pixels, no window, no camera"
 blank
-say "${Y}Step A -- the Accessibility grant -- happens the first time you run${N}"
-say "${Y}make utm-type. macOS denies this terminal, the script opens in Script${N}"
-say "${Y}Editor, you read it and press Cmd+R. Once, ever.${N}"
-
 step "B — the Hyprland desktop"
 say "Wanted: ${B}docs/media/antiquity-desktop.png${N}"
 blank
