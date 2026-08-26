@@ -1088,6 +1088,26 @@ and degrades to a plain colour if ImageMagick or feh is missing.
 | **Super + T** | Task manager (htop) |
 | **Super + comma** | Settings (`copal-config`) — users, hostname, services, SSH |
 
+### Copy and paste — the same keys everywhere
+
+| Key | Action |
+|---|---|
+| **Super + C** | Copy |
+| **Super + X** | Cut (copies, does not delete, in a terminal) |
+| **Super + V** | Paste |
+| **Super + Ctrl + V** | Clipboard history — the last hundred things you copied |
+
+Omarchy's universal clipboard, adopted here. Normally a terminal needs
+**Ctrl + Shift + C** and everything else needs **Ctrl + C**, so you have to know
+which kind of window you are in before you can copy out of it. `copal-clip` asks
+the window manager what has focus and sends whichever chord that window wants.
+
+**Caps Lock is a second Super on this machine**, so these are `CapsLock + C` and
+`CapsLock + V` — as close to `Cmd + C` and `Cmd + V` as a PC keyboard gets.
+
+Two bindings moved to make room: the Copal Center is now **Super + Shift + C**,
+and *split downwards* is **Super + Shift + V**.
+
 ### Finding out what the keys are
 
 | Key | Action |

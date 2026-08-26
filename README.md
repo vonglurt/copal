@@ -996,11 +996,42 @@ and there are four ways in:
 |---|---|
 | `Super`+`space`, or `Super`+`d` | **dmenu** — everything on `PATH`. Type a few letters, Enter runs it |
 | `Super`+`z` | **copal-menu** — a clickable menu, rebuilt from what is actually installed each time it runs, with an *Install software* branch listing the rest of the catalogue |
-| `Super`+`c` | **copal-center** — one window listing the whole catalogue, installed or not, with a button that either runs it or fetches it |
+| `Super`+`Shift`+`c` | **copal-center** — one window listing the whole catalogue, installed or not, with a button that either runs it or fetches it |
 | `Super`+`,` | **copal-config** — users and groups, hostname, services, SSH, boot options. Asks `doas` for the root it needs |
 | `Super`+`/`, or `Super`+`F1` | the key list, floating. Shown once at login, because a tiling WM with no menus is unusable until you know the bindings |
 | `Super`+`Shift`+`g` | the other guides |
 | `Super`+`Return` / `Super`+`e` / `Super`+`t` | terminal / file manager / `htop` |
+
+#### Copy and paste, on the same keys everywhere
+
+`Super`+`c`, `Super`+`x`, `Super`+`v`, and `Super`+`Ctrl`+`v` for the history.
+This is [Omarchy's universal clipboard](https://manuals.omamix.org/2/the-basics/universal-clipboard),
+adopted here more or less unchanged, and it is the change most likely to be
+noticed on the first day.
+
+The problem it solves: a terminal needs `Ctrl`+`Shift`+`C` because `Ctrl`+`C`
+has meant *interrupt* since before X existed and is not being given back — and
+every other program needs `Ctrl`+`C`. So before you can copy anything you have
+to know which kind of window you are in. `copal-clip` asks the window manager
+what has focus and sends whichever chord that window actually wants, so the
+same four keys work in all of them.
+
+There is a reason it lands harder here than it does on Omarchy. **Caps Lock is
+already a second Super on this system** — it has to be, because under UTM the
+Mac eats the real Super chords. So the unified clipboard is `CapsLock`+`C` and
+`CapsLock`+`V`, under the left little finger, which is about as close to `Cmd`+`C`
+and `Cmd`+`V` as a PC keyboard is going to get.
+
+Two things to know. The history is recorded by `copal-clip watch`, started by
+the session — one `xclip` call a second into `~/.cache/copal/clipboard`, capped
+at a hundred entries. Where `cliphist` is installed (aarch64 only; Alpine has no
+armhf build, which is why the fallback exists at all) it hands over to that
+instead. And *cut* in a terminal copies rather than deletes, because the text on
+the screen is not the clipboard's to remove — Omarchy documents the same
+exception.
+
+Two bindings moved to make room: `copal-center` is now `Super`+`Shift`+`c`, and
+"split downwards" is `Super`+`Shift`+`v`.
 
 `copal-menu` and `copal-center` exist for the one thing a flat launcher can
 never do: show you what you could install but have not. Software you do not have

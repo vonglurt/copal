@@ -6394,6 +6394,257 @@ AUTOSTART
     fi
 }
 
+# ---------------------------------------------------------------------------
+# THE UNIFIED CLIPBOARD.
+#
+# This is the Omarchy idea worth stealing outright. On a normal Linux desktop
+# you copy with Ctrl+Shift+C in the terminal and Ctrl+C everywhere else,
+# because Ctrl+C in a terminal has meant SIGINT since before X existed and
+# nobody is taking it back. Everyone who has ever come from a Mac -- where
+# Cmd+C is Cmd+C in every window -- finds this out by losing something.
+#
+# Omarchy's answer: bind the clipboard to SUPER, which no program on the
+# machine is using for anything, and have the compositor send whichever chord
+# the focused window actually wants. Super+C, Super+X, Super+V and
+# Super+Ctrl+V then mean the same four things in every window.
+#
+# There is one extra reason it fits here, which Omarchy does not have: Copal
+# maps Caps Lock to a second Super (see the .xinitrc comment), and under UTM
+# on a Mac the host eats the real Super chords. So on this system the unified
+# clipboard is reachable as CapsLock+C / CapsLock+V -- which is, to a Mac
+# user's hands, almost exactly Cmd+C and Cmd+V.
+#
+# WHAT THIS SCRIPT ACTUALLY DOES. Not much, and that is deliberate:
+#
+#   copal-clip copy|cut|paste   look at the focused window, decide which chord
+#                               it wants, send it with xdotool. Under Wayland
+#                               the compositor does this itself (sendshortcut)
+#                               and the script is not in the path at all.
+#   copal-clip history          a picker over the recorded clipboard entries.
+#   copal-clip watch            the recorder. One poll a second of the
+#                               selection, into a directory of numbered files.
+#
+# The recorder is ours rather than cliphist's. cliphist is the Omarchy answer
+# and it is a Go program that Alpine packages for aarch64 and not for armhf --
+# so on the board this project exists for, it is not an option. Fifty lines of
+# sh that polls the selection is: it costs one xclip call a second, it works
+# identically on X and Wayland, and where cliphist IS installed this script
+# steps aside and uses it.
+write_copal_clip() {
+    say "Writing copal-clip (the unified clipboard)"
+    cat > /usr/local/bin/copal-clip <<'COPALCLIP'
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+#
+# copal-clip -- one clipboard, one set of keys, every window.
+#
+#   copal-clip copy|cut|paste   the Super+C / Super+X / Super+V actions
+#   copal-clip history          pick from the clipboard history
+#   copal-clip watch            record the history (started by the session)
+#   copal-clip store            put stdin on the clipboard
+#   copal-clip show             print the clipboard to stdout
+#
+# The window manager binds the first four. Nothing else should need to know
+# this file exists.
+set -eu
+
+HIST="${XDG_CACHE_HOME:-$HOME/.cache}/copal/clipboard"
+HIST_MAX=100
+
+have() { command -v "$1" >/dev/null 2>&1; }
+wayland() { [ -n "${WAYLAND_DISPLAY:-}" ]; }
+
+die() { echo "copal-clip: $*" >&2; exit 1; }
+
+# --- owning the selection --------------------------------------------------
+# Two backends, one interface. wl-clipboard under a compositor, xclip under X.
+# xsel is accepted as well because some Alpine spins carry it and not xclip.
+clip_set() {   # stdin -> the clipboard
+    if wayland && have wl-copy; then wl-copy
+    elif have xclip; then xclip -selection clipboard -in
+    elif have xsel; then xsel --clipboard --input
+    else die "no clipboard tool. Install one: apk add xclip   (or wl-clipboard)"
+    fi
+}
+
+clip_get() {   # the clipboard -> stdout
+    if wayland && have wl-paste; then wl-paste --no-newline 2>/dev/null || true
+    elif have xclip; then xclip -selection clipboard -out 2>/dev/null || true
+    elif have xsel; then xsel --clipboard --output 2>/dev/null || true
+    else die "no clipboard tool. Install one: apk add xclip   (or wl-clipboard)"
+    fi
+}
+
+# --- sending the chord the focused window wants ----------------------------
+#
+# THE WHOLE POINT OF THE SCRIPT IS THIS FUNCTION. A terminal emulator wants
+# Ctrl+Shift+C; every other program wants Ctrl+C. Something has to look at
+# what has focus and decide, and this is that something.
+#
+# Omarchy does it in the compositor config, with two 'sendshortcut' binds per
+# key and a class filter on the first. That is four bindings' worth of
+# duplicated terminal list, and it only works on Hyprland. Doing it here
+# instead means ONE list of terminals for both of Copal's desktops, and the
+# window manager configs just call 'copal-clip copy'.
+#
+# The list is the terminals this system can actually be running: the two
+# stage 4 might have chosen, the one the Wayland desktop uses, and the few a
+# user is most likely to have added. Matched case-insensitively, because
+# window-class capitalisation is not something anyone should have to know.
+is_terminal_class() {  # <class name>
+    case "$(printf '%s' "${1:-}" | tr 'A-Z' 'a-z')" in
+        *urxvt*|*xterm*|*rxvt*|*kitty*|*alacritty*|*foot*|*terminal*|*tilda*|*guake*|*ghostty*)
+            return 0 ;;
+    esac
+    return 1
+}
+
+terminal_focused() {
+    if wayland && have hyprctl; then
+        # -j is JSON, and there is no jq on a minimal install, so this reads
+        # the one field it wants with sed rather than pulling in a parser for
+        # a string that Hyprland prints one per line.
+        _cls=$(hyprctl activewindow -j 2>/dev/null \
+               | sed -n 's/.*"class": *"\([^"]*\)".*/\1/p' | head -n1)
+    elif have xdotool; then
+        _cls=$(xdotool getactivewindow getwindowclassname 2>/dev/null || true)
+    else
+        return 1
+    fi
+    is_terminal_class "$_cls"
+}
+
+# Type a chord into the focused window. Two compositors, two mechanisms:
+# Hyprland has a sendshortcut dispatcher reachable from hyprctl, X has
+# xdotool. Neither is a dependency of the other and neither is required for
+# the rest of this script to work.
+type_chord() {  # <"CTRL SHIFT" or "CTRL"> <key letter>
+    if wayland && have hyprctl; then
+        hyprctl dispatch sendshortcut "$1, $2, activewindow" >/dev/null
+    elif have xdotool; then
+        # xdotool spells it lowercase and plus-separated.
+        xdotool key --clearmodifiers \
+            "$(printf '%s+%s' "$1" "$2" | tr 'A-Z ' 'a-z+')"
+    else
+        die "no way to send a keystroke to the focused window.
+On X:        apk add xdotool
+On Hyprland: hyprctl is part of the compositor and should already be here.
+Then log out and back in."
+    fi
+}
+
+send() {  # copy | cut | paste
+    if terminal_focused; then
+        case "$1" in
+            copy)  type_chord "CTRL SHIFT" C ;;
+            paste) type_chord "CTRL SHIFT" V ;;
+            # There is no cut in a terminal -- the text on the screen is not
+            # yours to remove. Omarchy documents the same exception. Copying
+            # is the useful half of the action, so do that and say nothing.
+            cut)   type_chord "CTRL SHIFT" C ;;
+        esac
+    else
+        case "$1" in
+            copy)  type_chord CTRL C ;;
+            paste) type_chord CTRL V ;;
+            cut)   type_chord CTRL X ;;
+        esac
+    fi
+}
+
+# --- the history -----------------------------------------------------------
+# One file per entry, named by a counter, newest highest. A directory rather
+# than one appended file because clipboard entries contain newlines and a
+# line-oriented store would split them.
+hist_record() {
+    mkdir -p "$HIST"
+    _new=$(clip_get)
+    [ -n "$_new" ] || return 0
+    _last=$(ls -1 "$HIST" 2>/dev/null | sort -n | tail -n1 || true)
+    if [ -n "$_last" ] && [ "$(cat "$HIST/$_last")" = "$_new" ]; then
+        return 0
+    fi
+    _n=$(( ${_last:-0} + 1 ))
+    printf '%s' "$_new" > "$HIST/$_n"
+    # Trim. `ls | sort -n | head` gives the oldest, which is what goes.
+    _count=$(ls -1 "$HIST" 2>/dev/null | wc -l)
+    if [ "$_count" -gt "$HIST_MAX" ]; then
+        ls -1 "$HIST" | sort -n | head -n "$(( _count - HIST_MAX ))" | \
+            while read -r _old; do rm -f "$HIST/$_old"; done
+    fi
+}
+
+hist_watch() {
+    # cliphist, where it exists, is the better recorder and it is what Omarchy
+    # uses. Hand over to it rather than run two.
+    if have cliphist && wayland && have wl-paste; then
+        exec wl-paste --watch cliphist store
+    fi
+    while :; do
+        hist_record || true
+        sleep 1
+    done
+}
+
+# A menu, in whatever the session actually has. The order is deliberate:
+# the graphical pickers first, then fzf in a terminal, then a numbered list
+# on stdout -- so this works over ssh with no display at all.
+hist_menu() {  # reads "N<TAB>preview" lines on stdin, prints the chosen N
+    if wayland && have wofi; then wofi --dmenu --prompt clipboard
+    elif have dmenu; then dmenu -i -l 15 -p clipboard
+    elif have fzf; then fzf --prompt='clipboard> '
+    else cat
+    fi
+}
+
+hist_show() {
+    if have cliphist; then
+        _sel=$(cliphist list | hist_menu) || exit 0
+        [ -n "$_sel" ] || exit 0
+        printf '%s' "$_sel" | cliphist decode | clip_set
+        exit 0
+    fi
+    [ -d "$HIST" ] || die "no clipboard history yet. It records from the next copy on."
+    # The preview is the first line, tabs and control characters flattened,
+    # truncated -- a menu entry has one line whatever the entry has.
+    _sel=$(ls -1 "$HIST" 2>/dev/null | sort -rn | while read -r _n; do
+        printf '%s\t%s\n' "$_n" \
+            "$(head -c 400 "$HIST/$_n" | tr '\n\t' '  ' | cut -c1-80)"
+    done | hist_menu) || exit 0
+    [ -n "$_sel" ] || exit 0
+    # The menu line is "N<tab>preview" and the number is the half that
+    # matters. A literal tab inside ${} works but is invisible to whoever
+    # edits this next, so it is named.
+    _tab=$(printf '\t')
+    _n=${_sel%%"$_tab"*}
+    [ -f "$HIST/$_n" ] || exit 0
+    clip_set < "$HIST/$_n"
+}
+
+case "${1:-}" in
+    copy)    send copy ;;
+    cut)     send cut ;;
+    paste)   send paste ;;
+    history) hist_show ;;
+    watch)   hist_watch ;;
+    store)   clip_set ;;
+    show)    clip_get ;;
+    clear)   rm -rf "$HIST"; echo "clipboard history cleared" ;;
+    ''|-h|--help)
+        # The usage message IS the comment header, so there is one copy of it
+        # and it cannot drift. Print from line 4 until the first line that is
+        # not a comment, rather than a fixed range -- a fixed range prints
+        # 'set -eu' as documentation the moment anyone adds a line above it,
+        # which is exactly what it did.
+        awk 'NR > 3 { if ($0 !~ /^#/) exit; sub(/^# ?/, ""); print }' "$0" ;;
+    *) die "unknown command '$1'. Try 'copal-clip --help'." ;;
+esac
+COPALCLIP
+    chmod 0755 /usr/local/bin/copal-clip
+    note "copal-clip -- Super+C/X/V copy, cut, paste; Super+Ctrl+V the history"
+}
+
 stage_gui() {
     say "Stage 4: X.Org and a window manager"
 
@@ -6458,6 +6709,15 @@ stage_gui() {
     # ImageMagick paint the key bindings onto the root window. All four are
     # small, and all four are guarded at runtime -- none is required.
     add_optional yad dialog feh imagemagick
+
+    # THE UNIFIED CLIPBOARD's X half. Omarchy's best small idea is that
+    # Super+C and Super+V copy and paste EVERYWHERE, including the terminal,
+    # instead of the terminal needing Ctrl+Shift and everything else needing
+    # Ctrl. Making that true on X needs two programs: xclip owns the
+    # selection, and xdotool sends the chord the focused window actually
+    # wants. copal-clip is guarded at runtime and says which one is missing,
+    # so a board without them keeps Ctrl+Shift+C and loses nothing else.
+    add_optional xclip xdotool
     # urxvt starts faster and uses less RAM than xterm; fall back if absent.
     if try_add rxvt-unicode && command -v urxvt >/dev/null 2>&1; then
         TERMEMU=urxvt
@@ -6605,6 +6865,43 @@ bindsym $mod+c      exec copal-center
 # System settings: users and groups, hostname, services, SSH, boot options.
 # It asks doas for the root it needs rather than assuming it has it.
 bindsym $mod+comma  exec copal-config
+
+# THE UNIFIED CLIPBOARD -- Omarchy's convention, and the single change in this
+# file most likely to be noticed on day one.
+#
+# One set of keys for copy, cut and paste in every window, terminal included,
+# instead of Ctrl+Shift+C here and Ctrl+C there. copal-clip looks at what has
+# focus and sends the chord that window wants; see the essay above
+# write_copal_clip() in copal-prep.sh for why the terminal is the exception
+# that makes this necessary.
+#
+# AND: Caps Lock is a second Super on this machine. So this is CapsLock+C and
+# CapsLock+V -- which is, under the fingers, Cmd+C and Cmd+V. That is the
+# whole reason to prefer these over the ones you already know.
+bindsym $mod+c      exec --no-startup-id copal-clip copy
+bindsym $mod+x      exec --no-startup-id copal-clip cut
+bindsym $mod+v      exec --no-startup-id copal-clip paste
+bindsym $mod+Ctrl+v exec --no-startup-id copal-clip history
+
+# System controls, on Omarchy's chords, using the programs this machine has
+# rather than the ones it does not. Each is a terminal program in a floating
+# window, which is the whole of a "control panel" on a board this size.
+bindsym $mod+Ctrl+a exec $term -title copal-panel -e alsamixer
+bindsym $mod+Ctrl+t exec $term -title copal-panel -e sh -c 'command -v btop >/dev/null && exec btop; exec htop'
+# Omarchy has Super+Ctrl+W for wifi (impala) and Super+Ctrl+B for bluetooth.
+# Neither program is packaged for this hardware and neither is the way this
+# system does networking -- wifi here is wpa_supplicant, configured in stage
+# 10 and in copal-config on Super+comma. A binding that opened something that
+# could not change the setting would be worse than no binding, so there is
+# none, and this comment is where you would add yours.
+# Music. Omarchy puts Spotify here; there is no Spotify for this hardware and
+# there does not need to be -- cmus is a better music player on 512 MB than
+# anything with a web browser inside it. mpv is the fallback, on the same key,
+# because between them they play everything on the machine.
+bindsym $mod+Shift+m exec $term -title copal-panel -e sh -c 'command -v cmus >/dev/null && exec cmus; exec mpv --no-video ~/Music'
+# The editor, on Omarchy's key.
+bindsym $mod+Shift+n exec $term -title nvim -e sh -c 'command -v nvim >/dev/null && exec nvim; exec vi'
+for_window [title="copal-panel"] floating enable, resize set 760 520, move position center
 # The key list, in a floating window. Shown once at login and on Super+/,
 # because a tiling WM with no menus is unusable until you know the bindings.
 set $helpcmd TERMEMU_PLACEHOLDER -title i3-keys -e less ~/.config/i3/keys.txt
@@ -6623,6 +6920,9 @@ for_window [title="Copal Center"] floating enable, resize set 700 520, move posi
 # $helpcmd shows the scrollable version once. Delete either line to stop it.
 exec --no-startup-id copal-splash
 exec --no-startup-id $helpcmd
+# The clipboard history recorder. One xclip call a second; it is what makes
+# Super+Ctrl+V have anything to show. Delete this line to stop recording.
+exec --no-startup-id copal-clip watch
 bindsym $mod+Shift+r restart
 bindsym $mod+Shift+e exec "i3-nagbar -t warning -m 'Exit i3?' -B 'Yes' 'i3-msg exit'"
 # The whole of ending the day: it asks, closes the session so applications are
@@ -6655,7 +6955,10 @@ bindsym $mod+Shift+Up move up
 bindsym $mod+Shift+Right move right
 
 bindsym $mod+b splith
-bindsym $mod+v splitv
+# Super+V is PASTE now (the unified clipboard, below), so "split downwards"
+# moved one key over. Super+B is still "split rightwards" and is the one of
+# the pair anybody actually presses.
+bindsym $mod+Shift+v splitv
 bindsym $mod+f fullscreen toggle
 bindsym $mod+s layout stacking
 bindsym $mod+w layout tabbed
@@ -8037,7 +8340,7 @@ if [ -n "$IM" ] && [ "$NEED" = yes ] && [ -f "$KEYS" ]; then
         if "$IM" -size "$GEOM" "xc:$BG" "$@" \
               -pointsize 14 -fill "$FG" -annotate +40+50 "$BODY" \
               -pointsize 12 -fill '#565f89' \
-              -annotate +40-28 'Super + /  keys    Super + Z  menu    Super + C  Copal Center    Super + Shift + G  guides' \
+              -annotate +40-28 'Super + /  keys    Super + Z  menu    Super + C  copy    Super + V  paste    Super + Shift + G  guides' \
               "$OUT" 2>/dev/null; then
             break
         fi
@@ -8088,6 +8391,35 @@ COPALSPLASH
    Super + T            task manager (htop)
    Super + Shift + G    the guides -- how to actually use what is here,
                         starting with Gopher and Gemini
+   Super + Shift + N    the editor (nvim). Press SPACE in it and wait a
+                        moment for its own key menu.
+   Super + Shift + M    music -- cmus, or mpv on ~/Music if cmus is not
+                        installed
+   Super + Ctrl + A     volume (alsamixer)
+   Super + Ctrl + T     what the machine is doing (btop, or htop)
+
+ COPY AND PASTE -- THE SAME KEYS EVERYWHERE
+   Super + C            copy
+   Super + X            cut
+   Super + V            paste
+   Super + Ctrl + V     the clipboard history -- the last hundred things
+                        you copied. Pick one and it goes on the clipboard,
+                        ready for Super + V.
+
+   Everywhere means everywhere: the terminal too. Normally a terminal needs
+   Ctrl + Shift + C because Ctrl + C has meant "interrupt" since before X
+   existed, and every other program needs Ctrl + C -- so you have to know
+   which kind of window you are in before you can copy out of it. These keys
+   remove that. copal-clip looks at what has focus and sends whichever chord
+   that window actually wants.
+
+   AND CAPS LOCK IS A SECOND SUPER ON THIS MACHINE. So this is CapsLock + C
+   and CapsLock + V, under your left little finger, which is as close to a
+   Mac's Cmd + C and Cmd + V as a PC keyboard gets. If you came from a Mac,
+   these four are the reason to use this desktop rather than tolerate it.
+
+   The one exception is cut in a terminal: the text on the screen is not
+   yours to remove, so Super + X copies there and does not delete.
 
  WINDOWS
    Super + Shift + Q    close the focused window
@@ -8105,7 +8437,7 @@ COPALSPLASH
    pixel is drawn by the CPU, so never redrawing a hidden window is a
    speed decision as much as a tidiness one.
    Super + B            next window opens to the RIGHT
-   Super + V            next window opens BELOW
+   Super + Shift + V    next window opens BELOW  (Super + V is paste now)
    Super + W            tabbed layout -- one at a time, tabs on top
    Super + S            stacked layout -- one at a time, titles listed
    Super + G            back to a plain split
@@ -9268,6 +9600,21 @@ CURSORENV
         note "the X desktop recoloured to match -- i3, Xresources and the root window"
         note "  so switching session changes the compositor, not the palette"
     fi
+
+    # The editor follows the desktop. Stage 7 wrote both theme directories and
+    # pointed the symlink at tokyo-night, which is stage 4's palette; this
+    # desktop is the other one. Written here rather than assumed, because
+    # stage 16 can be run on a machine that never ran stage 7 -- and if it was
+    # run, an editor that is open right now repaints within three seconds
+    # without being restarted. See dev_write_nvim_ui() and ~/.config/nvim/theme.lua.
+    [ -d "$copal_theme_dir/antiquity" ] || copal_write_themes
+    copal_set_theme antiquity
+
+    # Same reasoning: this desktop binds four keys to copal-clip, and stage 4
+    # -- which is where the script is normally written -- may never have run
+    # on this machine. Writing it twice costs nothing; not having it costs
+    # four dead keys.
+    write_copal_clip
 
     # ------------------------------------------------------------------
     # Claim the session -- but only if there is something to claim it FOR.
@@ -17666,7 +18013,7 @@ ON THE PI -- there is only one command to run
        so 316 is the count on a 64-bit port and fewer on armhf.
 
        Three front ends, one table. The desktop menu (Super+z) is built from
-       it, the Copal Center (Super+c) lists all 316 with a status column and
+       it, the Copal Center (Super+Shift+c) lists all 316 with a status column and
        a Run button that installs first if it has to, and this stage bulk
        installs from it. Nothing can appear in a menu that is not
        installable, and nothing installable is missing from the menus.
