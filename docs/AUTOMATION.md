@@ -183,17 +183,26 @@ Each call raises the machine's serial window, types the line, and presses
 Return. It touches that window and nothing else — no windows are moved, and
 nothing is read back.
 
-**The human step, and it happens once.** Sending keystrokes to another
-application needs an Accessibility grant, which macOS records against the
-process doing the asking. A terminal is a poor asker: the prompt does not
-reliably appear, and a denial is remembered. So when it is refused, the
-script is written to `build/copal-utm-type.applescript` and opened in Script
-Editor — read it, press Cmd+R, approve the two prompts. Script Editor is
-Apple-signed, asks cleanly, and is remembered; after that one approval,
-`make utm-type` is silent and scriptable.
+**The human step — and there are two versions of it, which matter.**
 
-That is the whole trade: one dialog, once, in exchange for a UTM machine you
-can drive from a Makefile.
+Sending keystrokes to another application needs an Accessibility grant, and
+macOS records that grant **against the process doing the asking**. That
+detail decides everything:
+
+| You grant | What happens | Good for |
+|---|---|---|
+| **Script Editor** (the fallback) | Each `make utm-type` writes the script and opens it; you press **Cmd+R**. The grant is Script Editor's, *not* your terminal's — so the next call opens Script Editor again. | One-off typing. Nothing to configure. |
+| **Your terminal app** (the real fix) | `make utm-type` types directly and prints `typed into …`. Fully scriptable. | Automating a sequence. |
+
+To get the second, add your terminal to **System Settings → Privacy &
+Security → Accessibility** and restart it. macOS often will not show the
+prompt for a terminal by itself — the request is made and denied without a
+dialog, and the denial is remembered — which is why the fallback exists and
+why adding it by hand is usually necessary.
+
+An earlier version of this document said the Script Editor approval made
+later runs silent. It does not: the grant belongs to Script Editor, so every
+call from the terminal still falls back until the *terminal* is granted.
 
 `make layout-auto` is the batch version of the same mechanism: it arranges
 the windows, waits for `login:` to appear in the console's *accessibility
