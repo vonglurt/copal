@@ -1,0 +1,100 @@
+#!/usr/bin/expect -f
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+#
+# capture-install.exp -- drive a Copal install over the VM's serial console,
+# so the transcript can be recorded without anybody typing.
+#
+# WHY THIS RATHER THAN A SCREEN RECORDING. The install has no GUI: it is a
+# text transcript on a serial console, and copal-vm.sh puts that console on
+# this terminal. So the thing worth capturing is already characters in a tty,
+# and a video of a terminal is the worst possible container for it -- huge,
+# unsearchable, and blurry at any size that fits a web page. asciinema records
+# the characters and their timing instead; agg renders that to a GIF at
+# whatever speed suits.
+#
+#   asciinema rec --command "tools/capture-install.exp <image> <level>" out.cast
+#   agg --speed 8 out.cast docs/media/install-cast.gif
+#
+# The level is s, m or f -- server, medium or full monty. Anything else takes
+# the menu, which is not useful unattended.
+#
+# It stops itself: RUN_MINUTES bounds the capture, because a full install is
+# hours and the interesting part is the first few minutes. When the clock runs
+# out it sends Ctrl-A X, which is how you quit a QEMU serial session, so the
+# machine is stopped rather than left running behind a finished recording.
+
+set image   [lindex $argv 0]
+set level   [lindex $argv 1]
+set minutes [lindex $argv 2]
+if {$image eq ""}   { set image "build/copal-vm.img" }
+if {$level eq ""}   { set level "f" }
+if {$minutes eq ""} { set minutes 12 }
+
+# How long to record for, in minutes -- the third argument. Generous enough
+# to reach the first stages; short enough that the cast is a demonstration
+# rather than an archive.
+set RUN_MINUTES $minutes
+
+# Serial output arrives in bursts with long gaps -- apk downloading, a
+# filesystem being made -- so a per-expect timeout has to be minutes, not the
+# default ten seconds.
+set timeout 300
+
+log_user 1
+spawn ./copal-vm.sh $image
+
+# --- the boot ------------------------------------------------------------
+# Alpine reaches a login prompt in about fifteen seconds under HVF; allow far
+# more, because a first boot also expands the modloop.
+expect {
+    -re {login: *$}  { }
+    timeout          { send_user "\n\n\[capture\] never reached a login prompt\n"; exit 1 }
+}
+send "root\r"
+
+# --- the shell -----------------------------------------------------------
+# No password on a fresh card: stage 1 is what sets one.
+expect {
+    -re {[#\$] *$} { }
+    timeout        { send_user "\n\n\[capture\] no root shell\n"; exit 1 }
+}
+sleep 1
+send "sh /media/vda1/copal-init.sh\r"
+
+# --- the guided screen ---------------------------------------------------
+# The first thing a virgin install shows. If it does not appear, the machine
+# has been installed before and went straight to the menu -- answer there
+# instead rather than hanging.
+expect {
+    -re {Level \[s/m/f} { send "$level\r" }
+    -re {Choose \[}     { send_user "\n\n\[capture\] already installed -- menu, not the guided screen\n"
+                          send "a\r" }
+    timeout             { send_user "\n\n\[capture\] installer did not start\n"; exit 1 }
+}
+
+# --- let it run ----------------------------------------------------------
+# From here the install answers itself. This loop exists only to keep the
+# transcript flowing to the recorder and to answer the two questions the
+# unattended path still asks, then to stop on the clock.
+set deadline [expr {[clock seconds] + $RUN_MINUTES * 60}]
+while {[clock seconds] < $deadline} {
+    set remaining [expr {$deadline - [clock seconds]}]
+    set timeout $remaining
+    expect {
+        -re {Start the automatic install\?}  { send "\r"; }
+        -re {\[Y/n\] *$}                     { send "\r"; }
+        -re {Type yes}                       { send "yes\r"; }
+        -re {New password: *$}               { send "hunter2\r"; }
+        -re {Retype password: *$}            { send "hunter2\r"; }
+        timeout                              { break }
+        eof                                  { break }
+    }
+}
+
+send_user "\n\n\[capture\] $RUN_MINUTES minutes recorded -- stopping the machine.\n"
+# Ctrl-A X: QEMU's own quit sequence on a serial console.
+send "\001"
+send "x"
+sleep 2
+exit 0

@@ -86,7 +86,7 @@ model_of = $(patsubst pizero%,zero%,$(1))
 .PHONY: alldebug build-all-debug imagedebug freshdebug purge \
 	help menu flow targets boards configure require-tools vm graphical check \
         fresh auto image refresh utm utm-x86 layout layout-auto answers answers-show lint space clean distclean \
-        all cache build-all
+        all cache build-all release capture
 
 help:
 	@printf '\nCopal Linux -- make targets\n\n'
@@ -364,6 +364,65 @@ layout:
 # between the two is "tidy the desktop" and "begin an hour of work".
 layout-auto:
 	@$(UTMRUN) layout --autotype
+
+# --------------------------------------------------------------- release ---
+#
+# The images on the web page, regenerated from a real install rather than
+# refreshed by hand and hoped to still be true. Documentation that drifts from
+# the thing it documents is worse than none, and screenshots drift silently --
+# nothing fails when they go stale.
+#
+# WHAT IT ACTUALLY DOES. Builds a clean image, boots it, drives an install
+# over the VM's serial console with expect, and records that console with
+# asciinema; agg renders the cast to a GIF, and the stills are cut from the
+# SAME recording rather than from a second boot. One install, one truth: two
+# recordings of two installs disagree about hostname and timing, and a page
+# whose images contradict each other reads as mocked up even when every frame
+# is real.
+#
+# No screen recording is involved and nothing has to be watched. The install
+# is a text transcript on a serial console, so the characters ARE the artifact
+# -- see tools/capture-media.sh for why a video of a terminal is the wrong
+# container for it.
+#
+# LEVEL and MINUTES are the two knobs: which install level to record (s, m or
+# f) and how long to record for. A full install is hours; the default records
+# the first twelve minutes, which is the part with anything to see.
+LEVEL   ?= f
+MINUTES ?= 12
+
+# A RECORDING IS PUBLISHED; A BUILD IS NOT. copal-prep.sh offers this Mac's
+# git identity as the default the target suggests, and stage 1 prints it --
+# so a capture of a normal build puts a real name and a real email address
+# into a GIF on a public web page. That is the same leak .gitignore exists to
+# prevent, arriving by a route .gitignore cannot see.
+#
+# So a release build is given a neutral identity instead of this Mac's. It is
+# not a redaction after the fact -- the identity never reaches the image, so
+# there is nothing in the transcript to scrub and no way to forget.
+CAPTURE_NAME  ?= Copal
+CAPTURE_EMAIL ?= copal@example.invalid
+
+capture:
+	@tools/capture-media.sh --image $(IMG) --level $(LEVEL) --minutes $(MINUTES)
+
+# A CLEAN IMAGE, and it has to be clean rather than merely current: the guided
+# screen is the first thing the page shows, and it only appears on a machine
+# that has never been installed -- no apkovl, root still a tmpfs. Capturing
+# over a half-built image records the resume path instead, which is a
+# different and much less interesting screen.
+#
+# `auto`, not `fresh`: both build, but fresh gates each step on a read from
+# /dev/tty and there is no terminal in a release run. auto supplies one with
+# script(1), which is the whole reason that target exists. The image is
+# removed first so auto has nothing to resume from.
+release: | require-tools $(BUILDDIR)
+	@printf '\033[36m==>\033[0m \033[1mRelease capture\033[0m -- a clean image, then a recorded install\n'
+	@rm -f $(IMG)
+	@CFG_GIT_NAME='$(CAPTURE_NAME)' CFG_GIT_EMAIL='$(CAPTURE_EMAIL)' \
+	    $(MAKE) --no-print-directory auto MODEL=$(MODEL)
+	@$(MAKE) --no-print-directory capture
+	@printf '\033[36m==>\033[0m Media regenerated in docs/media. Review, then commit.\n'
 
 # Collect the answers an unattended install needs -- identity, login name, and
 # the root password, which is the one thing setup-alpine has no answer-file

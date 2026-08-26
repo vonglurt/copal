@@ -15832,6 +15832,60 @@ case "${1:-}" in
         exit 0 ;;
 esac
 
+guided_install() {
+    say "GUIDED INSTALL -- pick a level, or take the menu"
+    cat <<MSG
+
+    Every Copal install moves through the same three acts:
+
+      SETTLE    stages 1-3   answers applied, packages made persistent, the
+                             root filesystem moved onto the card. Everything
+                             else needs these; stage 3 reboots once.
+      FURNISH   stages 4-12  a desktop, zram, SSH, toolchain, emulators,
+                             media, the application catalogue.
+      HARDEN    stage 13     root locked, '$PI_USER' + doas from then on.
+
+    The levels only differ in how much furniture act two brings in:
+
+      s) SERVER      no screen attached: settle, zram, SSH, grow the
+                     partition, harden. Nothing graphical is installed.
+      m) MEDIUM      the X desktop -- X.Org on the framebuffer, i3, the
+                     catalogue, emulators, workshop. The ceiling for a
+                     Pi Zero, and the whole install as it always was.
+      f) FULL MONTY  everything medium installs, then stage 16 on top:
+                     Hyprland on Wayland with the Linux Antiquity theme --
+                     kitty, mako, the star-chart look. Takes the session;
+                     X stays installed as the fallback. Needs aarch64 or
+                     x86_64 -- on a Pi Zero this level declines itself and
+                     lands exactly where medium does.
+
+    X and Hyprland cannot own the screen at once, so the desktop at boot is
+    one word in /etc/copal/session -- stage 4 writes 'x11', stage 16 writes
+    'wayland', re-running either flips it. Nothing is ever uninstalled.
+
+    Enter takes you to the menu instead: every stage by hand, in any order,
+    re-runnable -- the levels above are only bundles of the same stages.
+MSG
+    ask "Level [s/m/f, Enter for the menu]:"
+    case "$REPLY" in
+        s|S) _prof=server ;;
+        m|M) _prof=medium ;;
+        f|F) _prof=full ;;
+        *)   _prof=custom ;;
+    esac
+    mount -o remount,rw "$BOOT" 2>/dev/null || true
+    printf '%s\n' "$_prof" > "$BOOT/copal-profile" 2>/dev/null \
+        || warn "could not record the level on $BOOT -- a resume after reboot will run the full manifest"
+    # The return value is the answer to "did an install just run?", which is
+    # what the caller needs to decide between exiting and showing the menu.
+    # 'custom' is not a failure -- it is somebody asking for the menu -- so it
+    # returns non-zero to mean "carry on", not to mean "something went wrong".
+    case "$_prof" in
+        custom) note "No level chosen -- the menu it is."; return 1 ;;
+        *)      auto_run; return 0 ;;
+    esac
+}
+
 if auto_state_load; then
     say "An automatic install was interrupted"
     note "already attempted:$AUTO_DONE"
@@ -15846,24 +15900,30 @@ elif ! apkovl_exists && is_diskless; then
     cat <<'MSG'
 
     ======================================================================
-      FULL AUTOMATIC INSTALL
+      THIS CARD HAS NOT BEEN SET UP YET
     ======================================================================
 
-    This card has not been set up yet. Copal can do the whole thing by
-    itself -- every stage, every question answered yes, resuming on its own
-    across the reboot in the middle.
+    Copal can do the whole thing by itself -- every stage, resuming on its
+    own across the reboot in the middle. Choose how far it should go.
 
     Early on it asks who you are -- a name and email for git commits, with
     whatever the Mac that wrote this card uses offered as the default -- and
     then for a ROOT PASSWORD, which setup-alpine has no way to be told in
-    advance. After those you can walk away. It takes hours.
-
-    Answer no for the ordinary menu, where you choose each stage yourself.
+    advance. After those you can walk away.
 
 MSG
-    if confirm "Do a full automatic install?"; then
-        auto_run; exit 0
-    fi
+    # HOW MUCH, not just whether. This used to be one yes/no question, which
+    # asked the wrong thing: "everything, for hours" and "nothing, here is a
+    # menu of sixteen" are not the only two answers anybody wants, and a
+    # machine with no screen attached has no business installing a desktop
+    # either way. guided_install describes the flow and offers three levels --
+    # server, medium, full monty -- each a computed subset of the same
+    # manifest, and Enter still falls through to the menu.
+    #
+    # It is called HERE rather than nearer the menu because this block is the
+    # one that actually runs on a virgin machine: it is guarded on no apkovl
+    # and a tmpfs root, which is precisely "nothing has been installed yet".
+    if guided_install; then exit 0; fi
     note "Manual it is. The menu is below; stages can be run in any order."
 fi
 
@@ -16964,66 +17024,10 @@ COPALLOGS
 # over to auto_run, which reads it back on every resume. Declining records
 # 'custom', so the offer is made exactly once and the menu is the answer
 # from then on.
-guided_install() {
-    say "GUIDED INSTALL -- pick a level, or take the menu"
-    cat <<MSG
-
-    Every Copal install moves through the same three acts:
-
-      SETTLE    stages 1-3   answers applied, packages made persistent, the
-                             root filesystem moved onto the card. Everything
-                             else needs these; stage 3 reboots once.
-      FURNISH   stages 4-12  a desktop, zram, SSH, toolchain, emulators,
-                             media, the application catalogue.
-      HARDEN    stage 13     root locked, '$PI_USER' + doas from then on.
-
-    The levels only differ in how much furniture act two brings in:
-
-      s) SERVER      no screen attached: settle, zram, SSH, grow the
-                     partition, harden. Nothing graphical is installed.
-      m) MEDIUM      the X desktop -- X.Org on the framebuffer, i3, the
-                     catalogue, emulators, workshop. The ceiling for a
-                     Pi Zero, and the whole install as it always was.
-      f) FULL MONTY  everything medium installs, then stage 16 on top:
-                     Hyprland on Wayland with the Linux Antiquity theme --
-                     kitty, mako, the star-chart look. Takes the session;
-                     X stays installed as the fallback. Needs aarch64 or
-                     x86_64 -- on a Pi Zero this level declines itself and
-                     lands exactly where medium does.
-
-    X and Hyprland cannot own the screen at once, so the desktop at boot is
-    one word in /etc/copal/session -- stage 4 writes 'x11', stage 16 writes
-    'wayland', re-running either flips it. Nothing is ever uninstalled.
-
-    Enter takes you to the menu instead: every stage by hand, in any order,
-    re-runnable -- the levels above are only bundles of the same stages.
-MSG
-    ask "Level [s/m/f, Enter for the menu]:"
-    case "$REPLY" in
-        s|S) _prof=server ;;
-        m|M) _prof=medium ;;
-        f|F) _prof=full ;;
-        *)   _prof=custom ;;
-    esac
-    mount -o remount,rw "$BOOT" 2>/dev/null || true
-    printf '%s\n' "$_prof" > "$BOOT/copal-profile" 2>/dev/null \
-        || warn "could not record the level on $BOOT -- a resume after reboot will run the full manifest"
-    case "$_prof" in
-        custom) note "No level chosen -- the menu it is." ;;
-        *)      auto_run ;;
-    esac
-}
 
 install_frontdoor
 install_log_tools
 
-# First contact: a virgin system (no apkovl means stage 1 has never run) with
-# a person at the terminal is offered the guided install once, before the
-# menu. Every later run -- and every run that already chose, 'custom'
-# included -- goes straight to the menu, which stays the whole truth.
-if [ ! -f "$BOOT/copal-profile" ] && [ "${HAVE_TTY:-0}" = 1 ] && ! apkovl_exists; then
-    guided_install
-fi
 
 while :; do
     state_report
