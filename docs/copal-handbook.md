@@ -1080,10 +1080,15 @@ and degrades to a plain colour if ImageMagick or feh is missing.
 
 | Key | Action |
 |---|---|
-| **Super + Space** or **Super + D** | Run a program (dmenu) — anything on `PATH` |
+| **Super + Space**, **Alt + Space** or **Super + D** | Run a program (dmenu) — anything on `PATH` |
 | **Super + Return** | Terminal |
 | **Super + Z** | The app menu (jgmenu), built from what is installed |
-| **Super + C** | The Copal Center — every program, run or install |
+| **Right-click on the desktop** | The same app menu, opened where you clicked |
+| **Super + Shift + C** | The Copal Center — every program, run or install |
+| **Super + Shift + N** | The editor (nvim) |
+| **Super + Shift + M** | Music (cmus, or mpv on `~/Music`) |
+| **Super + Ctrl + A** | Volume (alsamixer) |
+| **Super + Ctrl + T** | What the machine is doing (btop, or htop) |
 | **Super + E** | File manager (pcmanfm) |
 | **Super + T** | Task manager (htop) |
 | **Super + comma** | Settings (`copal-config`) — users, hostname, services, SSH |
@@ -1186,7 +1191,7 @@ instead.** The rest of the binding does not move.
 
 | Instead of | Press | Because macOS uses it for |
 |---|---|---|
-| **Super + Space** | **Ctrl + Space**, or Ctrl + Alt + Space | Spotlight |
+| **Super + Space** | **Alt + Space**, Ctrl + Space, or Ctrl + Alt + Space | Spotlight |
 | **Super + Tab** | **Ctrl + Alt + Tab** | Application switcher |
 | **Super + H** | **Ctrl + Alt + H** | Hide the front application |
 | **Super + W** | **Ctrl + Alt + W** | Close the UTM window |
@@ -1202,11 +1207,18 @@ terminal on the machine, permanently. Ctrl + Alt is claimed by nothing in i3 and
 nothing in a shell — on the Mac side only by VoiceOver, which is off unless you
 turned it on.
 
-The launcher is the one exception, and it does cost something. **Ctrl + Space**
-is bound as well as Ctrl + Alt + Space, because it is reached dozens of times a
-day and Spotlight takes it most reliably. i3 grabs it globally, so it stops
-reaching emacs as set-mark and IBus as its input switcher. If either matters
-more, delete that one line from `~/.config/i3/config` and use Ctrl + Alt + Space.
+The launcher is the exception, and it gets two extra bindings rather than one,
+because it is reached dozens of times a day and Spotlight takes Cmd + Space most
+reliably of all. **Alt + Space** is the one to reach for: Alt is Option, it sits
+beside Command on a Mac keyboard, and macOS reserves nothing on it. **Ctrl +
+Space** is bound too, and that one does cost something — i3 grabs it globally, so
+it stops reaching emacs as set-mark and IBus as its input switcher. If either
+matters more, delete that one line from `~/.config/i3/config`; Alt + Space and
+Ctrl + Alt + Space both still do the job.
+
+Alt + Space is not free either, but it is cheap: it is the window menu in a few
+GTK and Qt programs and just-one-space in emacs. The Wayland desktop binds it as
+well, so the two do not disagree about how the launcher opens.
 
 On a Pi or a PC nothing steals anything and none of this applies; the extra
 bindings are harmless there and are written unconditionally.

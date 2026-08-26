@@ -1047,7 +1047,9 @@ than from `PATH`, and the entries you do not have hand off to `copal-install`.
 > maps **Caps Lock to a second Super**, with not one binding moved. Where Super
 > is eaten by macOS anyway — Spotlight, the app switcher, the screenshot keys —
 > there is a second binding on `Ctrl`+`Alt`. One rule: *where Super is eaten,
-> press Ctrl+Alt.*
+> press Ctrl+Alt.* The launcher, reached most often, also answers to
+> `Alt`+`Space` — Option is beside Command and macOS reserves nothing on it —
+> and to a right-click on the desktop.
 
 ### When it does not come up
 

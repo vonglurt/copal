@@ -6859,6 +6859,16 @@ I3A
 # where Omarchy puts its launcher.
 bindsym $mod+d      exec dmenu_run
 bindsym $mod+space  exec dmenu_run
+# Alt+space as well. On a Mac keyboard Alt is the Option key, which sits
+# next to the Space bar and is next to Command -- the muscle memory for
+# "launcher" ends up on whichever of the two the host has not eaten. macOS
+# reserves Option+Space for nothing, so under UTM it arrives intact.
+#
+# The cost is the same shape as the Ctrl+Space one further down: i3 grabs it
+# globally, so Alt+Space stops reaching applications. What it reaches there
+# is the window menu in a few GTK/Qt programs and just-one-space in emacs --
+# less than Ctrl+Space costs, which is why this one is not hedged about.
+bindsym Mod1+space  exec dmenu_run
 bindsym $mod+Return exec $term
 bindsym $mod+e      exec pcmanfm
 bindsym $mod+t      exec $term -e htop
@@ -6866,9 +6876,30 @@ bindsym $mod+Shift+q kill
 # A clickable menu, built from what is actually installed. Falls back to
 # dmenu over the same list when jgmenu is absent, so it always works.
 bindsym $mod+z      exec copal-menu
+# And the same menu on a right-click on the desktop, which is where everyone
+# who has ever used a computer looks for it first. i3 has no desktop of its
+# own -- what you are clicking is the X root window, visible wherever no
+# window covers it -- but i3 does deliver root-window button presses to
+# bindings, so this is a one-liner rather than a second daemon.
+#
+# WITHOUT --whole-window on purpose. A bare button binding matches the root
+# window and window decorations only; add --whole-window and every
+# right-click inside every application would open this menu instead of the
+# application's own context menu, which would be unusable.
+#
+# --release, so the menu opens when the button comes back up. jgmenu grabs
+# the pointer as it maps, and a menu that appears under a button already
+# held down takes the release as a click on whatever entry is under the
+# cursor. --at-pointer puts it where the click was rather than at the
+# corner the config would otherwise pin it to.
+bindsym --release button3 exec --no-startup-id copal-menu --at-pointer
 # One window listing the whole catalogue -- what is installed and what is
 # not -- with a button that either runs it or fetches it.
-bindsym $mod+c      exec copal-center
+#
+# This used to be Super+C. It moved because Super+C is now COPY -- see the
+# unified clipboard block below, which is the one Omarchy convention worth
+# breaking an existing binding for.
+bindsym $mod+Shift+c exec copal-center
 # System settings: users and groups, hostname, services, SSH, boot options.
 # It asks doas for the root it needs rather than assuming it has it.
 bindsym $mod+comma  exec copal-config
@@ -7396,6 +7427,17 @@ set -eu
 CSV="${XDG_RUNTIME_DIR:-/tmp}/copal-menu.csv"
 CATFILE=/usr/local/share/copal/catalogue
 
+# --at-pointer: open where the mouse is, which is what the right-click-on-the-
+# desktop binding wants. Only jgmenu can honour it; the dmenu fallback is a
+# full-width bar with nowhere to put it, so there the flag is simply dropped
+# rather than made into an error.
+AT_POINTER=""
+case "${1:-}" in
+    --at-pointer) AT_POINTER="--at-pointer" ;;
+    "") ;;
+    *) echo "usage: copal-menu [--at-pointer]" >&2; exit 2 ;;
+esac
+
 have() { command -v "$1" >/dev/null 2>&1; }
 out()  { printf '%s\n' "$*" >> "$CSV"; }
 TERM_EMU="${TERMINAL:-$(have urxvt && echo urxvt || echo xterm)}"
@@ -7566,7 +7608,7 @@ out "Reboot,copal-halt reboot"
 out "Shut down,copal-halt"
 
 if have jgmenu; then
-    exec jgmenu --simple --csv-file="$CSV"
+    exec jgmenu --simple $AT_POINTER --csv-file="$CSV"
 else
     # No jgmenu: flatten to dmenu over the same list, so the menu still works
     # and still shows every entry. Submenu markers and separators drop out;
@@ -8333,11 +8375,17 @@ NEED=no
 if [ -n "$IM" ] && [ "$NEED" = yes ] && [ -f "$KEYS" ]; then
     # Bindings and group headings only. The explanatory prose belongs in the
     # scrollable window; a wallpaper you read at a glance wants the table.
-    # Measured: this comes to 33 lines, which fits 720p at pointsize 14 with
+    # Measured: this comes to 35 lines, which fits 720p at pointsize 14 with
     # room to spare. Adding a group to keys.txt is free; adding more than
-    # about eight bindings will start to run off the bottom.
+    # about six bindings will start to run off the bottom.
+    #
+    # The filter takes group headings (a capital in column 2) and any line
+    # naming a chord. 'Super' is not enough on its own any more: the launcher
+    # answers to Alt+Space, and the app menu to a right-click on the desktop,
+    # and a wallpaper that lists neither is a wallpaper that hides the two
+    # easiest ways in.
     BODY=$(sed -n '/^ START SOMETHING/,/^ IF SOMETHING/p' "$KEYS" \
-           | sed '$d' | awk '/^ [A-Z]/ || /Super \+/')
+           | sed '$d' | awk '/^ [A-Z]/ || /Super \+/ || /Alt \+/ || /Right-click/')
     [ -n "$BODY" ] || BODY=$(cat "$KEYS")
     # A named font may not resolve without fontconfig knowing it, and a
     # failed -font aborts the whole command -- so try the nice one, then let
@@ -8379,15 +8427,22 @@ COPALSPLASH
  Show this list again at any time with   Super + /   or   Super + F1
 
  START SOMETHING
-   Super + Space        run a program (Ctrl + Space too -- see the UTM
-                        note below) -- type a few letters, Enter.
+   Super + Space        run a program (Alt + Space and Ctrl + Space do the
+                        same -- see the UTM note below) -- type a few
+                        letters, Enter.
                         Lists EVERY executable on your PATH, so anything
                         you install shows up here automatically.
+   Alt + Space          the same launcher. Alt is Option on a Mac keyboard,
+                        and macOS reserves nothing on it, so this one
+                        always reaches the machine.
    Super + D            the same thing (dmenu)
    Super + Z            the app menu: everything installed, sorted into
                         categories. Its Install branch lists the programs
                         you have NOT installed yet and installs them.
-   Super + C            the Copal Center: one window listing every program
+   Right-click          the same app menu, opened where you clicked. The
+     on the desktop     desktop is the empty background -- any part of the
+                        screen with no window over it.
+   Super + Shift + C    the Copal Center: one window listing every program
                         in the catalogue, installed or not, with a button
                         to run it or fetch it.
    Super + ,            system settings: add users and choose their
@@ -8501,10 +8556,18 @@ COPALSPLASH
      Super + Q          quits UTM, and every VM running in it.
      Super + Shift + Q  logs out of macOS.
 
-   Every affected binding has a second one, and the rule IS the table:
-   WHERE SUPER IS EATEN, PRESS CTRL+ALT INSTEAD.
+   EVERY binding in this file has a second one -- not just the ones macOS
+   eats -- so you never have to remember which is which. Two rules:
 
-     Super + Space        ->  Ctrl + Space  (or Ctrl + Alt + Space)
+     WHERE SUPER IS EATEN, PRESS CTRL+ALT INSTEAD.
+     WHERE THE BINDING ALSO HAS CTRL IN IT, PRESS CTRL+ALT+SHIFT.
+
+   The rest of the binding does not move. Some examples:
+
+     Super + Space        ->  Alt + Space, Ctrl + Space, or
+                              Ctrl + Alt + Space
+     Super + Return       ->  Ctrl + Alt + Return
+     Super + Z            ->  Ctrl + Alt + Z
      Super + Tab          ->  Ctrl + Alt + Tab
      Super + H            ->  Ctrl + Alt + H
      Super + W            ->  Ctrl + Alt + W
