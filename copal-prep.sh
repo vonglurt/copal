@@ -8830,16 +8830,36 @@ I3S
     # forever, printing a status line every interval. So the test is inverted
     # -- run it under a timeout and treat being killed as success. A bad
     # config makes it exit on its own, quickly, with the parse error.
+    #
+    # -s KILL, AND THAT IS THE WHOLE POINT OF THIS COMMENT. The first version
+    # of this check sent the default SIGTERM and accepted 0 or 124. It cried
+    # wolf on every single install:
+    #
+    #     warning: the generated i3status config does not parse (exit 1):
+    #           i3status: exiting due to signal.
+    #
+    # i3status INSTALLS A SIGTERM HANDLER. Asked to stop, it says so and exits
+    # 1 of its own accord -- so timeout has no timeout of its own to report
+    # and passes the child's 1 straight through, which is indistinguishable
+    # from a parse error. The config was correct the entire time; the test was
+    # wrong. SIGKILL cannot be caught, so a survivor is always reported as
+    # killed and never as a failure.
+    #
+    # And the accepted list is 0, 124 AND 137, because the two timeouts do not
+    # agree: coreutils reports its own 124, busybox -- which is the timeout on
+    # a default Alpine -- reports 128+9. Only accepting 124 would have swapped
+    # this false alarm for a quieter one.
     if command -v i3status >/dev/null 2>&1 && command -v timeout >/dev/null 2>&1; then
         # The 'if' wrapper is required, not stylistic: under 'set -e' a bare
         # command that exits non-zero would abort the stage before $? is read.
-        if timeout 3 i3status -c /tmp/i3status.$$ >/dev/null 2>/tmp/i3status.err.$$; then
+        if timeout -s KILL 3 i3status -c /tmp/i3status.$$ \
+                >/dev/null 2>/tmp/i3status.err.$$; then
             _rc=0
         else
             _rc=$?
         fi
         case "$_rc" in
-            0|124) note "i3status config parses (ran until stopped at 3s)" ;;
+            0|124|137) note "i3status config parses (ran until stopped at 3s)" ;;
             *)     warn "the generated i3status config does not parse (exit $_rc):"
                    sed 's/^/      /' /tmp/i3status.err.$$ >&2 ;;
         esac
