@@ -129,9 +129,26 @@ step "Build — a clean image, unattended"
 say "${D}make auto: ./copal build $(sed -n 's/^MODEL *?= *//p' Makefile | head -1) --auto${N}"
 say "No questions. script(1) supplies the tty the step gates want."
 say "About 90 seconds once the payload is cached; longer if it re-downloads."
+# The status is taken from make, not from the tail of the pipe. Without
+# PIPESTATUS the exit code here would be sed's, which is always 0 -- and the
+# walkthrough would announce success over a release that failed at verify.
+set -o pipefail
 make release PURGE=0 LEVEL="$LEVEL" MINUTES="$MINUTES" 2>&1 \
     | grep -vE '^\s*[0-9]+ / [0-9]+' | sed 's/^/   /'
-done_ "image built, install recorded, GIF and video rendered"
+_rc=${PIPESTATUS[0]}
+set +o pipefail
+if [ "$_rc" != 0 ]; then
+    printf '%s└─%s %sthe release failed (exit %s)%s\n' "$C" "$N" "$Y" "$_rc" "$N"
+    say ""
+    say "The usual cause is ${B}verify${N}: a release will not be built from a"
+    say "tree with uncommitted changes, because the revision stamped into the"
+    say "image would not describe what was actually built. Commit, then re-run."
+    say ""
+    say "Carrying on to the screenshot steps anyway -- they work on whatever"
+    say "image is there, and skipping them would lose the pictures too."
+else
+    done_ "image built, install recorded, GIF and video rendered"
+fi
 
 fi  # SHOTS_ONLY
 

@@ -86,7 +86,7 @@ model_of = $(patsubst pizero%,zero%,$(1))
 .PHONY: alldebug build-all-debug imagedebug freshdebug purge \
 	help menu flow targets boards configure require-tools vm graphical check \
         fresh auto image refresh utm utm-x86 layout layout-auto answers answers-show lint space clean distclean \
-        all cache build-all release capture video screens verify gallery chain utm-type walkthrough release-cast
+        all cache build-all release capture video screens verify gallery chain utm-type walkthrough release-cast logs
 
 help:
 	@printf '\nCopal Linux -- make targets\n\n'
@@ -465,6 +465,14 @@ gallery:
 # rather than a silent one. See docs/AUTOMATION.md.
 walkthrough:
 	@tools/release-walkthrough.sh --minutes $(MINUTES) --level $(LEVEL)
+
+# Gather every log a run produced -- the Mac's build transcripts, the install
+# transcript off the image's FAT partition, and the guest's own logs if it is
+# reachable -- into build/logs/<timestamp>, with a summary that greps for the
+# things worth worrying about. The image is attached and detached in a trap,
+# so a collection never leaves a mount behind.
+logs:
+	@tools/collect-logs.sh --image $(IMG)
 
 # Record the release pipeline ITSELF -- the Mac side, not the guest's install.
 #
