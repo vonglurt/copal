@@ -86,7 +86,7 @@ model_of = $(patsubst pizero%,zero%,$(1))
 .PHONY: alldebug build-all-debug imagedebug freshdebug purge \
 	help menu flow targets boards configure require-tools vm graphical check \
         fresh auto image refresh utm utm-x86 layout layout-auto answers answers-show lint space clean distclean \
-        all cache build-all release capture video screens verify gallery chain walkthrough release-cast logs
+        all cache build-all release capture video screens verify gallery chain walkthrough release-cast logs utm-export install
 
 help:
 	@printf '\nCopal Linux -- make targets\n\n'
@@ -348,6 +348,35 @@ utm: image
 	@printf '\033[36m==>\033[0m Started. Find its address with: %s ip --target aarch64\n' '$(UTMRUN)'
 	@printf '    \033[2m%s\033[0m\n' 'Serial console: the VM window toolbar -> Displays -> Serial 1'
 
+# UTM keeps its own copy of the disk -- `create` converts the raw image into a
+# qcow2 inside the bundle -- so an install done in UTM does NOT change
+# $(IMG). This pulls it back out, which is what makes `make screens`,
+# `make verify` and `make logs` see the system you actually installed rather
+# than the pristine one they were built from.
+#
+# The machine has to be stopped: converting a disk out from under a running
+# guest copies a half-written filesystem.
+utm-export:
+	@$(UTMRUN) stop --target aarch64 >/dev/null 2>&1 || true
+	@$(UTMRUN) export --target aarch64 --image $(IMG)
+
+# Boot the image with its console on THIS terminal, and say what to type. The
+# install itself is hours and happens inside the guest -- this is only the
+# door into it.
+#
+# QEMU rather than UTM on purpose: copal-vm.sh writes straight to $(IMG), so
+# everything installed here is in the file that make screens photographs. In
+# UTM it would land in UTM's own qcow2 instead (see utm-export).
+install: image
+	@printf '\n\033[1mThe install happens inside the guest.\033[0m Once it boots:\n\n'
+	@printf '    login:  \033[36mroot\033[0m   (no password yet)\n'
+	@printf '    run:    \033[36msh /media/vda1/copal-init.sh\033[0m\n'
+	@printf '    pick:   \033[36mf\033[0m      server / medium / full monty\n\n'
+	@printf '  Stage 3 reboots the guest by itself; let it come back.\n'
+	@printf '  When it has finished, quit QEMU with \033[1mCtrl-A\033[0m then \033[1mX\033[0m,\n'
+	@printf '  then run \033[36mmake screens\033[0m to photograph the desktop.\n\n'
+	$(VMRUN) $(IMG)
+
 # Arrange the four VM windows -- two serial consoles into the bottom corners,
 # the two graphical ones pushed off the bottom edge but still clickable.
 #
@@ -509,11 +538,16 @@ chain:
 	@printf '    make fresh              delete it first, build again      (asks at each step)\n'
 	@printf '    make auto               the same, unattended               (script(1) supplies a tty)\n'
 	@printf '    make all                cache + every board + both UTM machines\n\n'
+	@printf '  \033[36mINSTALLING (hours, inside the guest)\033[0m\n'
+	@printf '    make install            boot it in QEMU and tell you what to type\n'
+	@printf '      then                  make screens   photograph the desktop\n'
+	@printf '    \033[2mor install in UTM, then:\033[0m\n'
+	@printf '    make utm                register + start a UTM machine\n'
+	@printf '    make utm-export         pull UTM'"'"'s disk back into $(IMG)   <- do not skip\n\n'
 	@printf '  \033[36mRUNNING IT\033[0m\n'
 	@printf '    make vm                 QEMU, serial console on THIS terminal   <- scriptable\n'
 	@printf '    make graphical          QEMU, a window\n'
 	@printf '    make check              QEMU headless; exits non-zero if no login prompt\n'
-	@printf '    make utm                register + start a UTM machine          <- interactive\n'
 	@printf '    make layout             arrange the UTM windows\n'
 	@printf '    make layout-auto        ...and type the install into them (needs Accessibility)\n\n'
 	@printf '  \033[36mCHECKING AND CAPTURING\033[0m\n'

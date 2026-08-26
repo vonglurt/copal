@@ -32,6 +32,7 @@
 #   utm/utm-vm.sh status  --target aarch64
 #   utm/utm-vm.sh stop    --target aarch64
 #   utm/utm-vm.sh refresh --target aarch64 --image build/copal-vm.img
+#   utm/utm-vm.sh export  --target aarch64 --image build/copal-vm.img
 #   utm/utm-vm.sh delete  --target aarch64
 #   utm/utm-vm.sh config  --target x86_64        # print the plist, write nothing
 #   utm/utm-vm.sh progress --target x86_64       # how far the install has got
@@ -766,9 +767,9 @@ do_layout() {
 }
 
 case "$ACTION" in
-    create|start|stop|status|delete|refresh|config|ip|log|progress|share|layout) : ;;
+    create|start|stop|status|delete|refresh|export|config|ip|log|progress|share|layout) : ;;
     -h|--help) usage; exit 0 ;;
-    *) die "unknown action '$ACTION'. One of: create share start stop status delete refresh config ip log progress layout" ;;
+    *) die "unknown action '$ACTION'. One of: create share start stop status delete refresh export config ip log progress layout" ;;
 esac
 
 while [ $# -gt 0 ]; do
@@ -1519,6 +1520,56 @@ do_delete() {
 # picks up installer changes without being rebuilt. It works through hdiutil,
 # which cannot attach a qcow2, so the disk is converted out and back. Both
 # directions are lossless and everything the guest has written survives.
+# ---------------------------------------------------------------- export ---
+#
+# UTM's disk, back out as a raw image.
+#
+# WHY THIS IS NEEDED AT ALL. `create` converts the raw image into a qcow2
+# inside the bundle, because that is what UTM understands -- so from that
+# moment the machine you use in UTM and the file in build/ are two different
+# disks. Install into UTM and build/copal-vm.img still holds the pristine,
+# uninstalled system. Nothing warns you: both exist, both boot, and only one
+# of them has your desktop on it.
+#
+# That matters because `make screens` photographs the IMAGE. Install in UTM,
+# run make screens, and you get pictures of a login prompt -- a genuinely
+# confusing result, since the desktop you are looking at in UTM is real.
+#
+# So: install wherever you like, export, and every image-based tool works on
+# what you actually built.
+#
+#   utm/utm-vm.sh export --target aarch64 --image build/copal-vm.img
+#
+# The machine must be stopped. Converting a disk out from under a running
+# guest reads a half-written filesystem, which is not a backup, it is a
+# corrupted copy that looks fine until it is booted.
+do_export() {
+    require_bundle
+    [ -n "$IMAGE" ] || die "export needs --image: where to write the raw disk"
+    command -v qemu-img >/dev/null 2>&1 || die "qemu-img not found. brew install qemu"
+    if [ -x "$UTMCTL" ] && [ "$("$UTMCTL" status "$NAME" 2>/dev/null || echo stopped)" != stopped ]; then
+        die "'$NAME' is running. Stop it first: $0 stop --target $TARGET"
+    fi
+    local disk
+    disk=$(ls "$BUNDLE/Data"/*.qcow2 2>/dev/null | head -1) || die "no disk in $BUNDLE/Data"
+
+    # Refuse to clobber silently. The image is what every other tool reads,
+    # and overwriting a good one with an empty machine's disk is the mistake
+    # this whole function exists to prevent the other half of.
+    if [ -f "$IMAGE" ]; then
+        warn "$IMAGE exists and will be overwritten by ${NAME}'s disk"
+        printf '    %s\n' "$(du -h "$IMAGE" | awk '{print $1}') -> $(du -h "$disk" | awk '{print $1}') (qcow2, sparse)" >&2
+    fi
+
+    info "qcow2 -> raw: $disk"
+    info "            -> $IMAGE"
+    qemu-img convert -p -f qcow2 -O raw "$disk" "$IMAGE" || die "convert failed"
+    info "Exported. $(du -h "$IMAGE" | awk '{print $1}') on disk."
+    note "make screens   photograph it"
+    note "make verify    check its stamp"
+    note "make logs      collect its transcripts"
+}
+
 do_refresh() {
     require_bundle
     [ -n "$IMAGE" ] || die "refresh needs --image: a scratch path for the raw round-trip"
@@ -1766,6 +1817,7 @@ case "$ACTION" in
     status)  do_status  ;;
     delete)  do_delete  ;;
     refresh) do_refresh ;;
+    export)  do_export  ;;
     config)  do_config  ;;
     ip)      do_ip      ;;
     log)     do_log     ;;

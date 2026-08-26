@@ -114,6 +114,63 @@ two builds cannot be mounted at once. This is the long one.
 
 ---
 
+## Installing: the loop that actually produces a desktop
+
+Two different things are called "the install", and blurring them is the single
+most confusing thing about this repository:
+
+| | What it is | How long |
+|---|---|---|
+| **The build** | `copal-prep.sh` on the Mac writes `$(IMG)` | ~90 seconds |
+| **The install** | `copal-init.sh` inside the guest runs the sixteen stages | hours |
+
+`make release` and `make walkthrough` do the first and *record* a bounded
+slice of the second. Only a complete second one produces a desktop to
+photograph.
+
+### The whole loop
+
+```sh
+make install          # boots the image in QEMU and prints what to type:
+                      #   login: root      (no password yet)
+                      #   run:   sh /media/vda1/copal-init.sh
+                      #   pick:  f
+                      # ...hours. Stage 3 reboots the guest by itself.
+                      # when finished: Ctrl-A then X to quit QEMU
+
+make screens          # photograph the installed desktop
+make gallery          # put the frames on the page
+make logs             # collect the transcripts
+```
+
+### The UTM trap, and the one command that avoids it
+
+`utm-vm.sh create` runs `qemu-img convert` to make UTM **its own qcow2**
+inside the bundle. From that moment the machine you use in UTM and the file in
+`build/` are **two different disks**. Install into UTM and `$(IMG)` still
+holds the pristine, uninstalled system.
+
+Nothing warns you, because nothing is wrong: both disks exist and both boot.
+But `make screens`, `make verify` and `make logs` all read the **image** — so
+after a UTM install they report on a system that was never installed, and you
+get photographs of a login prompt while a finished desktop sits on screen in
+UTM.
+
+```sh
+make utm-export       # stop the machine, convert its qcow2 back into $(IMG)
+```
+
+Run that after installing in UTM and every image-based tool sees what you
+actually built. The machine must be stopped — converting a disk out from
+under a running guest copies a half-written filesystem, which is not a backup
+but a corrupted copy that looks fine until it is booted.
+
+**And `make vm` does not appear in UTM.** It is plain QEMU, a separate
+hypervisor with no knowledge of UTM at all. If you want the machine in UTM's
+window list, that is `make utm`.
+
+---
+
 ## Which runner: QEMU or UTM?
 
 This is the decision that matters most, and it has a clean answer.
