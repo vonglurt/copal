@@ -84,3 +84,24 @@ copal-timings
 copal-prep-auto*.log
 copal-vm-check.log
 run-log-*.txt
+
+# Linux Antiquity, vendored (see docs/THEME.md). The one deliberate exception
+# to the no-binaries rule at the top of this file: the theme's wallpapers,
+# QML assets and bundled fonts ARE the theme -- there is nothing to download
+# and verify instead, they are MIT-licensed with the rest of the checkout,
+# and together they are ~34 MB. Committed on purpose.
+#
+# Two upstream directories stay out of the repository:
+#   iconTheme/    a Buuf-derivative icon set. Buuf is CC BY-NC-SA, and the
+#                 repository's MIT grant cannot relicense someone else's
+#                 icons -- so they are neither committed here nor staged
+#                 onto cards (copal-prep.sh tars configs/ only).
+#   screenshots/  12 MB of README illustrations; documentation for a web
+#                 page, not part of an install.
+# The upstream .zip snapshot is already caught by *.zip above. Both vendor
+# names are listed -- the plain unzipped snapshot and the future git-subtree
+# path (docs/THEME.md, "Forking and vendoring").
+vendor/linux-antiquity-main/iconTheme/
+vendor/linux-antiquity-main/screenshots/
+vendor/linux-antiquity/iconTheme/
+vendor/linux-antiquity/screenshots/
