@@ -1366,6 +1366,164 @@ done is a transcript beside it.
 
 ---
 
+## The editor
+
+Neovim, configured as an IDE, with no plugin manager and no plugins — and
+arranged to feel like [Omarchy's editor](https://manuals.omamix.org/2/the-applications/neovim),
+which is LazyVim.
+
+Those two sentences look like they contradict each other. They do not, and the
+distinction is the whole design: **the keys are copied and the machinery is
+not.** LazyVim is a set of conventions about which key does what, wrapped around
+a set of plugins that make those things possible. On this hardware the
+conventions are free and the plugins are not, so the conventions are taken and
+the plugins are replaced with the built-ins they were written to paper over.
+
+Why actual LazyVim is not viable here, in order of how decisive it is:
+
+1. **Treesitter.** LazyVim compiles a parser per language, with `gcc`, the first
+   time you open a file of that language. On one ARMv6 core that is most of an
+   hour, and it then wants more memory than a Pi Zero has. This one is not
+   negotiable and nothing else on the list matters next to it.
+2. **`nvim-lspconfig` and `nvim-cmp` are solving a problem the editor no longer
+   has.** They existed because Neovim had no built-in LSP client configuration
+   and no built-in completion. Since 0.11 it has both; Alpine v3.24 ships 0.12.
+
+So what is actually installed:
+
+| Omarchy / LazyVim has | Copal uses instead |
+|---|---|
+| `which-key` — `Space` opens a menu of what `Space` can do | a floating window and a table, in `~/.config/nvim/keys.lua`. Neovim's own `timeoutlen` does the "press and wait" part, which is all which-key's visible behaviour is |
+| `telescope` / `fzf-lua` — the file, buffer and grep pickers | `fzf` in a floating terminal — the same `fzf` the shell already has — with `ripgrep` behind the grep, into the quickfix list |
+| `neo-tree` — the sidebar | `netrw`, with neo-tree's five letters (`a` `A` `d` `r` `m`) bound onto it, so a LazyVim key list is true here too |
+| `lazygit.nvim` | `lazygit` in a floating terminal, which is all the plugin does either |
+| `nvim-lspconfig`, `mason`, `nvim-cmp` | `vim.lsp.config`, `vim.lsp.enable` and `vim.lsp.completion` — built in since 0.11 |
+| `omarchy-theme-hotreload.lua` | `~/.config/nvim/theme.lua` — same job, same size, see below |
+| `:LazyExtras` to add a language | one row in `lsp_catalogue()` in `copal-prep.sh`, which is also where Kate's and Emacs's copies of the same table come from |
+
+The leader is **Space**, which is LazyVim's, and that is the point of it: every
+LazyVim key list anyone has ever published is also a key list for this editor.
+`<leader><Space>` finds a file, `<leader>e` is the sidebar, `<leader>sg` greps
+the project, `<leader>gg` is lazygit, `<leader>ca` is a code action,
+`Shift`+`H` / `Shift`+`L` walk the buffers. Press `Space` and wait half a second
+for the menu, or run `:Keys`. `:Lsp` says which language servers are actually
+attached, which is the first question when `gd` does nothing.
+
+Two things Copal has that LazyVim does not ship by default, both because they
+are the navigation people miss most when they leave a graphical IDE:
+`<leader>ci` and `<leader>co` — the LSP **call hierarchy**, *what calls this
+function* and *what does this function call*.
+
+`~/.vimrc` is the half `vim` also gets — options, `:make`, Termdebug, buffers,
+netrw. `~/.config/nvim/` holds the three Lua files on top of it: `theme.lua`,
+`keys.lua`, `lsp.lua`, loaded in that order. Any of them can be deleted; you
+lose that layer and nothing else.
+
+### Themes, and the editor following the desktop
+
+Omarchy keeps its editor in lockstep with the rest of the desktop with a
+symlink, a setup script and a watcher plugin. None of that needs LazyVim, so all
+three are here:
+
+```
+~/.config/copal/current/theme  ->  /usr/local/share/copal/themes/<name>/
+                                        └── neovim.lua
+```
+
+`copal-theme` lists the themes and moves the symlink. A running Neovim notices
+within about three seconds and repaints — nothing is restarted, and adding a
+theme is adding a directory with a `neovim.lua` in it.
+
+The two shipped themes are the two looks Copal actually has: **tokyo-night**,
+which is stage 4's palette — the same six hex values already in the i3 config,
+the `Xresources` and the status bar — and **antiquity**, which is Linux
+Antiquity's *helios* palette, the light half that stage 16's `kitty.conf` paints
+the terminal with. Stage 16 moves the symlink when it installs that desktop, so
+the editor changes with the desktop and not separately.
+
+The watcher **polls** — one `stat` every three seconds, only while an editor is
+open. That is deliberate and the comment in the file says so: switching theme
+does not modify a file, it replaces a *symlink*, and `inotify` on a link path
+watches whatever that link resolved to when the watch was set. The old theme's
+file never changes, so the event never comes. `fs_poll` stats through the link
+and sees a different inode.
+
+Colour depth is asked for rather than assumed: 24-bit highlights where
+`COLORTERM` says the terminal can do it, a 256-colour fallback where it cannot,
+because on a Zero the console and `urxvt` are not `kitty`.
+
+---
+
+## Wayland, X.Org, and what happens in November 2026
+
+Copal ships **two** desktops on purpose, and the reason is a transition that has
+a date on it.
+
+- **Stage 4** — X.Org and i3. Runs on everything, including a Pi Zero, because
+  it renders on the CPU into the framebuffer via `fbdev` and asks nothing of the
+  GPU.
+- **Stage 16** — Hyprland and the Linux Antiquity theme, on Wayland. `aarch64`
+  and `x86_64` only: Alpine packages no Hyprland for `armhf` or `armv7`, and a
+  Zero's VideoCore has no GLES driver worth the name regardless.
+
+> **The bar is waybar, not quickshell.** Linux Antiquity's bar, radial taskbar,
+> widgets and launcher are 99 QML files for **quickshell**, which is packaged in
+> no Alpine repository — not community, not testing, not edge. Without a stand-in
+> the desktop is the wallpaper and your windows: no clock, no workspace
+> indicator, no list of what is open. So **waybar** draws it instead — the same
+> bar Omarchy uses, with `hyprland/workspaces`, `hyprland/window`, `wlr/taskbar`
+> (a real clickable window list), clock, cpu, memory, disk, network, volume and
+> the tray, styled in the theme's own *helios* palette read out of its
+> `Config.qml`. The theme's 18px half-width QML bar is **not** imitated in CSS;
+> faking it would be a bad tribute, so the palette and the iconless, typographic
+> character carry over and the layout is an honest waybar.
+> `copal-bar` decides which shell runs and prefers quickshell, so the day Alpine
+> packages it the real shell returns with nothing edited.
+
+That split is not a hedge, but the ground under it is moving:
+
+| When | What |
+|---|---|
+| July 2025 | Wayback announced — an X11-compatibility layer that runs a rootless Xwayland session on a Wayland compositor, so X11 window managers keep working with no X server underneath. Stated goal: production-ready "next year" |
+| January 2026 | Wayback 0.3 preview, in the Alpine stable repositories |
+| May 2026 | Alpine 3.24 — Wayback available, not the default |
+| **November 2026** | target for **Alpine 3.25 to ship Wayback as the default X11 replacement** |
+
+Worth being precise about what that is and is not. It is **not** a removal of
+X.Org from the repositories on that date. It is Wayback becoming the *default*
+session, with X.Org remaining installable as a fallback through a transition
+period of some length. And it is not a rewrite of i3 either — Wayback's entire
+point is that an X11 window manager runs unmodified on top of it.
+
+What it means for this project, concretely:
+
+- **Nothing changes on a Pi Zero, and that is the important half.** Wayback is a
+  Wayland compositor with Xwayland on top, so it needs what Wayland needs.
+  On hardware with no usable GLES driver, `xf86-video-fbdev` and a real X server
+  remain the only thing that works. Stage 4 is the desktop for that hardware
+  today and it will still be the desktop for it after 3.25.
+- **On `aarch64` the choice gets simpler, not harder.** Today stage 4 and stage
+  16 are two different desktops with two different themes. Under Wayback the
+  same i3 configuration could run on the Wayland stack, which would make stage 4
+  a *session choice* rather than a fork in the road.
+- **The risk to watch is the packages around X, not X itself.** A distribution
+  that stops treating X.Org as the default eventually stops testing the things
+  that only matter under it — `xf86-video-fbdev`, `setxkbmap`, `xmodmap`,
+  `xclip`, `xdotool`. Four of those five are load-bearing here, and two of them
+  are the unified clipboard. Every one is installed with `add_optional` and
+  guarded at runtime, which is why: the day one of them stops being built for
+  `armhf`, the desktop comes up with one feature missing and a sentence saying
+  which, rather than not at all.
+
+No action is being taken on this yet, deliberately. Alpine 3.25 is not released,
+Wayback is not the default anywhere, and pre-emptively porting to a stack that
+does not run on half this project's target hardware would be trading something
+that works for something that might. The plan is to re-test stage 4 under
+Wayback when 3.25 ships and add it as a third session if it holds up — not to
+replace anything.
+
+---
+
 ## Targets
 
 A target is the pair *(what medium it is written to, what loads the kernel)*.

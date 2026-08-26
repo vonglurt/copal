@@ -1263,6 +1263,25 @@ unusable here: **treesitter compiles a parser per language with gcc on first
 launch**, which on a single ARMv6 core is most of an hour and then wants more RAM
 than a Zero has.
 
+**The keys are LazyVim's anyway.** That is the deliberate part: LazyVim is a set
+of conventions about which key does what, wrapped around plugins that make those
+things possible. Here the conventions are free and the plugins are not, so the
+conventions are taken and the plugins are replaced with the built-ins they were
+written to paper over. The leader is **Space**, so every LazyVim key list ever
+published is also a key list for this editor.
+
+| Omarchy / LazyVim has | Here |
+|---|---|
+| `which-key` — Space opens a menu | a floating window and a table (`~/.config/nvim/keys.lua`). Neovim's own `timeoutlen` is the "press and wait" part |
+| `telescope` / `fzf-lua` | `fzf` in a floating terminal, `ripgrep` behind the grep, results into the quickfix list |
+| `neo-tree` | `netrw`, with neo-tree's `a` `A` `d` `r` `m` bound onto it |
+| `lazygit.nvim` | `lazygit` in a floating terminal, which is all the plugin does either |
+| `nvim-lspconfig`, `mason`, `nvim-cmp` | `vim.lsp.config` / `.enable` / `.completion`, built in since 0.11 |
+| `omarchy-theme-hotreload.lua` | `~/.config/nvim/theme.lua`, same job, same size |
+| `:LazyExtras` to add a language | one row in `lsp_catalogue()`, which also feeds Kate's and Emacs's copies of the same table |
+
+Press **Space** and wait half a second for the menu, or run `:Keys`.
+
 What you get without any of it:
 
 | Key | Action |
@@ -1275,21 +1294,39 @@ What you get without any of it:
 | `gd` `gD` `gi` `gy` | Go to definition / declaration / implementation / type |
 | `gr` | Every reference in the project |
 | `K` | Hover documentation |
-| `\ci` / `\co` | **Incoming / outgoing calls** — the call hierarchy |
-| `\rn` / `\ca` / `\F` | Rename everywhere / code action / format |
-| `]d` / `[d` / `\e` | Next / previous diagnostic / show this one |
+| `<leader>ci` / `<leader>co` | **Incoming / outgoing calls** — the call hierarchy |
+| `<leader>cr` / `<leader>ca` / `<leader>cf` | Rename everywhere / code action / format |
+| `]d` / `[d` / `<leader>cd` | Next / previous diagnostic / show this one |
+| `<leader><Space>` / `<leader>,` | Find a file / switch buffer (fuzzy, needs `fzf`) |
+| `<leader>e` | The sidebar |
+| `<leader>sg` / `<leader>sw` | Grep the project / the word under the cursor |
+| `<leader>gg` | `lazygit`, in a window over the editor |
+| `Shift-H` / `Shift-L` / `<leader>bd` | Previous / next buffer, close this one |
 | `:Lsp` | Which language servers are enabled, and attached here |
 | `Ctrl-O` | Back to wherever you jumped from |
 
-`\ci` — **incoming calls** — is the "what calls this function" that people miss
+`<leader>` is the **space bar** — LazyVim's leader, not vim's backslash.
+
+`<leader>ci` — **incoming calls** — is the "what calls this function" that people miss
 most when they leave a graphical IDE. It answers it for the whole project, not
 just the current run. Its runtime counterpart is gdb's `bt`, `up` and `down`,
 which walk the actual call stack; `copal-guide ide` section 3 covers the
 difference, because they answer genuinely different questions.
 
 One config serves both editors: `~/.vimrc` is shared by vim and nvim, and
-`~/.config/nvim/lsp.lua` is the Neovim-only half. vim keeps the editing,
-building and debugging; nvim adds the language servers.
+`~/.config/nvim/` holds the Neovim-only half — `theme.lua`, `keys.lua`,
+`lsp.lua`, loaded in that order. vim keeps the editing, building and debugging;
+nvim adds the language servers, the pickers and the theme. Any of the three Lua
+files can be deleted: you lose that layer and nothing else.
+
+**The colours follow the desktop.** `copal-theme` lists the installed themes and
+switches between them by moving a symlink at
+`~/.config/copal/current/theme`; a running Neovim notices within about three
+seconds and repaints without being restarted (`:Theme` does it on demand). Two
+are shipped — **tokyo-night**, stage 4's palette, and **antiquity**, the *helios*
+palette stage 16's `kitty.conf` uses — and stage 16 switches to the second when
+it installs that desktop. Adding a theme is adding a directory with a
+`neovim.lua` in it under `/usr/local/share/copal/themes/`.
 
 ### Languages
 
@@ -1426,7 +1463,7 @@ multi-core machine.
 |---|---|---|
 | Hyprland | i3 | Wayland compositing needs GLES the VideoCore IV cannot usefully provide |
 | Alacritty | urxvt / xterm | Alacritty requires OpenGL 3.3 |
-| Neovim + LazyVim | Neovim, hand-written config | LazyVim compiles treesitter parsers on first launch — an hour on one ARMv6 core, then wants more RAM than exists |
+| Neovim + LazyVim | Neovim, hand-written config, **LazyVim's keys** | LazyVim compiles treesitter parsers on first launch — an hour on one ARMv6 core, then wants more RAM than exists. The key conventions cost nothing, so those are kept |
 | Walker | dmenu | GTK4 + Wayland |
 | Nautilus | pcmanfm | GNOME stack is far too heavy |
 | Btop | btop, htop fallback | fine if the armhf build exists |

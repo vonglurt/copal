@@ -10679,11 +10679,15 @@ COMPILING AND DEBUGGING -- the whole loop, in one editor
 
       ]q            jump to the next error
       [q            jump to the previous error
-      <leader>q     open the whole list in a window
+      <leader>xq    open the whole list in a window
       :cc 3         jump to error 3
       :cfirst       back to the first
 
-   <leader> is the backslash key unless you have changed it.
+   <leader> IS THE SPACE BAR on this system. That is LazyVim's leader, which
+   is what Omarchy's editor uses, so every key list you find on the internet
+   for LazyVim is also a key list for this editor. Press it and wait half a
+   second in nvim and a menu of what it can do appears; :Keys shows the same
+   thing on demand.
 
    The point of the quickfix list is that the compiler's line numbers become
    navigation. You never copy a line number by hand.
@@ -10703,7 +10707,7 @@ COMPILING AND DEBUGGING -- the whole loop, in one editor
       F10           step OVER: run this line, do not enter its calls
       F11           step INTO: go into the function this line calls
       F12           finish: run until the current function returns
-      <leader>e     evaluate the expression under the cursor
+      <leader>de    evaluate the expression under the cursor
 
    The difference between F10 and F11 is the one worth internalising. F10 is
    "I trust that function, run it". F11 is "the bug is in there, take me in".
@@ -10716,7 +10720,7 @@ COMPILING AND DEBUGGING -- the whole loop, in one editor
       F4              start the debugger
       F8              run to the breakpoint
       F10 F10 F10     watch total change
-      <leader>e       on 'total' -- see its value
+      <leader>de      on 'total' -- see its value
       F12             finish accumulate() and come back to main()
 
  ---------------------------------------------------------------------------
@@ -10953,7 +10957,14 @@ NEOVIM -- a primer, from nothing to useful
  ---------------------------------------------------------------------------
 
       :e path       open a file        :find name   open by name from anywhere
-      <leader>n     the file browser (netrw)
+      <leader>e     the file browser -- a sidebar on the left, toggling on
+                    the same key. Inside it, a adds a file, A adds a
+                    directory, d deletes, r renames -- neo-tree's letters,
+                    which is what a LazyVim key list will tell you.
+      <leader><Space>  find a file by fuzzy search (needs fzf)
+      <leader>,     switch buffer by fuzzy search
+      Shift-H / L   previous / next buffer
+      <leader>bd    close this buffer, keep the window
       :b name       switch to an open buffer, by any part of its name
       :ls           list the open buffers
       Ctrl-^        the previous buffer -- toggles between two files
@@ -10977,9 +10988,11 @@ NEOVIM -- a primer, from nothing to useful
       ]q  [q        next, previous compiler error
       gd  gr  K     definition, references, documentation
       <leader>ci    who calls this function
-      <leader>rn    rename this symbol everywhere
+      <leader>cr    rename this symbol everywhere
       <leader>ca    code action -- the "fix it for me" menu
-      <leader>F     format the file
+      <leader>cf    format the file
+      <leader>sg    grep the whole project into the quickfix list
+      <leader>gg    lazygit, in a window over the editor
       ]d  [d        next, previous diagnostic
       F4 F9 F8 F10 F11   debugger: start, breakpoint, continue, over, into
       Ctrl-X Ctrl-O completion, if you would rather ask than be offered
@@ -11367,6 +11380,27 @@ TERMINALS -- which one, and why the fast ones are not
    The fast terminal for THIS board is st or urxvt. Both are X11-native, both
    draw with the same server calls the rest of the desktop uses, and neither
    asks for anything the hardware does not have.
+
+   THE SHORT VERSION, IF YOU KNOW LAZYVIM ALREADY. Omarchy's editor is
+   LazyVim, and this one is arranged to match it as far as the hardware
+   allows: the leader is SPACE, pressing it and waiting opens a menu of what
+   it can do, <leader><Space> finds a file, <leader>e is the sidebar,
+   <leader>sg greps the project, <leader>gg is lazygit, <leader>ca is a code
+   action, Shift-H and Shift-L walk the buffers. Where LazyVim uses a plugin,
+   this uses the built-in that plugin was written to make bearable, or fzf.
+
+   WHY NOT ACTUAL LAZYVIM. Two reasons, and only the first is decisive.
+   LazyVim compiles a treesitter parser per language with gcc the first time
+   you open a file of that language; on one ARMv6 core that is the better part
+   of an hour and it wants more memory than a Pi Zero has. And the two plugins
+   everyone installs first -- nvim-lspconfig and nvim-cmp -- existed because
+   Neovim had no built-in LSP configuration and no built-in completion. Since
+   0.11 it has both, and Alpine ships 0.12. So the keys are copied and the
+   machinery is not, because the machinery is already in the editor.
+
+   THE COLOURS FOLLOW THE DESKTOP. 'copal-theme' lists the themes and switches
+   between them; a running nvim repaints within a few seconds without being
+   restarted. :Theme does the same from inside the editor.
 
  ---------------------------------------------------------------------------
  THE LINE-UP
@@ -12224,6 +12258,660 @@ lsp_present() {
     done
 }
 
+# ---------------------------------------------------------------------------
+# THE THEME, and how Neovim follows it.
+#
+# Omarchy keeps its editor in lockstep with the rest of the desktop with three
+# small pieces: a symlink at ~/.config/nvim/lua/plugins/theme.lua pointing into
+# the current theme's directory, a setup script that creates it, and a watcher
+# plugin that hot-reloads the colorscheme when the file underneath changes. No
+# part of that needs LazyVim -- it needs a symlink and vim.uv -- so all three
+# are here, adapted to the two looks Copal actually ships:
+#
+#   tokyo-night   stage 4's desktop. The same six hex values already in the i3
+#                 config, the Xresources and the i3status bar.
+#   antiquity     stage 16's desktop. Linux Antiquity's *helios* palette, which
+#                 is the light half of that theme -- ink on aged paper -- and
+#                 is what its kitty.conf paints the terminal with. An editor in
+#                 that terminal that stayed dark would be the one rectangle on
+#                 the screen fighting everything around it.
+#
+# So the chain is: nvim reads ~/.config/copal/current/theme/neovim.lua, that
+# is a symlink to /usr/local/share/copal/themes/<name>/, and copal-theme moves
+# the symlink. A running editor notices within a few seconds; nothing has to
+# be restarted, and nothing has to be re-run when a new theme is added -- it
+# is a directory with a neovim.lua in it.
+copal_theme_dir=/usr/local/share/copal/themes
+
+copal_write_themes() {
+    say "Writing the Copal themes"
+    mkdir -p "$copal_theme_dir/tokyo-night" "$copal_theme_dir/antiquity"
+
+    # Both files are plain Lua chunks, not plugin specs: they set a colorscheme
+    # and then correct the handful of groups that matter. Neither needs a
+    # colour scheme file on disk, because both build on habamax, which ships
+    # inside Neovim.
+    #
+    # termguicolors is asked for rather than assumed. On a Zero the console
+    # and urxvt are 256-colour, kitty is truecolour, and a config that turned
+    # 24-bit colour on unconditionally would paint the wrong thing on two of
+    # the three. vim.env.COLORTERM is what every truecolour terminal sets.
+    cat > "$copal_theme_dir/tokyo-night/neovim.lua" <<'THTOKYO'
+-- Copal theme: tokyo-night. The palette stage 4 paints i3, the terminal and
+-- the status bar with -- the same six values, so the editor is not a
+-- different program's idea of dark.
+local p = {
+  bg = '#1a1b26', bg_dark = '#16161e', bg_hi = '#292e42',
+  fg = '#c0caf5', comment = '#565f89',
+  blue = '#7aa2f7', cyan = '#7dcfff', green = '#9ece6a',
+  yellow = '#e0af68', red = '#f7768e', magenta = '#bb9af7',
+}
+
+-- After the colorscheme, not before: a colorscheme sets 'background' itself
+-- and would overwrite an assignment made first. habamax already sets dark, so
+-- this line changes nothing today -- it stops being a no-op the moment
+-- somebody changes the base, which is exactly how the light theme broke.
+pcall(vim.cmd.colorscheme, 'habamax')
+vim.o.background = 'dark'
+
+if vim.env.COLORTERM == 'truecolor' or vim.env.COLORTERM == '24bit' then
+  vim.o.termguicolors = true
+  local hi = function(g, o) vim.api.nvim_set_hl(0, g, o) end
+  hi('Normal',       { fg = p.fg, bg = p.bg })
+  hi('NormalFloat',  { fg = p.fg, bg = p.bg_dark })
+  hi('FloatBorder',  { fg = p.blue, bg = p.bg_dark })
+  hi('LineNr',       { fg = p.comment })
+  hi('CursorLineNr', { fg = p.yellow, bold = true })
+  hi('Visual',       { bg = p.bg_hi })
+  hi('Comment',      { fg = p.comment, italic = true })
+  hi('Constant',     { fg = p.yellow })
+  hi('String',       { fg = p.green })
+  hi('Identifier',   { fg = p.magenta })
+  hi('Function',     { fg = p.blue })
+  hi('Statement',    { fg = p.magenta })
+  hi('PreProc',      { fg = p.cyan })
+  hi('Type',         { fg = p.cyan })
+  hi('Special',      { fg = p.cyan })
+  hi('Search',       { fg = p.bg, bg = p.yellow })
+  hi('IncSearch',    { fg = p.bg, bg = p.red })
+  hi('Pmenu',        { fg = p.fg, bg = p.bg_hi })
+  hi('PmenuSel',     { fg = p.bg, bg = p.blue })
+  hi('StatusLine',   { fg = p.fg, bg = p.bg_hi })
+  hi('StatusLineNC', { fg = p.comment, bg = p.bg_dark })
+  hi('DiagnosticError', { fg = p.red })
+  hi('DiagnosticWarn',  { fg = p.yellow })
+  hi('DiagnosticInfo',  { fg = p.blue })
+  hi('DiagnosticHint',  { fg = p.cyan })
+else
+  -- 256-colour fallback: the nearest cube entries to the same six colours.
+  vim.o.termguicolors = false
+  vim.cmd([[
+    highlight Normal       ctermbg=NONE ctermfg=189
+    highlight Comment      ctermfg=61
+    highlight String       ctermfg=107
+    highlight Function     ctermfg=110
+    highlight Statement    ctermfg=141
+    highlight Type         ctermfg=117
+    highlight Constant     ctermfg=179
+    highlight Search       ctermfg=234 ctermbg=179
+    highlight StatusLine   ctermfg=189 ctermbg=237
+  ]])
+end
+THTOKYO
+
+    cat > "$copal_theme_dir/antiquity/neovim.lua" <<'THANTIQ'
+-- Copal theme: antiquity. Linux Antiquity's helios palette -- the light half,
+-- which is the half its kitty.conf paints the terminal with. See docs/THEME.md
+-- for why the terminal is light while the shell chrome is dark; the editor
+-- lives in the terminal, so it follows the terminal.
+local p = {
+  bg = '#fce2ab', bg_dark = '#f2d492', bg_hi = '#e8c473',
+  fg = '#000000', comment = '#7a6636',
+  brown = '#6b4423', rust = '#a33b20', olive = '#5c6b1f',
+  ink = '#1e2a3a', wine = '#7b2d3e', gold = '#8a6a12',
+}
+
+-- 'shine', not 'habamax', and the order matters -- both were bugs found by
+-- actually running this.
+--
+-- ORDER: a colorscheme sets 'background' itself, so assigning it first is
+-- pointless. habamax forces background=dark, which silently undid the
+-- 'light' this theme had just asked for.
+--
+-- BASE: and that mattered for more than one variable. 'background' is what
+-- every highlight group this file does NOT override consults -- Folded,
+-- MatchParen, DiffAdd, Todo, WinSeparator and a few dozen more. Left at
+-- dark, all of them keep habamax's dark-scheme colours and render on a cream
+-- background, where several are unreadable. Building on a light base means
+-- the groups named below are corrections rather than the only thing standing
+-- between you and grey-on-cream. 'shine' is the cleanest light scheme
+-- Neovim ships; Normal is overridden to the helios paper colour regardless.
+pcall(vim.cmd.colorscheme, 'shine')
+vim.o.background = 'light'
+
+if vim.env.COLORTERM == 'truecolor' or vim.env.COLORTERM == '24bit' then
+  vim.o.termguicolors = true
+  local hi = function(g, o) vim.api.nvim_set_hl(0, g, o) end
+  hi('Normal',       { fg = p.fg, bg = p.bg })
+  hi('NormalFloat',  { fg = p.fg, bg = p.bg_dark })
+  hi('FloatBorder',  { fg = p.brown, bg = p.bg_dark })
+  hi('LineNr',       { fg = p.comment })
+  hi('CursorLineNr', { fg = p.rust, bold = true })
+  hi('Visual',       { bg = p.bg_hi })
+  hi('Comment',      { fg = p.comment, italic = true })
+  hi('Constant',     { fg = p.gold })
+  hi('String',       { fg = p.olive })
+  hi('Identifier',   { fg = p.wine })
+  hi('Function',     { fg = p.ink, bold = true })
+  hi('Statement',    { fg = p.rust, bold = true })
+  hi('PreProc',      { fg = p.brown })
+  hi('Type',         { fg = p.ink })
+  hi('Special',      { fg = p.brown })
+  hi('Search',       { fg = p.bg, bg = p.brown })
+  hi('IncSearch',    { fg = p.bg, bg = p.rust })
+  hi('Pmenu',        { fg = p.fg, bg = p.bg_hi })
+  hi('PmenuSel',     { fg = p.bg, bg = p.brown })
+  hi('StatusLine',   { fg = p.bg, bg = p.brown })
+  hi('StatusLineNC', { fg = p.comment, bg = p.bg_hi })
+  hi('DiagnosticError', { fg = p.rust })
+  hi('DiagnosticWarn',  { fg = p.gold })
+  hi('DiagnosticInfo',  { fg = p.ink })
+  hi('DiagnosticHint',  { fg = p.olive })
+else
+  vim.o.termguicolors = false
+  vim.cmd([[
+    highlight Normal       ctermbg=NONE ctermfg=0
+    highlight Comment      ctermfg=94
+    highlight String       ctermfg=100
+    highlight Function     ctermfg=17
+    highlight Statement    ctermfg=124
+    highlight Type         ctermfg=23
+    highlight Constant     ctermfg=136
+    highlight StatusLine   ctermfg=230 ctermbg=94
+  ]])
+end
+THANTIQ
+
+    # copal-theme: the whole of switching. Omarchy spends omarchy-theme-set on
+    # this; the job is the same one and it is a symlink.
+    cat > /usr/local/bin/copal-theme <<'COPALTHEME'
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# copal-theme [NAME]  -- show, list or set the system theme.
+#
+# The theme is a directory under /usr/local/share/copal/themes and the
+# "current" one is a symlink at ~/.config/copal/current/theme pointing at it.
+# Programs read files THROUGH that symlink, so moving it changes the theme
+# everywhere at once and nothing has to be regenerated. Neovim notices within
+# a few seconds without being restarted; see ~/.config/nvim/theme.lua.
+set -eu
+THEMES=/usr/local/share/copal/themes
+LINK="${XDG_CONFIG_HOME:-$HOME/.config}/copal/current/theme"
+
+list() {
+    for d in "$THEMES"/*/; do
+        [ -d "$d" ] || continue
+        n=$(basename "$d")
+        if [ "$(readlink "$LINK" 2>/dev/null || true)" = "$THEMES/$n" ]; then
+            printf '  * %s\n' "$n"
+        else
+            printf '    %s\n' "$n"
+        fi
+    done
+}
+
+case "${1:-}" in
+    ''|-l|--list|list)
+        echo
+        echo "  Themes  (* is the current one)"
+        list
+        echo
+        echo "  Set one with:  copal-theme <name>"
+        echo
+        exit 0 ;;
+    -h|--help|help)
+        echo "usage: copal-theme [NAME|--list]"
+        exit 0 ;;
+esac
+
+if [ ! -d "$THEMES/$1" ]; then
+    echo "copal-theme: no theme called '$1'. Installed:" >&2
+    list >&2
+    exit 1
+fi
+
+mkdir -p "$(dirname "$LINK")"
+# -n so that when LINK is already a symlink TO A DIRECTORY, ln replaces it
+# instead of creating a link INSIDE it. Without -n the second call to this
+# script silently makes ~/.config/copal/current/theme/theme, and the theme
+# stops changing for reasons nobody can see.
+ln -sfn "$THEMES/$1" "$LINK"
+echo "theme: $1"
+echo "Neovim follows within a few seconds. Terminals and the window manager"
+echo "take their colours at startup, so those change on the next login."
+COPALTHEME
+    chmod 0755 /usr/local/bin/copal-theme
+
+    # Point both homes at a theme now, so nothing has to run copal-theme
+    # before Neovim has colours. Stage 16 moves it to antiquity when the
+    # Hyprland desktop is installed.
+    copal_set_theme tokyo-night
+}
+
+# Set the current-theme symlink in every home this script writes to. Split
+# out because stage 16 calls it too, with the other name.
+copal_set_theme() {  # <theme name>
+    for _h in /root "$(user_home)"; do
+        [ -n "$_h" ] && [ -d "$_h" ] || continue
+        ensure_user_home || true
+        mkdir -p "$_h/.config/copal/current"
+        ln -sfn "$copal_theme_dir/$1" "$_h/.config/copal/current/theme"
+        # Ownership follows the home directory, the same rule and the same
+        # incantation install_home_file uses -- root's copy stays root's, and
+        # 'user' can re-point its own symlink without doas. Not a hardcoded
+        # $PI_USER: that would hand root's ~/.config/copal to the admin user.
+        _own=$(stat -c '%u:%g' "$_h" 2>/dev/null) && chown -Rh "$_own" "$_h/.config/copal" 2>/dev/null || true
+    done
+    note "theme: $1"
+}
+
+# The theme layer and the LazyVim-shaped keys: the two Lua files that make
+# this feel like Omarchy's editor without being LazyVim.
+#
+# What Omarchy gets from plugins and what this gets instead:
+#
+#   which-key           <leader> alone opens a menu of what <leader> can do.
+#                       Here that is one floating window and a table.
+#   telescope/fzf-lua   the file, buffer and grep pickers. Here that is fzf in
+#                       a floating terminal -- the same fzf the shell already
+#                       uses -- with ripgrep behind the grep.
+#   neo-tree            the sidebar. Here that is netrw with neo-tree's five
+#                       letters bound onto it (in ~/.vimrc).
+#   lazygit.nvim        <leader>gg. Here that is lazygit in a floating
+#                       terminal, which is all the plugin does either.
+#   theme hot-reload    Omarchy ships omarchy-theme-hotreload.lua for exactly
+#                       this. So does this file, in about the same number of
+#                       lines, because vim.uv does the work in both.
+#
+# Every one of them degrades to a message naming the missing program rather
+# than a stack trace, because on a Zero fzf, ripgrep and lazygit are all
+# 'add_optional' -- present on most boards, absent on some.
+dev_write_nvim_ui() {
+    command -v nvim >/dev/null 2>&1 || return 0
+
+    say "Writing ~/.config/nvim/theme.lua (follows the desktop theme)"
+    cat > /tmp/nvtheme.$$ <<'NVTHEME'
+-- Generated by copal-init.sh. The editor's half of the system theme.
+--
+-- Reads ~/.config/copal/current/theme/neovim.lua, which is a symlink into
+-- /usr/local/share/copal/themes/<name>/. 'copal-theme <name>' moves the
+-- symlink; this file notices and repaints a running editor.
+--
+-- Edit freely: nothing regenerates this file after the install. To pin the
+-- editor to one look regardless of the desktop, delete the watcher at the
+-- bottom and dofile() the theme you want.
+
+local M = {}
+
+local link = vim.fn.expand('~/.config/copal/current/theme/neovim.lua')
+
+-- vim.uv on 0.10+, vim.loop on everything before it. Named once here so the
+-- rest of the file does not repeat the conditional.
+local uv = vim.uv or vim.loop
+
+function M.load(announce)
+  if vim.fn.filereadable(link) == 0 then
+    -- No theme selected. Not an error: ~/.vimrc has already set a perfectly
+    -- good dark colorscheme, and saying so on every startup would be noise.
+    return false
+  end
+  local ok, err = pcall(dofile, link)
+  if not ok then
+    vim.notify('Copal theme failed to load: ' .. tostring(err), vim.log.levels.WARN)
+    return false
+  end
+  if announce then
+    -- The theme's directory name, read back out of the symlink, so the
+    -- message names what you switched TO rather than the path it lives at.
+    local target = uv.fs_realpath(vim.fn.expand('~/.config/copal/current/theme')) or '?'
+    vim.notify('theme: ' .. vim.fn.fnamemodify(target, ':t'), vim.log.levels.INFO)
+  end
+  return true
+end
+
+M.load(false)
+
+-- THE WATCHER, and why it polls rather than subscribes.
+--
+-- fs_event is the cheaper mechanism and it is the wrong one here. Switching
+-- theme does not modify a file -- it replaces a SYMLINK, one directory up
+-- from anything an editor would think to watch, and inotify on the link path
+-- watches the file the link resolved to at the time the watch was set. The
+-- old theme's file never changes, so the event never comes.
+--
+-- fs_poll stats the path fresh each time, through the symlink, so a swapped
+-- link shows up as a changed inode. The cost is one stat every three seconds,
+-- which is not measurable even on a Zero -- and it is only paid while an
+-- editor is actually open.
+local poll = uv.new_fs_poll()
+if poll then
+  poll:start(link, 3000, function()
+    -- Callbacks from libuv run outside the main loop, where touching the
+    -- editor is not allowed. schedule() hands the work back to it.
+    vim.schedule(function() M.load(true) end)
+  end)
+end
+
+-- The manual version, for when you have just run copal-theme in the terminal
+-- next door and do not want to wait out the poll.
+vim.api.nvim_create_user_command('Theme', function(opts)
+  if opts.args ~= '' then
+    -- Switching from inside the editor: shell out to the same script the
+    -- terminal would use, so there is exactly one thing that knows how the
+    -- symlink is made.
+    local out = vim.fn.system({ 'copal-theme', opts.args })
+    if vim.v.shell_error ~= 0 then
+      vim.notify(out, vim.log.levels.ERROR)
+      return
+    end
+  end
+  M.load(true)
+end, {
+  nargs = '?',
+  desc = 'Reload the system theme, or switch to a named one',
+  complete = function()
+    local names = {}
+    for _, p in ipairs(vim.fn.glob('/usr/local/share/copal/themes/*', false, true)) do
+      table.insert(names, vim.fn.fnamemodify(p, ':t'))
+    end
+    return names
+  end,
+})
+
+return M
+NVTHEME
+    install_home_file .config/nvim/theme.lua /tmp/nvtheme.$$
+    rm -f /tmp/nvtheme.$$
+
+    say "Writing ~/.config/nvim/keys.lua (the LazyVim key shape)"
+    cat > /tmp/nvkeys.$$ <<'NVKEYS'
+-- Generated by copal-init.sh. LazyVim's keys, on Neovim's built-ins.
+--
+-- Nothing here is required for the editor to work -- ~/.vimrc and lsp.lua are
+-- the editor. This file is the discoverability layer: the pickers, the git
+-- window, the grep, and <leader> as a menu. Delete it and you lose those and
+-- nothing else.
+
+-- The same guard lsp.lua carries, and for the same reason: floating windows
+-- with titles, jobstart's term option and vim.uv all landed by 0.11, and
+-- Alpine v3.24 ships 0.12. On anything older this file would error partway
+-- through and leave half its keys set, which is worse than none of them.
+if vim.fn.has('nvim-0.11') == 0 then
+  vim.notify('Copal: the key layer needs Neovim 0.11+; skipping.', vim.log.levels.WARN)
+  return
+end
+
+local map = function(mode, lhs, rhs, desc)
+  vim.keymap.set(mode, lhs, rhs, { silent = true, desc = desc })
+end
+
+-- Every external program this file reaches for is optional on this hardware.
+-- One place that says so, so a missing one is a sentence and not a traceback.
+local function need(bin)
+  if vim.fn.executable(bin) == 1 then return true end
+  vim.notify(bin .. " is not installed on this machine.\n"
+    .. "Install it from the menu (Devtools) or: apk add " .. bin,
+    vim.log.levels.WARN)
+  return false
+end
+
+-- ---------------------------------------------------------------------------
+-- A floating window, which is the whole of the "plugin" half of this file.
+-- Sized to a fraction of the editor because on a 640x480 console a fixed
+-- 100x30 float is bigger than the screen.
+local function float(buf, title)
+  local w = math.min(vim.o.columns - 4, math.max(60, math.floor(vim.o.columns * 0.8)))
+  local h = math.min(vim.o.lines - 4, math.max(10, math.floor(vim.o.lines * 0.8)))
+  return vim.api.nvim_open_win(buf, true, {
+    relative = 'editor', width = w, height = h,
+    row = math.floor((vim.o.lines - h) / 2 - 1),
+    col = math.floor((vim.o.columns - w) / 2),
+    style = 'minimal', border = 'rounded', title = title, title_pos = 'center',
+  })
+end
+
+-- Run a full-screen terminal program in that float and call back when it is
+-- done. This is lazygit, and it is also the picker below -- the difference is
+-- only what happens on exit.
+local function term(cmd, title, on_exit)
+  local buf = vim.api.nvim_create_buf(false, true)
+  local win = float(buf, title)
+  vim.fn.jobstart(cmd, {
+    term = true,
+    on_exit = function(_, code)
+      if vim.api.nvim_win_is_valid(win) then vim.api.nvim_win_close(win, true) end
+      if on_exit then vim.schedule(function() on_exit(code) end) end
+    end,
+  })
+  vim.cmd.startinsert()
+end
+
+-- fzf, reading from stdin, writing the choice to a temporary file. Reading
+-- the terminal buffer's own text back would work until a filename contained
+-- something fzf drew, so the answer travels out of band.
+local function pick(source, prompt, action)
+  if not (need('fzf')) then return end
+  local out = vim.fn.tempname()
+  term({ 'sh', '-c', source .. ' | fzf --prompt=' .. vim.fn.shellescape(prompt .. '> ')
+         .. ' --height=100% > ' .. vim.fn.shellescape(out) },
+    prompt,
+    function()
+      if vim.fn.filereadable(out) == 0 then return end
+      local lines = vim.fn.readfile(out)
+      vim.fn.delete(out)
+      local choice = lines[1]
+      -- Empty file means fzf was cancelled with Esc, which is a normal way to
+      -- leave a picker and not something to report.
+      if choice and choice ~= '' then action(choice) end
+    end)
+end
+
+-- fd is faster and honours .gitignore; find is on every machine there has
+-- ever been. Whichever exists.
+--
+-- The find branch is deliberately plain. GNU find's -printf '%P' would drop
+-- the leading './' in one flag, and busybox find -- which is the find on a
+-- default Alpine -- does not have -printf at all, so the picker would print
+-- an error instead of a file list on exactly the machines this project cares
+-- about most. sed does the same job everywhere.
+local function file_source()
+  if vim.fn.executable('fd') == 1 then
+    return 'fd --type f --hidden --exclude .git'
+  end
+  -- '!' rather than '-not': GNU find accepts both, busybox find only the
+  -- first, and busybox find is the find on a default Alpine.
+  return "find . -type f ! -path '*/.git/*' | sed 's|^\\./||'"
+end
+
+-- ---------------------------------------------------------------------------
+-- Files and buffers.  LazyVim's <leader><space> and <leader>f tree.
+map('n', '<leader><Space>', function() pick(file_source(), 'files', vim.cmd.edit) end,
+    'Find file')
+map('n', '<leader>ff', function() pick(file_source(), 'files', vim.cmd.edit) end,
+    'Find file')
+map('n', '<leader>fr', function()
+  local recent = {}
+  for _, f in ipairs(vim.v.oldfiles) do
+    if vim.fn.filereadable(f) == 1 then table.insert(recent, f) end
+  end
+  pick('printf %s\\\\n ' .. vim.fn.shellescape(table.concat(recent, '\n')),
+       'recent', vim.cmd.edit)
+end, 'Recent files')
+map('n', '<leader>fn', vim.cmd.enew, 'New file')
+
+local function buffer_source()
+  local names = {}
+  for _, b in ipairs(vim.api.nvim_list_bufs()) do
+    if vim.fn.buflisted(b) == 1 then
+      local n = vim.api.nvim_buf_get_name(b)
+      if n ~= '' then table.insert(names, vim.fn.fnamemodify(n, ':.')) end
+    end
+  end
+  return 'printf %s\\\\n ' .. vim.fn.shellescape(table.concat(names, '\n'))
+end
+map('n', '<leader>,',  function() pick(buffer_source(), 'buffers', vim.cmd.edit) end,
+    'Switch buffer')
+map('n', '<leader>fb', function() pick(buffer_source(), 'buffers', vim.cmd.edit) end,
+    'Switch buffer')
+
+-- ---------------------------------------------------------------------------
+-- Search.  <leader>sg is LazyVim's grep-the-project and the one people reach
+-- for most; it goes through the quickfix list, which is where every other
+-- list in this editor already goes.
+if vim.fn.executable('rg') == 1 then
+  vim.o.grepprg = 'rg --vimgrep --smart-case'
+  vim.o.grepformat = '%f:%l:%c:%m'
+end
+map('n', '<leader>sg', function()
+  if not need('rg') then return end
+  vim.ui.input({ prompt = 'grep: ' }, function(pat)
+    if not pat or pat == '' then return end
+    -- silent, because :grep otherwise clears the screen and waits for a
+    -- keypress before showing the list it just built.
+    vim.cmd('silent grep! ' .. vim.fn.shellescape(pat))
+    if vim.tbl_isempty(vim.fn.getqflist()) then
+      vim.notify('no matches for ' .. pat, vim.log.levels.INFO)
+    else
+      vim.cmd.copen()
+    end
+  end)
+end, 'Grep the project')
+map('n', '<leader>sw', function()
+  if not need('rg') then return end
+  vim.cmd('silent grep! ' .. vim.fn.shellescape(vim.fn.expand('<cword>')))
+  vim.cmd.copen()
+end, 'Grep the word under the cursor')
+map('n', '<leader>sb', '/', 'Search this buffer')
+map('n', '<leader>sk', ':map<CR>', 'All key mappings')
+
+-- ---------------------------------------------------------------------------
+-- Git.  lazygit is a full git client and it is already in the shell tooling
+-- stage 7 installs; the plugin everyone uses for this does exactly this.
+map('n', '<leader>gg', function()
+  if not need('lazygit') then return end
+  term({ 'lazygit' }, ' lazygit ', function()
+    -- lazygit changes files on disk under a running editor. checktime is the
+    -- built-in that notices and reloads the buffers it touched.
+    vim.cmd.checktime()
+  end)
+end, 'Lazygit')
+map('n', '<leader>gb', ':echo system("git blame -L " . line(".") . ",+1 " . expand("%"))<CR>',
+    'Git blame this line')
+
+-- ---------------------------------------------------------------------------
+-- Windows, terminals and the odds and ends LazyVim binds.
+map('n', '<Esc>', vim.cmd.nohlsearch, 'Clear the search highlight')
+map('n', '<leader>qq', ':qa<CR>', 'Quit everything')
+map('n', '<leader>w', ':w<CR>', 'Write this file')
+map('n', '<leader>-', ':split<CR>', 'Split below')
+map('n', '<leader>|', ':vsplit<CR>', 'Split right')
+map('n', '<leader>fT', function() term({ vim.o.shell }, ' terminal ') end, 'Terminal (float)')
+-- Esc in a terminal buffer belongs to the program running inside it. Double
+-- Esc is how you get back to the editor without taking that key away.
+map('t', '<Esc><Esc>', '<C-\\><C-n>', 'Leave terminal mode')
+
+-- ---------------------------------------------------------------------------
+-- <leader> AS A MENU -- the which-key idea, without which-key.
+--
+-- No hooking is needed for this. <leader> is mapped to open the menu AND is
+-- the prefix of every mapping above; Neovim already waits 'timeoutlen' to
+-- find out which you meant. Type <leader>ff quickly and you get the picker;
+-- press <leader> and hesitate and you get the list. That is which-key's
+-- entire user-visible behaviour.
+local menu = {
+  '',
+  '   <leader> is SPACE          j k scroll  ·  q or Esc closes',
+  '',
+  '   FIND                              CODE  (where a server is attached)',
+  '     <leader><Space>  find a file      gd   go to definition',
+  '     <leader>ff       find a file      gr   find all references',
+  '     <leader>fr       recent files     K    hover documentation',
+  '     <leader>,        switch buffer    <leader>ca  code action',
+  '     <leader>fn       new file         <leader>cr  rename everywhere',
+  '     <leader>e        sidebar          <leader>cf  format',
+  '                                       <leader>ci  who calls this',
+  '   SEARCH                              <leader>co  what this calls',
+  '     <leader>sg  grep the project      <leader>ss  symbols here',
+  '     <leader>sw  grep this word        <leader>sS  symbols everywhere',
+  '     <leader>sb  search this file',
+  '     <leader>sk  every key mapping    LISTS',
+  '                                        <leader>xx  diagnostics',
+  '   BUFFERS                              <leader>xq  quickfix',
+  '     Shift+H / Shift+L  prev / next     ]d  [d      next / prev problem',
+  '     <leader>bd  close this one         ]q  [q      next / prev error',
+  '',
+  '   GIT                                DEBUG  (Termdebug -- real gdb)',
+  '     <leader>gg  lazygit                F4  start   F9  breakpoint',
+  '     <leader>gb  blame this line        F8  go      F10 step over',
+  '                                        F11 step in <leader>de evaluate',
+  '   BUILD',
+  '     F5  make          F6  make run    THEME',
+  '     <leader>xq  the error list          :Theme  reload / switch',
+  '',
+  '   :Lsp  which language servers are attached      :Tutor  learn vim',
+  '',
+}
+
+local function show_menu()
+  local buf = vim.api.nvim_create_buf(false, true)
+  vim.api.nvim_buf_set_lines(buf, 0, -1, false, menu)
+  vim.bo[buf].modifiable = false
+  local w = math.min(vim.o.columns - 2, 78)
+  local h = math.min(vim.o.lines - 2, #menu)
+  local win = vim.api.nvim_open_win(buf, true, {
+    relative = 'editor', width = w, height = h,
+    row = math.max(0, math.floor((vim.o.lines - h) / 2 - 1)),
+    col = math.max(0, math.floor((vim.o.columns - w) / 2)),
+    style = 'minimal', border = 'rounded',
+    title = ' Copal / LazyVim keys ', title_pos = 'center',
+  })
+  local function close()
+    if vim.api.nvim_win_is_valid(win) then vim.api.nvim_win_close(win, true) end
+  end
+  -- Closing keys, and SCROLLING keys, and the second set is not decoration.
+  -- This menu is about thirty lines. The console on the hardware this project
+  -- is for is eighty by twenty-four, so the float gets clamped to twenty-two
+  -- rows and the last third -- git, build, debug -- is simply not on screen.
+  -- With 'any key closes' and no scrolling there was no way to reach it and
+  -- nothing to say it was there, which makes a cheat sheet that lies.
+  --
+  -- So the close set is the five keys people actually press to dismiss a
+  -- thing, and everything else that would have closed it now scrolls instead.
+  for _, k in ipairs({ '<Esc>', 'q', '<CR>', '<Space>', '<C-c>' }) do
+    vim.keymap.set('n', k, close, { buffer = buf, nowait = true })
+  end
+  -- j/k and the arrows move a line, Ctrl-D/U a half page, gg/G to the ends.
+  -- These are vim's own keys and they already do this in a normal buffer --
+  -- they are re-set here only because 'style = minimal' plus a scratch buffer
+  -- is easy to leave in a state where they are not.
+  for _, k in ipairs({ 'j', 'k', '<Down>', '<Up>', '<C-d>', '<C-u>', 'gg', 'G' }) do
+    vim.keymap.set('n', k, k, { buffer = buf, nowait = true, remap = false })
+  end
+  vim.wo[win].cursorline = true
+  vim.api.nvim_create_autocmd({ 'BufLeave', 'WinLeave' },
+    { buffer = buf, once = true, callback = close })
+end
+
+map('n', '<leader>', show_menu, 'Show the key menu')
+map('n', '<leader>?', show_menu, 'Show the key menu')
+vim.api.nvim_create_user_command('Keys', show_menu, { desc = 'Show the key menu' })
+NVKEYS
+    install_home_file .config/nvim/keys.lua /tmp/nvkeys.$$
+    rm -f /tmp/nvkeys.$$
+    note "In nvim, press Space and wait -- or run :Keys -- for the key menu."
+}
+
 # Neovim as an IDE, with no plugin manager and no plugins.
 #
 # This is the part that would normally mean LazyVim, Mason, nvim-lspconfig,
@@ -12314,6 +13002,7 @@ vim.api.nvim_create_autocmd('LspAttach', {
     map('gd', vim.lsp.buf.definition,      'go to definition')
     map('gD', vim.lsp.buf.declaration,     'go to declaration')
     map('gi', vim.lsp.buf.implementation,  'go to implementation')
+    map('gI', vim.lsp.buf.implementation,  'go to implementation (LazyVim spelling)')
     map('gy', vim.lsp.buf.type_definition, 'go to type definition')
     map('gr', vim.lsp.buf.references,      'find all references')
 
@@ -12324,17 +13013,19 @@ vim.api.nvim_create_autocmd('LspAttach', {
 
     -- What things are
     map('K',  vim.lsp.buf.hover,          'hover documentation')
-    map('<leader>s', vim.lsp.buf.document_symbol,  'symbols in this file')
-    map('<leader>S', vim.lsp.buf.workspace_symbol, 'symbols in the project')
+    map('<leader>ss', vim.lsp.buf.document_symbol,  'symbols in this file')
+    map('<leader>sS', vim.lsp.buf.workspace_symbol, 'symbols in the project')
 
-    -- Changing things
-    map('<leader>rn', vim.lsp.buf.rename,      'rename everywhere')
+    -- Changing things. These live under <leader>c because that is where
+    -- LazyVim puts them, and matching it means every LazyVim key list ever
+    -- written is also a key list for this editor.
+    map('<leader>cr', vim.lsp.buf.rename,      'rename everywhere')
     map('<leader>ca', vim.lsp.buf.code_action, 'code action / quick fix')
-    map('<leader>F',  function() vim.lsp.buf.format({ async = true }) end, 'format buffer')
+    map('<leader>cf', function() vim.lsp.buf.format({ async = true }) end, 'format buffer')
 
     -- Diagnostics
-    map('<leader>e', vim.diagnostic.open_float, 'show the error on this line')
-    map('<leader>d', function() vim.diagnostic.setloclist() end, 'all diagnostics in a list')
+    map('<leader>cd', vim.diagnostic.open_float, 'show the error on this line')
+    map('<leader>xx', function() vim.diagnostic.setloclist() end, 'all diagnostics in a list')
     map(']d', function() vim.diagnostic.jump({ count =  1, float = true }) end, 'next diagnostic')
     map('[d', function() vim.diagnostic.jump({ count = -1, float = true }) end, 'previous diagnostic')
 
@@ -12828,6 +13519,23 @@ MSG
 " Generated by copal-init.sh. Deliberately plugin-free: on this board every
 " plugin is startup latency and RAM, and the built-ins cover the workflow.
 set nocompatible
+
+" THE LEADER IS SPACE, and it is set before the first mapping in this file
+" because a mapping made with the old leader keeps the old leader forever.
+"
+" Space is LazyVim's leader, which is Omarchy's editor, and the reason to
+" match it is not fashion: every LazyVim key list on the internet, and every
+" answer anyone gives you about Neovim, is written in Space. The default
+" backslash is a key nobody's fingers know and half the keyboards in the
+" world put somewhere different. Space is under both thumbs on all of them.
+"
+" Space is also a motion in normal mode -- it moves the cursor right, which
+" is what 'l' is for -- so nothing of value is lost. maplocalleader keeps the
+" backslash for filetype-local maps, which is the LazyVim arrangement too.
+let mapleader = " "
+let maplocalleader = "\\"
+nnoremap <Space> <Nop>
+
 syntax on
 filetype plugin indent on
 
@@ -12843,9 +13551,15 @@ set nobackup nowritebackup
 set updatetime=500
 set path+=**
 set tags=./tags;,tags;
+" Space is the leader now, so it has to wait to find out whether a whole
+" chord was meant. Long enough to type one deliberately, short enough that a
+" mistake gives the key back before you notice.
+set timeoutlen=500
 
 " Tokyo Night-ish, using only colours the terminal already defines, so this
-" needs no colour scheme file and no truecolour support.
+" needs no colour scheme file and no truecolour support. Neovim replaces this
+" from ~/.config/nvim/theme.lua, which follows the desktop's theme; vim keeps
+" what is set here.
 set background=dark
 silent! colorscheme habamax
 highlight Normal ctermbg=NONE
@@ -12860,7 +13574,23 @@ nnoremap <F5> :wa<CR>:make<CR>
 nnoremap <F6> :wa<CR>:make run<CR>
 nnoremap ]q :cnext<CR>
 nnoremap [q :cprevious<CR>
-nnoremap <leader>q :copen<CR>
+
+" --- LazyVim's key shape, on built-ins --------------------------------------
+" The prefixes below are LazyVim's, and they are the reason this file uses
+" them: <leader>c is code, <leader>b is buffers, <leader>s is search,
+" <leader>g is git, <leader>x is the diagnostic and quickfix lists,
+" <leader>d is debugging. Neovim adds the richer versions of several of these
+" in ~/.config/nvim/keys.lua; vim gets the half that needs no Lua.
+nnoremap <leader>xq :copen<CR>
+nnoremap <leader>xl :lopen<CR>
+
+" Buffers are LazyVim's tabs: Shift+H and Shift+L walk them, <leader>bd
+" closes one. :bdelete would close the window with it, so the two-step keeps
+" the window and moves it to the previous buffer first.
+nnoremap <S-h> :bprevious<CR>
+nnoremap <S-l> :bnext<CR>
+nnoremap <leader>bd :bprevious<bar>bdelete #<CR>
+nnoremap <leader>bb :buffers<CR>:buffer<Space>
 
 " --- debugging --------------------------------------------------------------
 " Termdebug ships with vim and neovim: a real gdb session with breakpoints,
@@ -12874,13 +13604,46 @@ nnoremap <F10> :Over<CR>
 nnoremap <F11> :Step<CR>
 nnoremap <F12> :Finish<CR>
 nnoremap <F8>  :Continue<CR>
-nnoremap <leader>e :Evaluate<CR>
+" <leader>e used to be :Evaluate here. It is the file explorer in LazyVim and
+" that is the more-reached key by a wide margin, so Termdebug's evaluate
+" moved under the debug prefix where the rest of its keys would live.
+nnoremap <leader>de :Evaluate<CR>
+nnoremap <leader>db :Break<CR>
+nnoremap <leader>dc :Continue<CR>
 
 " --- files ------------------------------------------------------------------
+" netrw is the sidebar. :Lexplore opens it on the left and toggles closed on
+" the same key, which is <leader>e in LazyVim and <leader>e here.
 let g:netrw_banner = 0
 let g:netrw_liststyle = 3
-nnoremap <leader>f :find
-nnoremap <leader>n :Explore<CR>
+let g:netrw_winsize = 25
+nnoremap <leader>e :Lexplore<CR>
+nnoremap <leader>ff :find<Space>
+nnoremap <leader><Space> :find<Space>
+" Ctrl+W W already jumps between the sidebar and the editor -- that is vim's,
+" not a plugin's, and it is what LazyVim's key list means by the same chord.
+nnoremap <C-Left>  :vertical resize -5<CR>
+nnoremap <C-Right> :vertical resize +5<CR>
+
+" LazyVim's neo-tree sidebar answers a, A, d, m and r; netrw spells the same
+" five differently. Teach netrw the LazyVim letters, buffer-locally, so the
+" published key list is true here as well. netrw's own bindings are untouched
+" everywhere they do not collide.
+augroup copal_netrw_keys
+  autocmd!
+  " nnoremap, not nmap, and that is load-bearing: 'A' is mapped to netrw's
+  " 'd' while 'd' is itself being mapped to netrw's 'D'. Recursive mappings
+  " would send A through both and delete the file you meant to create a
+  " directory next to.
+  autocmd FileType netrw nnoremap <buffer> a %
+  autocmd FileType netrw nnoremap <buffer> A d
+  autocmd FileType netrw nnoremap <buffer> d D
+  " netrw has no separate move: R renames, and a rename that includes a path
+  " moves. So r and m are the same key underneath, as they nearly are in
+  " neo-tree too.
+  autocmd FileType netrw nnoremap <buffer> r R
+  autocmd FileType netrw nnoremap <buffer> m R
+augroup END
 VIMRC
     install_home_file .vimrc /tmp/vimrc.$$
 
@@ -12891,19 +13654,40 @@ VIMRC
     # does not need a language server.
     cat > /tmp/initvim.$$ <<'INITVIM'
 " Generated by copal-init.sh.
+"
+" THE LOAD ORDER, and it is not arbitrary. Omarchy's Neovim is LazyVim plus a
+" theme layer, and lazy.nvim decides the order there. There is no plugin
+" manager here, so the order is written down instead:
+"
+"   ~/.vimrc          the half vim also gets: options, building, Termdebug,
+"                     buffers, netrw. Edit THIS for anything both editors
+"                     should agree about.
+"   theme.lua         the colours, and the watcher that reloads them when the
+"                     desktop's theme changes underneath a running editor.
+"                     First, so nothing draws in the wrong palette.
+"   keys.lua          the LazyVim-shaped keys that need Lua: the pickers, the
+"                     git window, the grep, and <leader> itself as a menu.
+"   lsp.lua           the language servers. Last, because its keys are set
+"                     per-buffer on attach and win over anything above.
+"
+" Each is guarded: a missing one is a feature you do not have, not an error
+" on every startup.
 set runtimepath^=~/.vim runtimepath+=~/.vim/after
 let &packpath = &runtimepath
-" Everything shared with vim lives in ~/.vimrc -- edit that, not this.
 source ~/.vimrc
-" Neovim-only: the language servers. Guarded so a missing file is not an error
-" on every startup.
-if filereadable(expand('~/.config/nvim/lsp.lua'))
-  luafile ~/.config/nvim/lsp.lua
-endif
+
+for s:f in ['theme', 'keys', 'lsp']
+  let s:p = expand('~/.config/nvim/' . s:f . '.lua')
+  if filereadable(s:p)
+    execute 'luafile' fnameescape(s:p)
+  endif
+endfor
 INITVIM
     install_home_file .config/nvim/init.vim /tmp/initvim.$$
     rm -f /tmp/vimrc.$$ /tmp/initvim.$$
 
+    copal_write_themes
+    dev_write_nvim_ui
     dev_write_lsp_config
     dev_write_kate_config
     dev_write_emacs_config
