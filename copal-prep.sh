@@ -2908,6 +2908,65 @@ have_space_mb() {  # <megabytes> <what it is for>
     return 1
 }
 
+# ---------------------------------------------------- the diskless guard ---
+#
+# NOTHING LARGE MAY BE INSTALLED WHILE / IS STILL A TMPFS, and this is the one
+# place that decides it.
+#
+# Diskless, the root filesystem is RAM. On a 6 GB VM that is a ~2.9 GB tmpfs,
+# which is big enough to swallow the toolchain or a few hundred packages
+# before it fills -- and then every command on the machine fails with ENOSPC
+# at once, including the ones that would tell you why. It is not a clean
+# failure: apk leaves half-unpacked packages behind, the shell cannot write a
+# log, and the install has to be thrown away rather than resumed, because none
+# of it was ever on the disk.
+#
+# THIS ACTUALLY HAPPENED, which is why it is now a function instead of a
+# comment. Stages 7 and 12 -- the toolchain and the 316-package catalogue,
+# the two biggest installers in the whole script -- had no check at all. A run
+# that reached them before stage 3 put 2.8 GB into /usr on a RAM disk and
+# wedged the machine. Stages 4 and 16 did check, but only by warning and then
+# asking "Try anyway?", which an unattended install answers yes to.
+#
+# So the rule is now the same everywhere, and it is a REFUSAL rather than a
+# warning:
+#
+#   - not diskless          -> return 0, say nothing, get on with it
+#   - diskless, unattended  -> refuse. An automatic install must never fill a
+#                              tmpfs; there is nobody there to notice.
+#   - diskless, interactive -> explain what will happen and default to NO.
+#                              Someone who genuinely wants to try can, but
+#                              they have to say so.
+require_disk_root() {  # <what this stage is about to install>
+    is_diskless || return 0
+
+    _size=$(df -h / 2>/dev/null | awk 'NR==2 {print $2}')
+    warn "the root filesystem is still a tmpfs (${_size:-RAM-resident})."
+    warn "$1 cannot be installed into it."
+    cat <<'MSG'
+
+    Diskless, / is RAM. Packages installed now are written into memory, they
+    do not survive a reboot, and when the tmpfs fills EVERY command on the
+    machine starts failing at once -- including the ones that would explain
+    why. There is no partial success to resume from.
+
+    Stage 3 moves the root filesystem onto the disk and reboots. Run it, let
+    the machine come back, and then this stage has real storage to use.
+
+MSG
+    if [ "${AUTO:-0}" = 1 ]; then
+        warn "unattended -- skipping rather than filling the RAM disk"
+        note "run stage 3, then this stage"
+        return 1
+    fi
+    # Default NO. The old wording defaulted to yes in the auto path and was
+    # phrased as though trying were reasonable; it is not.
+    confirm "Install into the RAM disk anyway (it will almost certainly wedge)?" \
+        || { note "Skipped. Run stage 3 first."; return 1; }
+    warn "carrying on into a RAM disk at your request"
+    return 0
+}
+
 # The one sentence every stage owes you on a diskless system, phrased the same
 # way each time. Four stages said this in four slightly different wordings.
 commit_reminder() {
@@ -6270,12 +6329,7 @@ AUTOSTART
 stage_gui() {
     say "Stage 4: X.Org and a window manager"
 
-    if is_diskless; then
-        warn "the root filesystem is still a tmpfs (~$(df -h / | awk 'NR==2{print $2}'))."
-        warn "X does not fit. apk will fail with ENOSPC while the card sits empty."
-        note "Run stage 3 first."
-        confirm "Try anyway?" || return 0
-    fi
+    require_disk_root "X.Org and a desktop" || return 0
     require_network || return 1
 
     # The video and input drivers are the part that is specific to this board:
@@ -8521,12 +8575,7 @@ MSG
 stage_hyprland() {
     say "Stage 16: Hyprland and the Linux Antiquity theme (the full monty)"
 
-    if is_diskless; then
-        warn "the root filesystem is still a tmpfs (~$(df -h / | awk 'NR==2{print $2}'))."
-        warn "A compositor does not fit. apk will fail with ENOSPC."
-        note "Run stage 3 first."
-        confirm "Try anyway?" || return 0
-    fi
+    require_disk_root "A Wayland compositor and the theme" || return 0
 
     # The boards this can never work on are refused with the reason, not a
     # failed package install an hour later. armhf and armv7 have no Hyprland
@@ -11902,6 +11951,10 @@ MSG
 
 stage_dev() {
     say "Stage 7: development environment"
+
+    # The toolchain is 2-3 GB. Before this check existed, running it diskless
+    # is what filled a 2.9 GB tmpfs and wedged a machine.
+    require_disk_root "The toolchain (2-3 GB)" || return 0
     cat <<'MSG'
     Modelled on Omarchy's tool choices, with the pieces that need a GPU or a
     fast machine swapped for equivalents this board can actually run. The
@@ -12178,7 +12231,7 @@ P3MNT=/media/snapshots
 
 stage_snapshots() {
     say "Stage 11: snapshots"
-    is_diskless && { warn "run stage 3 first"; return 0; }
+    require_disk_root "This stage" || return 0
 
     cat <<'MSG'
     Three things worth knowing before choosing how to do this.
@@ -12762,7 +12815,7 @@ YTBRAVE
 
 stage_extras() {
     say "Stage 10: wireless, bluetooth, audio, capture, hex, graphics, disks"
-    is_diskless && { warn "run stage 3 first"; return 0; }
+    require_disk_root "This stage" || return 0
     require_network || return 1
 
     # --- wireless ----------------------------------------------------------
@@ -13229,7 +13282,7 @@ VICEREADME
 
 stage_emulators() {
     say "Stage 9: retro emulators"
-    is_diskless && { warn "run stage 3 first -- there is nowhere to build"; return 0; }
+    require_disk_root "A source build (there is nowhere to build)" || return 0
     require_network || return 1
     apk info -e build-base >/dev/null 2>&1 || { warn "run stage 7 first (needs a C toolchain)"; return 0; }
 
@@ -13549,6 +13602,10 @@ p2_growable() { [ "$(p2_free_sectors)" -gt 131072 ]; }
 
 stage_apps() {
     say "Stage 12: applications"
+
+    # The catalogue is 3-5 GB installed -- the largest single thing this
+    # script does, and the one with the least chance of fitting in RAM.
+    require_disk_root "The application catalogue (3-5 GB)" || return 0
 
     if ! x_installed; then
         warn "X is not installed. Most of this catalogue is graphical."
@@ -14693,11 +14750,7 @@ PIANOMIDI
 stage_workshop() {
     say "Stage 14: the workshop -- engineering, science and music"
 
-    if is_diskless; then
-        warn "the root filesystem is still a tmpfs. None of this will fit."
-        note "Run stage 3 first."
-        confirm "Try anyway?" || return 0
-    fi
+    require_disk_root "The workshop bundles (CAD, EDA, LaTeX)" || return 0
     require_network || return 1
 
     note "architecture: $(apk --print-arch 2>/dev/null || echo unknown)  (gate: $ARCH_GATE)"
@@ -17079,6 +17132,28 @@ while :; do
     elif ! dev_installed;                      then SUGGEST=7
     elif p2_growable;                          then SUGGEST=8
     else                                            SUGGEST=v
+    fi
+
+    # A BANNER RATHER THAN A SUGGESTION LINE. "Suggested next" is one line at
+    # the bottom of a screen of sixteen options, and it is easy to read past
+    # -- which is how a machine ends up with 2.8 GB of packages in a RAM disk.
+    # While / is a tmpfs, say so above the menu, in the words that matter:
+    # what will happen, and which stage fixes it.
+    if is_diskless; then
+        printf '\n    \033[33m%s\033[0m\n' \
+          "================================================================"
+        printf '    \033[1;33m  / IS STILL A RAM DISK (%s). NOTHING LARGE CAN BE INSTALLED.\033[0m\n' \
+          "$(df -h / 2>/dev/null | awk 'NR==2{print $2}')"
+        printf '    \033[33m%s\033[0m\n' \
+          "================================================================"
+        printf '      Packages installed now live in memory, vanish at reboot,\n'
+        printf '      and when this fills, every command on the machine fails.\n'
+        printf '      \033[1mStage 3 moves / onto the disk and reboots.\033[0m Do that first;\n'
+        printf '      stages 4, 7, 12, 14 and 16 will refuse until you have.\n'
+        if sys_installed; then
+            printf '      \033[1;33mStage 3 has already run -- press r to reboot into it.\033[0m\n'
+        fi
+        printf '\n'
     fi
 
     cat <<MSG
