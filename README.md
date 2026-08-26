@@ -125,6 +125,13 @@ One thing to know, and one thing that can still go wrong:
   `ttyS0`, not `ttyAMA0`. It is a plain UART with a driver built into the
   kernel, so it works before anything has come out of modloop.
 
+- **The display is accelerated on aarch64**, through `virtio-ramfb-gl`: VirGL
+  drawing on the Mac's GPU via Metal, plus a plain framebuffer the firmware can
+  draw on, so the UEFI menu and the boot messages are visible rather than the
+  window sitting black until Linux binds a driver. In the guest, `copal-gpu`
+  reports whether the acceleration actually took and names the first layer that
+  did not. `GPU=plain utm/utm-vm.sh create ...` goes back to no acceleration.
+
 ### 2 · Log in as root — there is no password yet
 
 At the login prompt type `root` and press **Enter** at the password prompt.

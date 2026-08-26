@@ -1249,6 +1249,115 @@ is yours to configure:
 - **UTM → Settings → Input** — *Capture input automatically when window is
   focused* hands more of the keyboard to the guest while its window has focus.
 
+### When the display is slow
+
+A guest whose desktop draws like it is underwater is almost always running the
+wrong X driver, and the fix is in the guest rather than on the Mac.
+
+`xf86-video-fbdev` is the right driver for a Pi — VideoCore has no accelerated X
+driver worth using, so X renders on the CPU into the framebuffer. In a VM it is
+the wrong one. The hypervisor hands the guest a virtio-gpu, which is a real KMS
+device, and fbdev cannot talk to one. It talks to `/dev/fb0`, which on a KMS
+device is an emulation layer: the kernel keeps a shadow copy of the screen in
+ordinary memory, write-protects its pages, takes a page fault on every write X
+makes, and periodically copies the dirtied regions into the real scanout buffer.
+Every pixel is drawn twice with a trap in between. That is the treacle.
+
+Stage 4 now installs **modesetting** instead whenever it finds itself in a guest
+with a KMS device — it is part of `xorg-server` and needs no package — plus
+`mesa-dri-gallium` so that glamor can put the drawing on the virtual GPU rather
+than the CPU. It writes `/etc/X11/xorg.conf.d/20-modesetting.conf` to say so
+outright rather than trusting X's autodetection to keep preferring the right one.
+Re-run stage 4 on an older card to pick this up. To check which one is live:
+
+```sh
+grep -o 'modesetting\|fbdev' /var/log/Xorg.0.log | sort -u
+```
+
+If the screen is **black** after this, comment out the `AccelMethod` line in that
+file: modesetting then draws on the CPU, which is still far quicker than fbdev.
+On a Pi nothing changes — `is_vm()` answers *no* for a Raspberry Pi before it
+looks at anything else, so the tested path stays the tested path.
+
+The host end is worth touching only once the guest end is right. `GPU=` picks
+the display device at create time:
+
+```sh
+GPU=ramfb-gl utm/utm-vm.sh create --target aarch64 --name Copal-gl
+```
+
+| `GPU=` | Device | What it is |
+|---|---|---|
+| *(unset)* or `ramfb-gl` | `virtio-ramfb-gl` | **The aarch64 default.** VirGL, plus a framebuffer the firmware can draw on. |
+| `plain` | `virtio-gpu-pci` / `virtio-vga` | Paravirtualised GPU, no host acceleration. The x86_64 default, and the way back on aarch64. |
+| `gl` | `virtio-gpu-gl-pci` / `virtio-vga-gl` | VirGL without the framebuffer half. The only accelerated option on x86_64. |
+| `ramfb` | `ramfb` | A bare linear framebuffer, no acceleration and no KMS. For bringing up a machine that will not display any other way. |
+
+The accelerated ones add **VirGL**: the guest's mesa encodes GL commands, UTM
+replays them on the Mac's GPU through Metal, and glamor becomes real
+acceleration rather than llvmpipe on the CPU.
+
+`ramfb-gl` is two devices in one, and the second half is why it is worth
+preferring on ARM. A ramfb is a plain linear framebuffer that firmware can draw
+on with no driver at all. ARM's `virt` machine has no VGA, so with a pure
+virtio-gpu **nothing** appears until Linux has bound the `virtio_gpu` driver —
+the UEFI menu, GRUB and the early kernel messages all happen on a black window.
+With ramfb they are visible, and on a machine whose failure mode is *the window
+stayed black* that is the difference between a diagnosis and a guess: it tells
+you whether the guest got as far as loading a driver at all. On x86_64 there is
+nothing for it to add, because `virtio-vga` is already the VGA-compatible
+device, so `GPU=ramfb-gl` is refused there rather than quietly ignored.
+
+The argument against making an accelerated device the default used to be its
+failure mode: a slightly slow guest is still usable, while a VirGL guest whose
+host renderer refuses is a black window with no console to fix it from, and a
+default is what somebody unfamiliar gets on their first attempt. **The ramfb
+half is the answer to that**, and it is why this device rather than
+`virtio-gpu-gl-pci` is the one promoted. The framebuffer needs no driver and no
+renderer, so it draws from the first frame of firmware and keeps drawing
+whatever happens to the accelerated half. What is left if VirGL does not come
+up is a guest that is merely *unaccelerated* — the old default — which you can
+see, log into, and diagnose. `GPU=plain` is the way back.
+
+### Is it actually accelerated?
+
+Four different faults produce one symptom, and none of them is visible on
+screen: the host may never have offered acceleration, the kernel may not have
+bound the device, X may have picked the wrong driver, or mesa may be falling
+back to software while every layer above it looks correct. `copal-gpu` in the
+guest reports one line per layer and names the first thing that went wrong.
+
+```
+$ copal-gpu
+Display stack
+  card0          virtio_gpu
+  3D (VirGL)     yes -- host offered it (+virgl +edid -resource_blob)
+  X driver       modesetting  (/var/log/Xorg.0.log)
+  acceleration   glamor -- drawing on the GPU
+  OpenGL         virgl (Apple M2)
+
+Accelerated. The drawing is happening on the host's GPU.
+```
+
+It exits 0 when accelerated, 1 when the display works but draws on the CPU, and
+2 when it cannot tell yet — which normally means X has not run since boot, since
+the X half of the answer is read out of `Xorg.0.log` rather than from the
+running server. That also makes it answer over SSH and after the session has
+exited. It is in the app menu under **System → Display and acceleration**.
+
+The last layer is the one that lies most convincingly: mesa can quietly resolve
+to `llvmpipe`, which is software rendering with a hardware-sounding name, while
+the kernel, the driver and glamor all report success. `mesa-demos` is installed
+in a guest so that `glxinfo` is there to catch it.
+
+Stage 4 reports the kernel half of the same answer at install time, when
+somebody is actually watching — the host's VirGL offer is knowable then, and it
+says so either way.
+
+On an emulated x86_64 guest `GPU=gl` is accepted and is a worse idea than it
+sounds — that guest is already being translated instruction by instruction, and
+VirGL adds a GL implementation to translate on top of it.
+
 ### Inside a terminal
 
 The multiplexer prefix is **Ctrl-B** for tmux and **Ctrl-A** for screen. Full

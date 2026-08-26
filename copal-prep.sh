@@ -6651,12 +6651,79 @@ stage_gui() {
     require_disk_root "X.Org and a desktop" || return 0
     require_network || return 1
 
-    # The video and input drivers are the part that is specific to this board:
-    # there is no accelerated X driver for VideoCore worth using, so X renders
-    # on the CPU straight into the framebuffer via fbdev.
-    say "Installing the X server and the framebuffer driver"
+    # The video and input drivers, and this is the one place where a VM and a
+    # Pi want genuinely different answers.
+    #
+    # ON A PI there is no accelerated X driver for VideoCore worth using, so X
+    # renders on the CPU straight into the framebuffer via fbdev. That has
+    # been true since the first line of this script and it stays true.
+    #
+    # IN A VM fbdev is the wrong driver and it is the reason the display feels
+    # like treacle. The hypervisor hands the guest a virtio-gpu, which is a
+    # real KMS device; fbdev does not talk to it. It talks to /dev/fb0, which
+    # on a KMS device is an EMULATION layer -- the kernel keeps a shadow copy
+    # of the screen in ordinary memory, write-protects its pages, takes a page
+    # fault on every write X makes, and periodically copies the dirtied
+    # regions into the real scanout buffer. Every pixel is therefore drawn
+    # twice and travels through a page-fault handler on the way. That is what
+    # "the video buffer is slow" is: not the host, not Metal, not the window
+    # scaling -- deferred-IO framebuffer emulation, sitting under a driver
+    # from 1999.
+    #
+    # The modesetting driver, which is part of xorg-server and needs no
+    # package of its own, drives the KMS device directly: X allocates the
+    # scanout buffer itself and draws into it once. With mesa's DRI drivers
+    # present it goes further and uses glamor, which puts the drawing on the
+    # virtio-gpu instead of the CPU.
+    #
+    # So: modesetting wherever there is a KMS device AND this is a guest, and
+    # the historical fbdev path everywhere else. Both conditions, on purpose.
+    # is_vm() returns false for a Pi before it looks at anything else, which
+    # is what keeps a Pi with vc4 KMS enabled on the path that has been
+    # tested on it.
+    say "Installing the X server"
     setup-xorg-base
-    apk add xf86-video-fbdev xf86-input-libinput
+    apk add xf86-input-libinput
+    if is_vm && [ -e /dev/dri/card0 ]; then
+        say "This is a guest with a KMS display -- using modesetting, not fbdev"
+        # The DRI drivers. Without them modesetting still works and is still
+        # far quicker than fbdev, but falls back to drawing on the CPU; with
+        # them glamor hands the drawing to the virtual GPU. mesa-dri-gallium
+        # carries virgl, which is the driver for virtio-gpu.
+        add_optional mesa-dri-gallium mesa-gl
+        # glxinfo, and it earns its couple of megabytes: it is the only way to
+        # see the layer that lies most convincingly. Everything else can be
+        # correct and mesa still fall back to llvmpipe, which is software
+        # rendering with a hardware-sounding name. copal-gpu reads it.
+        add_optional mesa-demos
+        # Written rather than left to autodetection. X does prefer modesetting
+        # over fbdev on a KMS device, but "does" is a property of one version
+        # of one autoconfig heuristic, and the cost of being wrong is the slow
+        # path silently coming back. Say it.
+        mkdir -p /etc/X11/xorg.conf.d
+        cat > /etc/X11/xorg.conf.d/20-modesetting.conf <<'XORGKMS'
+# Written by copal-init.sh, stage 4. See the essay in stage_desktop().
+#
+# This machine is a guest with a KMS display (virtio-gpu, or whatever the
+# hypervisor offered). modesetting draws into the scanout buffer directly;
+# fbdev would go through the kernel's framebuffer emulation and copy every
+# pixel twice. Delete this file to go back to autodetection.
+Section "Device"
+    Identifier  "kms"
+    Driver      "modesetting"
+    # glamor is the accelerated path -- it needs a working DRI driver, which
+    # is what mesa-dri-gallium provides. If the display is BLACK or X exits
+    # with an EGL error, this is the line to comment out first: without it
+    # modesetting draws on the CPU, which is still much faster than fbdev.
+    Option      "AccelMethod" "glamor"
+EndSection
+XORGKMS
+        note "/etc/X11/xorg.conf.d/20-modesetting.conf -- delete it to autodetect"
+        note "A black screen after this? Comment out the AccelMethod line in it."
+    else
+        say "Installing the framebuffer driver"
+        apk add xf86-video-fbdev
+    fi
 
     # i3 tiles, so windows never overlap and the CPU never redraws an occluded
     # region. On a board with no acceleration, where every pixel is pushed by
@@ -7674,6 +7741,7 @@ have tcpdump  && out "Network capture,$TERM_EMU -e sh -c 'tcpdump -i eth0 -nn'" 
 have bluetoothctl && out "Bluetooth,$TERM_EMU -e bluetoothctl" || true
 have iw && out "Wifi scan,$TERM_EMU -e sh -c 'iw dev wlan0 scan | grep SSID; read x'" || true
 have alsamixer && out "Volume,$TERM_EMU -e alsamixer" || true
+have copal-gpu && out "Display and acceleration,$TERM_EMU -e sh -c 'copal-gpu; echo; echo Press Enter to close; read x'" || true
 out "Logs,$TERM_EMU -e sh -c 'copal-logs; echo; echo Press Enter to close; read x'"
 out "Setup and stages,$TERM_EMU -e sh -c 'copal; echo; echo Press Enter to close; read x'"
 out "Update Copal,$TERM_EMU -e sh -c 'copal -U; echo; echo Press Enter to close; read x'"
@@ -8493,6 +8561,188 @@ fi
 have xsetroot && exec xsetroot -solid "$BG"
 COPALSPLASH
     chmod 0755 /usr/local/bin/copal-splash
+
+    # ----------------------------------------------------------------------
+    # copal-gpu -- is the display accelerated, and if not, where did it stop?
+    #
+    # This exists because "the desktop feels slow" is a symptom with four
+    # completely different causes and no way to tell them apart by looking:
+    # the host may not have offered acceleration at all, the kernel may not
+    # have bound the device, X may have picked the wrong driver, or mesa may
+    # be falling back to software while everything else looks correct. Each
+    # of those is visible somewhere in /sys, dmesg or a log; none of them is
+    # visible on screen. So the report is four lines, one per layer, and the
+    # first "no" going down the list is the answer.
+    #
+    # Deliberately readable with no desktop running and no packages beyond
+    # busybox. The X half is read out of the log rather than by asking the
+    # running server, so it works over ssh and after the session has exited.
+    say "Installing /usr/local/bin/copal-gpu"
+    cat > /usr/local/bin/copal-gpu <<'COPALGPU'
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# copal-gpu -- report the display stack, layer by layer, and say what is wrong.
+#
+# Exit status is the verdict, so this is usable in a script:
+#   0  accelerated -- VirGL offered, taken, and X is using it
+#   1  not accelerated -- working, but drawing on the CPU
+#   2  cannot tell yet -- usually means X has not run since boot
+set -u
+have() { command -v "$1" >/dev/null 2>&1; }
+row()  { printf '  %-14s %s\n' "$1" "$2"; }
+
+VERDICT=0
+WHY=""
+# Only the first cause found is reported. A stack that failed at the kernel
+# will also look wrong at every layer above it, and four complaints about one
+# fault is how a report stops being read.
+blame() { [ -n "$WHY" ] && return 0; WHY="$1"; VERDICT="$2"; return 0; }
+
+echo "Display stack"
+
+# ---- 1. the device the kernel found ----------------------------------------
+# Every card, not just the first: virtio-ramfb-gl can present as two, and
+# which one X lands on is exactly the sort of thing worth seeing.
+CARDS=""
+for _c in /sys/class/drm/card[0-9]*; do
+    [ -d "$_c" ] || continue
+    _n=$(basename "$_c")
+    # card0-Virtual-1 is a connector on card0, not a second card. Matched on
+    # the basename, not the path: a hyphen anywhere in the mount point above
+    # /sys would otherwise make every card look like a connector.
+    case "$_n" in *-*) continue ;; esac
+    _drv=$(sed -n 's/^DRIVER=//p' "$_c/device/uevent" 2>/dev/null)
+    [ -n "$_drv" ] || _drv=$(basename "$(readlink -f "$_c/device/driver" 2>/dev/null)" 2>/dev/null)
+    [ -n "$_drv" ] || _drv="unknown"
+    CARDS="$CARDS $_n:$_drv"
+    row "${_n}" "$_drv"
+done
+if [ -z "$CARDS" ]; then
+    row "kernel" "no DRM device at all"
+    blame "The kernel found no KMS device. X can only use fbdev here, which is
+the slow path. On a Pi that is normal and expected." 1
+fi
+# simpledrm is the ramfb half of virtio-ramfb-gl, and seeing it ALONE is
+# informative rather than fatal: it means the firmware framebuffer is on
+# screen and the virtio-gpu driver never took over.
+case "$CARDS" in
+    *virtio_gpu*) : ;;
+    *simpledrm*|*simplefb*)
+        blame "Only the firmware framebuffer is present -- the virtio-gpu driver
+did not take over. The display works but nothing is accelerated." 1 ;;
+esac
+
+# ---- 2. did the host offer VirGL ----------------------------------------
+# The virtio_gpu driver prints its negotiated feature bits at bind time.
+# '+virgl' means the host agreed to render 3D; '-virgl' means it did not, and
+# no amount of guest configuration will change that -- it is a host decision.
+VIRGL=unknown
+if have dmesg; then
+    _f=$(dmesg 2>/dev/null | sed -n 's/.*\[drm\] features: //p' | tail -1)
+    case "$_f" in
+        *"+virgl"*) VIRGL=yes; row "3D (VirGL)" "yes -- host offered it ($_f)" ;;
+        *"-virgl"*) VIRGL=no;  row "3D (VirGL)" "NO -- host did not offer it ($_f)"
+                    blame "The host is not offering 3D. On UTM this is decided by the
+display device, so it cannot be fixed from in here: re-create the machine and
+let it take the default (virtio-ramfb-gl). See 'When the display is slow' in
+the handbook." 1 ;;
+        *) row "3D (VirGL)" "cannot tell -- no feature line in dmesg"
+           # Not a verdict on its own: the ring buffer may simply have wrapped.
+           ;;
+    esac
+else
+    row "3D (VirGL)" "cannot tell -- no dmesg"
+fi
+
+# ---- 3. which driver X chose ----------------------------------------------
+# Read from the log rather than from the running server, so this answers over
+# ssh and after the session has exited.
+XLOG=""
+for _l in /var/log/Xorg.0.log "$HOME/.local/share/xorg/Xorg.0.log"; do
+    [ -f "$_l" ] && XLOG="$_l"
+done
+if [ -z "$XLOG" ]; then
+    row "X driver" "cannot tell -- X has not run yet"
+    row "acceleration" "cannot tell -- X has not run yet"
+    blame "Start the desktop and run this again: the X half of the answer does
+not exist until X has written a log." 2
+else
+    if grep -q 'modesetting' "$XLOG" 2>/dev/null; then
+        row "X driver" "modesetting  ($XLOG)"
+    elif grep -q 'FBDEV\|fbdev' "$XLOG" 2>/dev/null; then
+        row "X driver" "fbdev -- THE SLOW ONE  ($XLOG)"
+        blame "X is on fbdev, which draws every pixel twice through the kernel's
+framebuffer emulation. Re-run stage 4; in a guest it now installs the
+modesetting driver instead." 1
+    else
+        row "X driver" "unrecognised  ($XLOG)"
+    fi
+
+    # glamor is the accelerated path. Its absence is not always a failure --
+    # the config asks for it, and X says plainly when it could not have it.
+    if grep -qi 'glamor initialized\|Using glamor' "$XLOG" 2>/dev/null; then
+        row "acceleration" "glamor -- drawing on the GPU"
+    elif grep -qi 'glamor' "$XLOG" 2>/dev/null; then
+        row "acceleration" "glamor asked for, not confirmed -- see the log"
+        blame "glamor is configured but X did not confirm it started. Search the
+log for 'glamor' and 'EGL'; the usual cause is a missing DRI driver
+(apk add mesa-dri-gallium)." 1
+    else
+        row "acceleration" "none -- X is drawing on the CPU"
+        blame "X has no acceleration. If mesa-dri-gallium is missing, that is
+why: apk add mesa-dri-gallium and restart the desktop." 1
+    fi
+fi
+
+# ---- 4. what mesa actually resolved to ------------------------------------
+# The layer that lies most convincingly: everything above can be correct and
+# mesa still quietly fall back to llvmpipe, which is software rendering with
+# a hardware-sounding name. glxinfo is optional, so its absence is not a
+# verdict either way.
+if have glxinfo && [ -n "${DISPLAY:-}" ]; then
+    _r=$(glxinfo -B 2>/dev/null | sed -n 's/^OpenGL renderer string: //p')
+    case "$_r" in
+        "")          row "OpenGL" "cannot tell -- glxinfo said nothing" ;;
+        *llvmpipe*|*softpipe*|*swrast*)
+            row "OpenGL" "$_r -- SOFTWARE rendering"
+            blame "mesa resolved to a software renderer. Everything above it may
+look right and the drawing still happens on the CPU." 1 ;;
+        *) row "OpenGL" "$_r" ;;
+    esac
+elif have glxinfo; then
+    row "OpenGL" "cannot tell -- no DISPLAY (run this inside the desktop)"
+else
+    row "OpenGL" "cannot tell -- glxinfo not installed (apk add mesa-demos)"
+fi
+
+echo
+case "$VERDICT" in
+    0) echo "Accelerated. The drawing is happening on the host's GPU." ;;
+    1) echo "NOT accelerated -- working, but drawing on the CPU."; echo; echo "$WHY" ;;
+    2) echo "Cannot tell yet."; echo; echo "$WHY" ;;
+esac
+exit "$VERDICT"
+COPALGPU
+    chmod 0755 /usr/local/bin/copal-gpu
+    note "copal-gpu -- says whether the display is accelerated, and where it stopped"
+
+    # The kernel half of that answer is knowable right now, and this is the
+    # moment somebody is watching. Not the X half: X has not run yet, so
+    # copal-gpu would exit 2, which is not worth printing an install-time
+    # verdict about. Report only what is settled.
+    if is_vm; then
+        _feat=$(dmesg 2>/dev/null | sed -n 's/.*\[drm\] features: //p' | tail -1)
+        case "$_feat" in
+            *"+virgl"*) note "the host is offering 3D acceleration ($_feat)" ;;
+            *"-virgl"*)
+                warn "the host is NOT offering 3D acceleration ($_feat)"
+                note "The desktop will work and draw on the CPU. To fix it on the"
+                note "Mac, re-create the VM: utm/utm-vm.sh create picks a display"
+                note "device with VirGL by default. 'copal-gpu' reports either way." ;;
+            *)  note "cannot tell whether the host offers 3D -- run 'copal-gpu' once the desktop is up" ;;
+        esac
+    fi
 
     say "Writing ~/.config/i3/keys.txt"
     # This file is the single source of truth for the bindings: the login

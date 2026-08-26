@@ -42,6 +42,15 @@
 #   utm/utm-vm.sh layout --no-start              # arrange only; do not start VMs
 #   utm/utm-vm.sh layout --probe                 # can the consoles be read? moves nothing
 #
+#   GPU=plain utm/utm-vm.sh create --target aarch64      # no host acceleration
+#     GPU picks the display device at create time. The aarch64 default is
+#     ramfb-gl: VirGL through Metal, plus a framebuffer the firmware can draw
+#     on so the boot is visible even if the acceleration is not. plain is the
+#     paravirtualised GPU with no acceleration; gl is VirGL without the
+#     framebuffer; ramfb is a bare framebuffer for bringing up a machine that
+#     will not display any other way. 'copal-gpu' in the guest reports which
+#     of them is actually doing the work.
+#
 set -euo pipefail
 
 die()  { printf '\033[31merror:\033[0m %s\n' "$*" >&2; exit 1; }
@@ -817,7 +826,15 @@ case "${TARGET:-}" in
         MACHINE=virt
         CPU_MODEL=default
         HYPERVISOR=true
-        DISPLAY_HW=virtio-gpu-pci
+        # GPU= picks the display device; see the essay above write_config()
+        # for what each one is and why the accelerated ones are opt-in.
+        case "${GPU:-}" in
+            ''|ramfb-gl) DISPLAY_HW=virtio-ramfb-gl ;;
+            plain)       DISPLAY_HW=virtio-gpu-pci ;;
+            gl)          DISPLAY_HW=virtio-gpu-gl-pci ;;
+            ramfb)       DISPLAY_HW=ramfb ;;
+            *) die "GPU='$GPU' is not one of: ramfb-gl, plain, gl, ramfb" ;;
+        esac
         DEFAULT_NAME="Copal-aarch64"
         DEFAULT_CPUS=4
         DEFAULT_SSH=2222
@@ -838,7 +855,22 @@ case "${TARGET:-}" in
         # virtio-vga rather than virtio-gpu-pci: the PCI-only variant has no
         # VGA compatibility mode, and x86 firmware wants one to draw on before
         # a driver is loaded.
-        DISPLAY_HW=virtio-vga
+        # The same knob, one value short: virtio-ramfb-gl is an ARM device.
+        # ramfb exists because ARM's 'virt' machine has no VGA to draw on
+        # before a driver loads, which is not a problem q35 has -- virtio-vga
+        # IS the VGA-compatible one. So on x86 there is nothing for it to be.
+        #
+        # GPU=gl is honoured here, but it is a worse idea than on aarch64 and
+        # the create summary says so: this guest is already being emulated
+        # instruction by instruction, and VirGL adds a GL implementation to
+        # translate on top of that. Offered for symmetry, not recommended.
+        case "${GPU:-}" in
+            ''|plain) DISPLAY_HW=virtio-vga ;;
+            gl)       DISPLAY_HW=virtio-vga-gl ;;
+            ramfb-gl) die "GPU=ramfb-gl is an aarch64 device -- use GPU=gl on x86_64" ;;
+            ramfb)    DISPLAY_HW=ramfb ;;
+            *) die "GPU='$GPU' is not one of: plain, gl, ramfb" ;;
+        esac
         DEFAULT_NAME="Copal-x86_64"
         DEFAULT_CPUS=2
         DEFAULT_SSH=2223
@@ -911,6 +943,73 @@ BUNDLE="$UTM_DOCS/${NAME}.utm"
 #       GRUB on it at EFI/BOOT/BOOT{AA64,X64}.EFI. UTM supplies the matching
 #       edk2 firmware and creates its own variable store on first start --
 #       which is why one is NOT written here.
+#
+#   Display Hardware -- set by GPU= on the create command line.
+#
+#       The default is virtio-gpu-pci on aarch64 and virtio-vga on x86_64:
+#       the paravirtualised GPU, no host acceleration. The guest drives it
+#       with the kernel's virtio_gpu KMS driver and X's modesetting driver on
+#       top -- which is the pairing stage 4 now installs in a guest, instead
+#       of the fbdev driver it uses on a Pi. That change is where the display
+#       speed actually came from: fbdev on a KMS device goes through the
+#       kernel's framebuffer emulation, which keeps a shadow copy of the
+#       screen, write-protects it, and takes a page fault on every write.
+#       Every pixel drawn twice, with a trap in between.
+#
+#       The accelerated ones add VirGL: the guest's mesa encodes GL commands,
+#       UTM replays them on the Mac's GPU through Metal, and X's glamor
+#       becomes real acceleration rather than llvmpipe on the CPU.
+#
+#         GPU=ramfb-gl   virtio-ramfb-gl. THE DEFAULT on aarch64.
+#                        Two devices in one: a ramfb -- a plain linear
+#                        framebuffer the firmware can draw on with no driver
+#                        at all -- alongside the accelerated virtio-gpu the
+#                        guest kernel takes over once it is up.
+#
+#                        That first half is the whole reason to prefer it
+#                        here. ARM's 'virt' machine has no VGA, so with a
+#                        pure virtio-gpu device NOTHING draws until Linux has
+#                        bound the virtio_gpu driver: the UEFI menu, GRUB and
+#                        the early kernel messages all happen on a black
+#                        window. With ramfb they are visible. On a machine
+#                        whose failure mode is "the window stayed black",
+#                        being able to see the firmware is the difference
+#                        between a diagnosis and a guess -- it says whether
+#                        the guest got as far as loading a driver at all.
+#
+#         GPU=gl         virtio-gpu-gl-pci (virtio-vga-gl on x86_64). The
+#                        same VirGL acceleration without the ramfb half, so
+#                        boot is black on ARM until the driver loads. The one
+#                        to try if ramfb-gl misbehaves; on x86_64 it is the
+#                        only accelerated option, because virtio-vga is
+#                        already the VGA-compatible device and ramfb has
+#                        nothing to add.
+#
+#         GPU=ramfb      ramfb alone. No acceleration and no KMS -- a linear
+#                        framebuffer and nothing else, which puts X back on
+#                        fbdev and back to being slow. Here for bringing up a
+#                        machine that will not display any other way, not for
+#                        running one.
+#
+#         GPU=plain      the default, spelled out.
+#
+#       WHY THE ACCELERATED ONE IS THE DEFAULT ON AARCH64, when the argument
+#       against it used to be persuasive. The objection was the failure mode:
+#       a slightly slow guest is still usable, while a VirGL guest whose host
+#       renderer refuses is a black window with no console to fix it from, and
+#       a default is what somebody unfamiliar gets on their first attempt.
+#
+#       ramfb is the answer to that, and it is the whole reason this device
+#       rather than virtio-gpu-gl-pci is the one promoted. The framebuffer
+#       half needs no driver and no renderer: it draws from the first frame of
+#       firmware, before Linux exists, and it keeps drawing whatever happens
+#       to the accelerated half afterwards. The black-window failure this was
+#       guarding against is the failure the device removes. What is left if
+#       VirGL does not come up is a guest that is merely unaccelerated -- the
+#       old default -- which you can see, log into, and diagnose.
+#
+#       And it is checkable rather than a matter of faith: copal-gpu in the
+#       guest says which half is doing the work. GPU=plain is the way back.
 #
 #   DirectoryShareMode=VirtFS  The 9p share. The PATH is not here: UTM keeps
 #       it in its Registry as a security-scoped bookmark that only the app can
@@ -1240,6 +1339,11 @@ do_create() {
         printf '    %-16s %s\n' "Network"   "Emulated -- slirp NAT, ssh localhost:$SSH_PORT -> guest 22" >&2
     fi
     printf '    %-16s %s\n' "Display"   "$DISPLAY_HW" >&2
+    case "$DISPLAY_HW" in
+        *-gl|*-gl-pci)
+            printf '    %-16s %s\n' "" "VirGL -- run 'copal-gpu' in the guest to see whether" >&2
+            printf '    %-16s %s\n' "" "it took. GPU=plain re-creates without it." >&2 ;;
+    esac
     printf '\n' >&2
     cat >&2 <<NEXT
   The shared folder is already set -- $SHARE_DIR, pointed at
@@ -1257,6 +1361,32 @@ do_create() {
 
       ls /media/                      # expect vda1
       sh /media/vda1/copal-init.sh    # the fifteen stages
+
+  A SLOW DISPLAY, if the desktop feels like it is drawing through mud: the
+  first thing to check is that stage 4 has been run recently enough to have
+  installed the modesetting driver. In the guest:
+
+      grep -l modesetting /var/log/Xorg.0.log >/dev/null && echo good
+
+  A guest still on xf86-video-fbdev is drawing every pixel twice through the
+  kernel's framebuffer emulation, and re-running stage 4 is the whole fix.
+  Only once that is right is the host end worth touching:
+
+      copal-gpu
+
+  in the guest, which says which display device the kernel found, whether the
+  host offered VirGL, and which driver X ended up on. On aarch64 this machine
+  was created with virtio-ramfb-gl -- VirGL acceleration through the Mac's
+  GPU, plus a plain framebuffer the firmware draws on before any driver has
+  loaded, so the window shows the UEFI menu and the boot messages rather than
+  going black until Linux is up.
+
+  If copal-gpu says the acceleration did not take, the guest is simply
+  unaccelerated rather than broken, and re-creating with
+
+      GPU=plain utm/utm-vm.sh create --target $TARGET --name something-else
+
+  drops back to the paravirtualised GPU with no VirGL at all.
 
   IF THE GRAPHICAL CONSOLE WILL NOT TYPE, switch UTM to the serial display:
 
