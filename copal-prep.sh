@@ -8175,6 +8175,7 @@ out "Logs,$TERM_EMU -e sh -c 'copal-logs; echo; echo Press Enter to close; read 
 out "Setup and stages,$TERM_EMU -e sh -c 'copal; echo; echo Press Enter to close; read x'"
 out "Update Copal,$TERM_EMU -e sh -c 'copal -U; echo; echo Press Enter to close; read x'"
 have copal-gpu && out "Display and acceleration,$TERM_EMU -e sh -c 'copal-gpu; echo; echo Press Enter to close; read x'" || true
+have copal-fonts && out "Fonts,$TERM_EMU -e sh -c 'copal-fonts; echo; echo Press Enter to close; read x'" || true
 
 # ----- Session -----
 out '^tag(session)'
@@ -12548,6 +12549,516 @@ clone_user_repos() {
 
 # The script itself. Written on every stage-7 run, like the front door, so
 # editing the installed copy is pointless -- edit copal-prep.sh.
+# ------------------------------------------------------ fonts ---------------
+#
+# WHAT THIS IS FOR. A machine for writing code on is a machine you look at all
+# day, and the thing you are looking at is a typeface. Alpine's default is
+# DejaVu Sans Mono and nothing else, which is serviceable and is not what
+# anybody who cares about this would choose.
+#
+# WHY apk AND NOT A BUILD, AND NOT A GIT CLONE. Both of the obvious ideas are
+# wrong here and it is worth saying why, because both look reasonable:
+#
+#   Building from source. Iosevka's build wants Node and a couple of hours of
+#   CPU; on a Pi that is not a font install, it is an afternoon. Fonts are
+#   binaries that upstreams already build and sign off on.
+#
+#   git clone. A font repository holds SOURCES -- .glyphs, .sfd, build
+#   scripts -- and keeps the built .ttf in its RELEASES, not in the tree. A
+#   clone gets you the half you would then have to build. It is also large:
+#   Recursive's repository is far bigger than the 49 MB release zip.
+#
+# So: apk for everything Alpine packages, which as of v3.24 is most of it and
+# is current, and a pinned release download for the four worth having that it
+# does not. Nothing is compiled and nothing is cloned.
+#
+# LICENSING, since it is the thing people get nervous about and should not.
+# Every font here is redistributable, checked against the projects themselves
+# rather than assumed:
+#
+#   SIL OFL 1.1   Fira Code, JetBrains Mono, Cascadia Code, Iosevka, Monaspace,
+#                 IBM Plex, Victor Mono, Intel One Mono, Recursive, Noto,
+#                 Liberation, Terminus. Install, bundle and redistribute
+#                 freely; you may not sell the font on its own, and a MODIFIED
+#                 font must be renamed. Shipping them unmodified, which is what
+#                 this does, is the intended use.
+#   MIT           Hack (plus Bitstream Vera for its ancestry), Commit Mono,
+#                 Cozette.
+#   BSD-2         Spleen.
+#   CC BY-SA 4.0  The Ultimate Oldschool PC Font Pack. Share-alike, and it
+#                 wants attribution -- so its LICENSE.TXT and README are
+#                 installed beside the fonts rather than dropped, and
+#                 'copal-fonts licences' prints where they went.
+#
+# ON VERSIONS AND "IS IT CURRENT". Most good coding faces are finished rather
+# than abandoned: Fira Code's last release is 6.2 (2021), Hack's is 3.003
+# (2018), JetBrains Mono's is 2.304 (2023). That is a solved design, not
+# neglect, and a 2026 release would not make them better. The two that do move
+# are Iosevka (Alpine carries 34.6.x against upstream's 34.8.x) and Monaspace,
+# pinned below at the current v1.400.
+install_copal_fonts() {
+    [ -d /usr/local/bin ] || mkdir -p /usr/local/bin 2>/dev/null || return 0
+    cat > /usr/local/bin/copal-fonts <<'COPALFONTS'
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# copal-fonts -- the font sets, and the console font.
+#
+#   copal-fonts                  what is installed, group by group
+#   copal-fonts install GROUP..  install a group: coding, console, ibmpc, web
+#                                (or 'all'). Needs doas.
+#   copal-fonts list [GROUP]     what a group contains, and what is on disk
+#   copal-fonts console [NAME]   show, or set, the font the text console uses.
+#                                No name lists what is available. Needs doas.
+#   copal-fonts licences         where the licence files went
+#
+# Re-runnable: installing a group again is an apk no-op plus a re-download of
+# only what is missing.
+#
+# Rewritten by copal-init.sh every time stage 12 runs.
+set -eu
+
+FONTDIR=/usr/share/fonts
+CONSOLEDIR=/usr/share/consolefonts
+LICDIR=/usr/share/licenses/copal-fonts
+
+say()  { printf '\033[36m==>\033[0m %s\n' "$*"; }
+note() { printf '    %s\n' "$*"; }
+warn() { printf '\033[33mwarning:\033[0m %s\n' "$*" >&2; }
+have() { command -v "$1" >/dev/null 2>&1; }
+
+need_root() {
+    [ "$(id -u)" = 0 ] || { echo "That writes under /usr/share. Re-run as: doas copal-fonts $*" >&2; exit 1; }
+}
+
+# ---------------------------------------------------------------- the apk half
+#
+# One package per line, so a comment can say what it is for. Everything here
+# goes through 'apk add' one at a time and a missing one is a note rather than
+# a failure: which of these exists varies by architecture, and an armhf board
+# genuinely has fewer. That is the same reasoning as add_optional in the
+# installer, reimplemented here because this script runs long after it.
+#
+# THE LIGATURE PAIRS are the point of the coding group. A ligature font is a
+# preference, not an improvement, and the sane thing is to have both halves
+# installed so the choice is a line in a config rather than an apk run:
+#
+#   ligatures            plain
+#   font-fira-code-nerd  font-fira-mono-nerd
+#   font-jetbrains-mono  font-jetbrains-mono-nl     ('nl' IS 'no ligatures')
+#   font-cascadia-code-nerd (Cascadia Mono is the plain cut of the same design)
+#   font-iosevka         ships with ligatures off by default
+#
+# SIZES ARE WHY THERE ARE TWO CODING GROUPS. Font packages are not small and
+# they are not evenly sized -- checked against the v3.24 aarch64 APKINDEX
+# rather than guessed, because the guess was wrong by a factor of eight:
+#
+#   font-iosevka-curly       565 MB      font-cascadia-code-nerd    97 MB
+#   font-iosevka-curly-slab  561 MB      font-fira-code-nerd        46 MB
+#   font-iosevka-slab        456 MB      font-terminus-nerd         31 MB
+#   font-iosevka-base        446 MB      font-fira-mono-nerd        19 MB
+#   font-iosevka-etoile      233 MB      font-jetbrains-mono       4.2 MB
+#   font-iosevka-aile        220 MB      font-hack                 1.2 MB
+#   font-victor-mono-nerd    147 MB
+#   font-ibm-plex-mono-nerd  108 MB
+#
+# Iosevka is enormous because it ships every width and weight as its own file,
+# and the Nerd cuts are large because they carry a few thousand icon glyphs in
+# every weight. Installing the obvious list unattended comes to 1.6 GB, which
+# is not a font install, it is most of a Pi's card.
+#
+# So 'coding' is the curated ~185 MB that covers the ground -- a ligature face
+# and its plain twin, three or four good non-ligature ones -- and
+# 'coding-extra' is where the big ones -- 1.9 GB of them -- wait to be asked for.
+apk_coding='
+font-jetbrains-mono
+font-jetbrains-mono-nl
+font-jetbrains-mono-vf
+font-fira-code-nerd
+font-fira-mono-nerd
+font-cascadia-code-nerd
+font-hack
+font-inconsolata
+font-adobe-source-code-pro
+font-departure-mono-nerd
+'
+# Asked for by name, never installed by default. Every one of these is a good
+# typeface; every one of them costs more than the whole 'coding' group.
+apk_coding_extra='
+font-iosevka
+font-iosevka-curly
+font-iosevka-slab
+font-iosevka-aile
+font-iosevka-etoile
+font-victor-mono-nerd
+font-ibm-plex-mono-nerd
+font-anonymous-pro-nerd
+font-go-mono-nerd
+font-terminus-nerd
+font-unifont
+'
+# The text console, which is a different problem from the desktop: these are
+# bitmaps at fixed pixel sizes, and 'setfont' wants a .psf rather than
+# anything fontconfig has heard of. kbd-misc is where Linux's own collection
+# lives; font-terminus is the one most people mean by "a console font".
+# ~11 MB, deliberately. font-terminus-nerd (31 MB) and font-unifont (49 MB)
+# are both console-adjacent and both live in coding-extra: Unifont in
+# particular is the every-glyph fallback rather than something to read code in.
+apk_console='
+font-terminus
+font-misc-misc
+kbd
+kbd-misc
+'
+# The metric-compatible set. This -- not LibreOffice -- is what "the full font
+# pack" actually means: Liberation matches Arial/Times/Courier metrics,
+# Carlito matches Calibri, Croscore is Arimo/Tinos/Cousine. A document laid
+# out against those renders at the right length here. Noto covers the rest of
+# Unicode. LibreOffice is not required for any of it and is not installed by
+# this.
+apk_web='
+font-liberation
+font-carlito
+font-croscore
+font-dejavu
+font-noto
+font-noto-emoji
+'
+
+apk_group() {
+    case "$1" in
+        coding)       printf '%s' "$apk_coding" ;;
+        coding-extra) printf '%s' "$apk_coding_extra" ;;
+        console)      printf '%s' "$apk_console" ;;
+        web)          printf '%s' "$apk_web" ;;
+        *)       : ;;
+    esac
+}
+
+install_apk_group() {
+    _g="$1"; _list=$(apk_group "$_g")
+    [ -n "$_list" ] || return 0
+    _ok=0; _miss=""
+    for _p in $_list; do
+        if apk info -e "$_p" >/dev/null 2>&1; then
+            _ok=$((_ok+1))
+        elif apk add "$_p" >/dev/null 2>&1; then
+            _ok=$((_ok+1))
+        else
+            _miss="$_miss $_p"
+        fi
+    done
+    note "$_g: $_ok packages present"
+    [ -z "$_miss" ] || note "not packaged for this architecture:$_miss"
+}
+
+# ------------------------------------------------------------ the fetched half
+#
+# PINNED, AND VERIFIED BY HASH. A font that changes under you is a diff in
+# every screenshot and a re-flowed document, so the version is written down
+# and the download is checked against the sha256 of the archive that was
+# actually looked at. A mismatch stops rather than installs: a font is not
+# worth trusting a changed download for.
+#
+# Re-pinning is a two-line edit -- the version and the hash -- and the URL
+# patterns below are upstream's own release naming, not a mirror.
+MONASPACE_VER=1.400
+MONASPACE_SHA=ab66d71be751495f679727332a3345597943bd4d7beebca03f5cde04bf994de7
+COMMITMONO_VER=1.143
+COMMITMONO_SHA=f7d1f26a7c7554800a996f76f5d706bf0648b936ca2a66b5bc4d46e3a2c49ed0
+INTELONE_VER=1.4.0
+INTELONE_SHA=54863552d25dcb9c3f5360b296fc980d6e1fbfd02e0d214224e8b78f0a2bccf0
+RECURSIVE_VER=1.085
+RECURSIVE_SHA=cbcbdf7a0e181d284a9235e09ed5f3873e527bc5dd1d977df71cdc1ff937da02
+SPLEEN_VER=2.2.0
+SPLEEN_SHA=ec42925c6b56d2138c862b2f97147c872e472f674bf03423417d827a08d69a89
+IBMPC_VER=2.2
+IBMPC_SHA=b30dc3ecc9931ad2dd8be7517dd01813c8834a1911b582ab7643191b41a3d759
+
+fetch_verified() {  # <url> <sha256> <outfile>
+    have wget || have curl || { warn "neither wget nor curl -- cannot fetch"; return 1; }
+    if have wget; then wget -q -O "$3" "$1" || { warn "download failed: $1"; return 1; }
+    else curl -fsSL "$1" -o "$3" || { warn "download failed: $1"; return 1; }
+    fi
+    _got=$(sha256sum "$3" 2>/dev/null | cut -d' ' -f1)
+    if [ "$_got" != "$2" ]; then
+        warn "sha256 mismatch for $(basename "$3")"
+        note "expected $2"
+        note "got      $_got"
+        note "Refusing to install it. Upstream may have re-rolled the release;"
+        note "check the project and update the pin in $0."
+        rm -f "$3"
+        return 1
+    fi
+    return 0
+}
+
+# ONLY THE CORE FOUR STYLES of each family, not every weight. Monaspace ships
+# 210 static faces across five families -- 53 MB of card for thirty-five
+# weights of each, when what gets used is Regular, Bold, Italic and Bold
+# Italic. The variable fonts are where the other weights live if they are ever
+# wanted. Same reasoning for Recursive, and its Mono cut only: the Sans is a
+# fine typeface and is not what this group is for.
+install_fetched_coding() {
+    have unzip || apk add unzip >/dev/null 2>&1 || { warn "unzip is needed and could not be installed"; return 1; }
+    _t=$(mktemp -d) || return 1
+    # shellcheck disable=SC2064
+    trap "rm -rf '$_t'" EXIT INT TERM
+
+    say "Monaspace $MONASPACE_VER (GitHub Next -- OFL 1.1)"
+    if fetch_verified \
+        "https://github.com/githubnext/monaspace/releases/download/v$MONASPACE_VER/monaspace-static-v$MONASPACE_VER.zip" \
+        "$MONASPACE_SHA" "$_t/mona.zip"; then
+        mkdir -p "$FONTDIR/copal-monaspace"
+        # -j junks the paths, which is what makes the 'Static Fonts/Monaspace
+        # Neon/' directories -- spaces and all -- a non-problem.
+        unzip -j -o -q "$_t/mona.zip" '*-Regular.otf' '*-Bold.otf' '*-Italic.otf' '*-BoldItalic.otf' \
+              -d "$FONTDIR/copal-monaspace" 2>/dev/null || true
+        note "$(ls "$FONTDIR/copal-monaspace" 2>/dev/null | wc -l | tr -d ' ') faces"
+    fi
+
+    say "Commit Mono $COMMITMONO_VER (MIT)"
+    if fetch_verified \
+        "https://github.com/eigilnikolajsen/commit-mono/releases/download/v$COMMITMONO_VER/CommitMono-$COMMITMONO_VER.zip" \
+        "$COMMITMONO_SHA" "$_t/commit.zip"; then
+        mkdir -p "$FONTDIR/copal-commit-mono"
+        unzip -j -o -q "$_t/commit.zip" '*.otf' -d "$FONTDIR/copal-commit-mono" 2>/dev/null || true
+        note "$(ls "$FONTDIR/copal-commit-mono" 2>/dev/null | wc -l | tr -d ' ') faces"
+    fi
+
+    say "Intel One Mono $INTELONE_VER (OFL 1.1)"
+    if fetch_verified \
+        "https://github.com/intel/intel-one-mono/releases/download/V$INTELONE_VER/ttf.zip" \
+        "$INTELONE_SHA" "$_t/intel.zip"; then
+        mkdir -p "$FONTDIR/copal-intel-one-mono"
+        unzip -j -o -q "$_t/intel.zip" '*.ttf' -d "$FONTDIR/copal-intel-one-mono" 2>/dev/null || true
+        note "$(ls "$FONTDIR/copal-intel-one-mono" 2>/dev/null | wc -l | tr -d ' ') faces"
+    fi
+
+    say "Recursive Mono $RECURSIVE_VER (OFL 1.1)"
+    if fetch_verified \
+        "https://github.com/arrowtype/recursive/releases/download/v$RECURSIVE_VER/ArrowType-Recursive-$RECURSIVE_VER.zip" \
+        "$RECURSIVE_SHA" "$_t/rec.zip"; then
+        mkdir -p "$FONTDIR/copal-recursive"
+        unzip -j -o -q "$_t/rec.zip" \
+              '*RecursiveMono*-Regular.ttf' '*RecursiveMono*-Bold.ttf' \
+              '*RecursiveMono*-Italic.ttf' '*RecursiveMono*-BoldItalic.ttf' \
+              -d "$FONTDIR/copal-recursive" 2>/dev/null || true
+        note "$(ls "$FONTDIR/copal-recursive" 2>/dev/null | wc -l | tr -d ' ') faces"
+    fi
+
+    rm -rf "$_t"; trap - EXIT INT TERM
+    return 0
+}
+
+# Spleen and Cozette are console fonts first and desktop fonts second: what
+# matters about them is the .psfu, which is what setfont loads, at sizes that
+# suit a framebuffer rather than a 4K panel.
+install_fetched_console() {
+    _t=$(mktemp -d) || return 1
+    # shellcheck disable=SC2064
+    trap "rm -rf '$_t'" EXIT INT TERM
+    mkdir -p "$CONSOLEDIR"
+
+    say "Spleen $SPLEEN_VER (BSD-2-Clause)"
+    if fetch_verified \
+        "https://github.com/fcambus/spleen/releases/download/$SPLEEN_VER/spleen-$SPLEEN_VER.tar.gz" \
+        "$SPLEEN_SHA" "$_t/spleen.tgz"; then
+        tar -xzf "$_t/spleen.tgz" -C "$_t" 2>/dev/null || true
+        find "$_t" -name '*.psfu' -exec cp {} "$CONSOLEDIR/" \; 2>/dev/null || true
+        note "$(ls "$CONSOLEDIR"/spleen*.psfu 2>/dev/null | wc -l | tr -d ' ') console sizes"
+    fi
+
+    say "Cozette (MIT)"
+    for _f in cozette.psf cozettecrossedseven.psf; do
+        if have wget; then wget -q -O "$CONSOLEDIR/$_f" \
+            "https://github.com/slavfox/Cozette/releases/latest/download/$_f" 2>/dev/null \
+            || rm -f "$CONSOLEDIR/$_f"
+        fi
+    done
+    # Not hash-pinned, and said out loud rather than hidden: these are fetched
+    # from 'latest' because Cozette publishes bare files rather than a versioned
+    # archive. A console font is cosmetic and unprivileged, so the trade is a
+    # fair one -- but it is a different trade from everything above, and if that
+    # is not wanted, 'copal-fonts install console' without network simply skips.
+    note "cozette: from 'latest' (no versioned archive upstream), not hash-pinned"
+
+    rm -rf "$_t"; trap - EXIT INT TERM
+    return 0
+}
+
+# The Ultimate Oldschool PC Font Pack -- VileR / int10h.org, CC BY-SA 4.0.
+#
+# 1,377 files and about 50 MB unpacked, which is why only two of its four cuts
+# are installed: 'Px' (pixel outline -- the honest one, square pixels, right
+# at integer sizes) and the .otb bitmaps, which are what an X terminal wants.
+# The 'Ac' aspect-corrected and 'Mx' mixed cuts are the same faces again for
+# different rendering paths, and installing all four is three copies of every
+# IBM ROM font on a machine that has one screen.
+#
+# SHARE-ALIKE, so the licence travels: LICENSE.TXT and README go beside them,
+# and 'copal-fonts licences' says where.
+install_ibmpc() {
+    have unzip || apk add unzip >/dev/null 2>&1 || { warn "unzip is needed and could not be installed"; return 1; }
+    _t=$(mktemp -d) || return 1
+    # shellcheck disable=SC2064
+    trap "rm -rf '$_t'" EXIT INT TERM
+
+    say "Ultimate Oldschool PC Font Pack $IBMPC_VER (int10h.org -- CC BY-SA 4.0)"
+    if fetch_verified \
+        "https://int10h.org/oldschool-pc-fonts/download/oldschool_pc_font_pack_v${IBMPC_VER}_linux.zip" \
+        "$IBMPC_SHA" "$_t/ibm.zip"; then
+        mkdir -p "$FONTDIR/copal-oldschool-pc" "$LICDIR"
+        unzip -j -o -q "$_t/ibm.zip" 'ttf - Px (pixel outline)/*.ttf' \
+              -d "$FONTDIR/copal-oldschool-pc" 2>/dev/null || true
+        unzip -j -o -q "$_t/ibm.zip" 'otb - Bm (linux bitmap)/*.otb' \
+              -d "$FONTDIR/copal-oldschool-pc" 2>/dev/null || true
+        unzip -j -o -q "$_t/ibm.zip" 'LICENSE.TXT' 'README.TXT' \
+              -d "$LICDIR" 2>/dev/null || true
+        [ -f "$LICDIR/LICENSE.TXT" ] && mv "$LICDIR/LICENSE.TXT" "$LICDIR/oldschool-pc-LICENSE.txt" 2>/dev/null || true
+        [ -f "$LICDIR/README.TXT" ] && mv "$LICDIR/README.TXT" "$LICDIR/oldschool-pc-README.txt" 2>/dev/null || true
+        note "$(ls "$FONTDIR/copal-oldschool-pc" 2>/dev/null | wc -l | tr -d ' ') faces -- IBM VGA/EGA/CGA and friends"
+        note "attribution: $LICDIR/oldschool-pc-README.txt"
+    fi
+
+    rm -rf "$_t"; trap - EXIT INT TERM
+    return 0
+}
+
+refresh_cache() {
+    if have fc-cache; then
+        fc-cache -f >/dev/null 2>&1 || true
+        note "fontconfig cache rebuilt"
+    else
+        note "no fc-cache here -- fontconfig will pick them up when it is installed"
+    fi
+}
+
+# ------------------------------------------------------------- the console font
+#
+# Two halves, and both are needed or it lasts until the next reboot:
+# 'setfont' changes the console now, and /etc/conf.d/consolefont is what
+# OpenRC's consolefont service reads to do it again at boot.
+console_list() {
+    say "Console fonts on this machine"
+    [ -d "$CONSOLEDIR" ] || { note "(none -- 'doas copal-fonts install console')"; return 0; }
+    ls "$CONSOLEDIR" 2>/dev/null | sed 's/\.psfu\?\(\.gz\)\?$//' | sort -u | while read -r _f; do
+        [ -n "$_f" ] && note "$_f"
+    done
+}
+
+console_set() {
+    need_root console "$1"
+    _n="$1"
+    have setfont || { warn "setfont is missing -- 'doas apk add kbd'"; return 1; }
+    setfont "$_n" 2>/dev/null || setfont "$CONSOLEDIR/$_n.psfu" 2>/dev/null \
+        || { warn "setfont could not load '$_n'"; note "'copal-fonts console' lists what is here"; return 1; }
+    mkdir -p /etc/conf.d
+    if [ -f /etc/conf.d/consolefont ] && grep -q '^consolefont=' /etc/conf.d/consolefont; then
+        sed -i "s|^consolefont=.*|consolefont=\"$_n\"|" /etc/conf.d/consolefont
+    else
+        printf 'consolefont="%s"\n' "$_n" >> /etc/conf.d/consolefont
+    fi
+    rc-update add consolefont boot >/dev/null 2>&1 || true
+    note "console font is now '$_n', and will be at the next boot"
+}
+
+# ---------------------------------------------------------------------- status
+status_line() {  # <label> <dir-or-pkg test>
+    printf '    %-26s %s\n' "$1" "$2"
+}
+
+show_status() {
+    say "Fonts"
+    for _g in coding coding-extra console web; do
+        _have=0; _tot=0
+        for _p in $(apk_group "$_g"); do
+            _tot=$((_tot+1))
+            apk info -e "$_p" >/dev/null 2>&1 && _have=$((_have+1))
+        done
+        status_line "$_g (apk)" "$_have of $_tot packages"
+    done
+    for _d in copal-monaspace copal-commit-mono copal-intel-one-mono copal-recursive copal-oldschool-pc; do
+        if [ -d "$FONTDIR/$_d" ]; then
+            status_line "${_d#copal-}" "$(ls "$FONTDIR/$_d" 2>/dev/null | wc -l | tr -d ' ') faces"
+        else
+            status_line "${_d#copal-}" "not installed"
+        fi
+    done
+    _cf=$(ls "$CONSOLEDIR" 2>/dev/null | wc -l | tr -d ' ')
+    status_line "console fonts" "$_cf files in $CONSOLEDIR"
+    if [ -f /etc/conf.d/consolefont ]; then
+        status_line "console font at boot" "$(sed -n 's/^consolefont="\{0,1\}\([^"]*\)"\{0,1\}.*/\1/p' /etc/conf.d/consolefont | head -1)"
+    fi
+    echo
+    note "install a group:  doas copal-fonts install coding console ibmpc web"
+    note "'copal-fonts list' names the groups and what each one costs"
+    note "pick a console font:  doas copal-fonts console ter-v16n"
+}
+
+install_groups() {
+    need_root install "$@"
+    _did=0
+    for _g in "$@"; do
+        case "$_g" in
+            all)     # 'all' does NOT mean coding-extra. 1.6 GB is not something
+                     # a word like 'all' should be able to do by accident.
+                     install_apk_group coding; install_apk_group console; install_apk_group web
+                     install_fetched_coding; install_fetched_console; install_ibmpc; _did=1
+                     note "coding-extra (Iosevka and the large Nerd cuts, ~1.9 GB) not included"
+                     note "ask for it by name: doas copal-fonts install coding-extra" ;;
+            coding)  say "Coding faces -- ligature and plain, about 185 MB"
+                     install_apk_group coding; install_fetched_coding; _did=1 ;;
+            coding-extra)
+                     say "The large coding faces -- Iosevka and the big Nerd cuts"
+                     note "This is roughly 1.9 GB. Iosevka alone is 446 MB per style set."
+                     confirm "Go ahead?" || { note "Skipped."; return 0; }
+                     install_apk_group coding-extra; _did=1 ;;
+            console) say "Console and TTY faces"
+                     install_apk_group console; install_fetched_console; _did=1 ;;
+            ibmpc)   install_ibmpc; _did=1 ;;
+            web)     say "Document faces -- the metric-compatible set"
+                     install_apk_group web; _did=1 ;;
+            *)       warn "no such group: $_g"
+                     note "groups: coding coding-extra console ibmpc web all" ;;
+        esac
+    done
+    [ "$_did" = 1 ] || return 0
+    refresh_cache
+}
+
+case "${1:-status}" in
+status)  show_status ;;
+install) shift; [ "$#" -gt 0 ] || { echo "usage: copal-fonts install GROUP [GROUP...]" >&2; exit 2; }
+         install_groups "$@" ;;
+list)    shift
+         if [ "$#" -gt 0 ]; then
+             for _p in $(apk_group "$1"); do
+                 apk info -e "$_p" >/dev/null 2>&1 && _m="installed" || _m="-"
+                 printf '    %-32s %s\n' "$_p" "$_m"
+             done
+         else
+             note "groups, and roughly what they cost:"
+             note "  coding        ~185 MB  ligature faces and their plain twins"
+             note "  coding-extra  ~1.9 GB  Iosevka, and the large Nerd cuts"
+             note "  console        ~11 MB  the text console, plus Spleen and Cozette"
+             note "  ibmpc          ~17 MB  IBM VGA/EGA/CGA, from int10h.org"
+             note "  web            ~42 MB  the metric-compatible document set"
+         fi ;;
+console) shift
+         if [ "$#" -gt 0 ]; then console_set "$1"; else console_list; fi ;;
+licences|licenses)
+         say "$LICDIR"
+         ls "$LICDIR" 2>/dev/null | while read -r _f; do note "$_f"; done
+         note "Everything else is OFL 1.1, MIT or BSD-2; apk keeps their"
+         note "licences with the packages." ;;
+*)       sed -n '4,18p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac
+COPALFONTS
+    chmod 0755 /usr/local/bin/copal-fonts
+    note "/usr/local/bin/copal-fonts -- the font sets, and the console font"
+}
+
 install_copal_code() {
     [ -d /usr/local/bin ] || mkdir -p /usr/local/bin 2>/dev/null || return 0
     cat > /usr/local/bin/copal-code <<'COPALCODE'
@@ -17541,6 +18052,11 @@ p2_growable() { [ "$(p2_free_sectors)" -gt 131072 ]; }
 stage_apps() {
     say "Stage 12: applications"
 
+    # Written first and unconditionally, the way stage 7 writes copal-code: a
+    # machine that declines the catalogue should still have the command that
+    # installs fonts later.
+    install_copal_fonts
+
     # The catalogue is 3-5 GB installed -- the largest single thing this
     # script does, and the one with the least chance of fitting in RAM.
     require_disk_root "The application catalogue (3-5 GB)" || return 0
@@ -17690,6 +18206,34 @@ MSG
     # if it is already there, which makes calling them twice free and safe.
     dev_write_kate_config
     dev_write_emacs_config
+
+    # ------------------------------------------------------------------
+    # The fonts, after the catalogue rather than inside it. They are not
+    # applications and they do not belong in a menu: nothing here opens, and
+    # what they change is how everything else looks.
+    #
+    # THREE GROUPS BY DEFAULT and one left out. coding, console and ibmpc go on
+    # unattended; 'web' -- the metric-compatible document set -- does not,
+    # because it is the group whose absence you notice only when opening
+    # somebody's .docx, and that is a thing to install when it happens rather
+    # than 120 MB carried by every machine. One command away either way:
+    #
+    #   doas copal-fonts install web
+    #
+    # Unattended the answer is yes: a coding machine that arrives with DejaVu
+    # Sans Mono and nothing else has failed at the one thing it was for.
+    say "Fonts"
+    note "coding faces (ligature and plain), console/TTY, and the IBM PC set."
+    note "About 215 MB. Iosevka and the large Nerd cuts are NOT in this --"
+    note "they are 1.9 GB between them; 'copal-fonts install coding-extra' asks."
+    note "'copal-fonts' afterwards for those and for the document fonts."
+    if [ "${AUTO:-0}" = 1 ]; then AUTO_DEFAULT=y; fi
+    if confirm_yes "Install them?"; then
+        require_network && /usr/local/bin/copal-fonts install coding console ibmpc \
+            || warn "fonts skipped -- 'doas copal-fonts install coding console ibmpc' later"
+    else
+        note "Skipped. 'doas copal-fonts install coding' when you want them."
+    fi
 
     say "Done"
     note "Open the menu (Super+z) -- everything installed now appears in it,"
