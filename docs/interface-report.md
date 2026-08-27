@@ -385,6 +385,122 @@ fixed so hands can learn them; and write the cost down wherever a trade is made.
 The twelve principles in § VI are offered as the standing basis for further Copal
 work, and as the criteria against which the next change should be argued.
 
+## VIII. Appendix A — Three houses, informally
+
+*What follows is written in a different register from the rest of this report:
+first person, no citations to speak of, and argued rather than measured. It is
+here because the question "what does each of these projects actually believe?"
+kept being answered inside technical sections where it did not belong. § III-B
+records what was borrowed. This records what was believed, including the parts
+that were not borrowed.*
+
+### The three houses
+
+Copal's desktop is downstream of two other projects with strong opinions, and
+the three disagree in interesting places.
+
+**Linux Antiquity believes the desktop is a place, and that places have a
+subject.** diinki's stated design method starts by refusing the obvious
+aesthetics — retro, flat, Aero, liquid glass — on the grounds that you can
+imagine each of them before it is built, which makes building one an exercise
+rather than an experiment. What replaces them is deliberately far from
+computing: old scientific illustration, armillary spheres, anthropomorphised
+suns and moons, the four humours, tarot. The interesting consequence is
+structural, not decorative. If your subject is celestial mechanics, workspaces
+become planets on an orbit and the active one grows solar flares; the power menu
+becomes three tarot cards; the weather widget reports in humours. Nothing radial
+exists in Qt Quick, so the curve primitives were written from scratch. That is
+the theme's real claim: **an aesthetic thesis is only serious if it survives
+contact with layout.** Anything that stops at colours is a palette pretending
+to be a position.
+
+Two more things it believes, both worth keeping. *Aliveness* — the bodies rotate
+slightly, because "they have faces, so it would be weird if they were static";
+motion as characterisation rather than as feedback. And, stated flatly in the
+same breath as all the art: **usability is non-negotiable.** Menus close on
+outside click, the launcher searches, the widgets are configurable in a settings
+window. It is a maximalist aesthetic with no tolerance for the usual maximalist
+excuse.
+
+**Omarchy believes that taste is a deliverable.** Its position is that the
+expensive part of a Linux desktop was never the software — it is the six months
+of decisions, and that a curated set of them, shipped whole and pre-integrated,
+is the actual product. Hence: one opinionated stack rather than a menu of
+equivalents, themes that apply to *everything* at once rather than to the bar
+alone, a menu that shows ten things at a time instead of a tree, workspaces
+numbered by purpose, and documentation written as a manual rather than as a wiki.
+Underneath is a claim about learning — that a good default is *teaching
+material*, and that the way you learn a configurable system is by living inside
+someone's finished configuration and then editing it. This is the direct
+descendant of the "convention over configuration" argument its author made about
+web frameworks, moved onto a desktop.
+
+Where I part company with Omarchy is at the edges of that generosity. Nineteen
+themes is nineteen surfaces to keep correct; an opinionated stack that assumes a
+GPU is an opinion the hardware can veto; and two menus on adjacent keys — a
+launcher that cannot log you out, a system menu that cannot search your
+applications — is a curation that stopped one step early. § IV-A is the whole of
+my disagreement, and it took forty lines of shell to state.
+
+**Copal believes the constraint is a design partner.** Every position in this
+report has a 512 MB ARMv6 board somewhere behind it. When the machine has one
+slow core, "just install a nicer launcher" is not available and you are forced
+to find out what the launcher was actually for. That is a gift, not a hardship.
+Half of the good decisions here — the terminal that renders on the CPU, the menu
+that is a text file walked by `sh`, the clipboard history in fifty lines because
+the Go one has no armhf build — are the shape they are because the easy answer
+was unavailable and the constraint made us think.
+
+The rest of what Copal believes, stated as plainly as I can:
+
+- **The machine must explain itself, offline, in its own words.** A key list
+  written from the same block that writes the bindings. Eleven guides on the
+  disk. A menu branch listing what you have *not* installed, because software
+  you do not have is not discoverable by definition. Copal targets machines that
+  are sometimes not on a network, and a system whose documentation lives on
+  someone else's server is not a system you own.
+- **Nothing is hidden, and nothing is precious.** Every deviation from upstream
+  is a legible line in a generating stage rather than an edit smuggled into a
+  vendored file. The installer is re-runnable. No binaries are tracked. You are
+  meant to read it, and if you read it, it should hold up.
+- **Degrade honestly and say so.** quickshell → waybar, wofi → dmenu, a
+  graphical editor → nvim in a terminal. Every fallback is written down at the
+  point where it is chosen, so what you have got is never a mystery. A silent
+  fallback is a lie the system tells about itself.
+- **A wrong answer is worse than a refusal.** The i3 key list served on the
+  Hyprland desktop was worse than no key list, because it was believed.
+- **Write down what a decision cost.** The lost arrow keys in § IV-A appear in
+  the source, in the on-machine key list and in the handbook. Not because the
+  cost is large, but because a design that hides its costs cannot be audited by
+  the next person — who is, most of the time, the same person a year later.
+
+### Where the three actually disagree
+
+| | Antiquity | Omarchy | Copal |
+|---|---|---|---|
+| The desktop is… | a painting you can interact with | a finished set of decisions | a machine you can read |
+| First loyalty | the aesthetic thesis | coherence across the whole stack | the constraint, and the truth about it |
+| Configuration is… | a canvas to be redrawn | a default to live inside and then edit | a text file with an escape hatch |
+| Beauty is… | the point | a feature of the system, applied everywhere | welcome, if it fits in 512 MB and degrades honestly |
+| Failure mode | a shell that cannot be packaged | curation that assumes your hardware | an essay where a sentence would do |
+
+That last cell is not false modesty. This project's characteristic mistake is
+explaining at length in a comment what a better-designed interface would not
+have needed explained. Every one of the twelve principles in § VI is, read
+uncharitably, a note-to-self about that.
+
+### What I would tell someone starting a desktop for capable users
+
+Pick a population and say it out loud, because "everyone" resolves to the
+mainstream method by default and you will remove capability without noticing.
+Then: keep every verb; make the dangerous ones distinguishable rather than
+absent; give one thing one implementation and as many doors as it needs;
+put things in fixed places so hands can learn them; make what you *don't* have
+as discoverable as what you do; and write the cost down wherever you trade.
+
+Then use it for a week on the worst hardware you support. That week will tell
+you more than this report did.
+
 ## References
 
 [1] P. Richeson, "Bringing up a minimal TUI/GUI windowing environment on the
