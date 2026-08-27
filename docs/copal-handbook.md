@@ -104,6 +104,7 @@ runs as the `user` account. The installer says so at every handover, and
 | `COPALBOOT/copal-auto` | Present only during an automatic install. Records progress; delete it to stop resuming |
 | `COPALBOOT/copal-git` | The name and email for git commits, asked in stage 1 and applied by stage 7. Plain `key=value`; editable from the Mac |
 | `lab-report.md` | The lab report (IEEE format) — procedure, results, findings |
+| `interface-report.md` | The design position (IEEE format) — simplifying the interface for capable users, and the twelve rules the desktop is built to |
 | `work/` | Scratch directory the script downloads and extracts into |
 
 The split matters: macOS cannot create ext4, so the card can only be taken so

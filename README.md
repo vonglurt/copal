@@ -1905,6 +1905,7 @@ bindings, the account model, the SD-card wear analysis — is in
 | `docs/copal-handbook.md` | The original Copal handbook. Alpine, the card, the stages, the desktop, reference |
 | `docs/lab-report.md` | Bring-up record for the Pi Zero 1 and Zero 2 W, IEEE format |
 | `docs/development-report.md` | Architecture, verification method and results, known defects |
+| `docs/interface-report.md` | Interface simplification for the technically capable user — the design position, IEEE format |
 
 ## Repository policy
 
