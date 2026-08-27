@@ -1424,6 +1424,23 @@ unrecoverable one costs a finger rather than occupying a key of its own that can
 be hit by accident. Nothing is bound to **Super + `** — an earlier arrangement
 put *close* there, and it is gone.
 
+### Scrolling goes the way the content goes
+
+Both desktops scroll *naturally*: roll the wheel away from you and the content
+moves away, the way it does on a Mac and on every phone. libinput's own default
+is the opposite — the wheel moves the scrollbar — and on the usual setup here,
+a VM on a Mac, the host had already flipped it and the guest was flipping it
+back mid-gesture.
+
+| Session | File | Setting |
+|---|---|---|
+| Hyprland | `~/.config/hypr/hyprland.conf` | `natural_scroll` — twice, once in `input` for the wheel and once in `touchpad` for fingers |
+| X / i3 | `/etc/X11/xorg.conf.d/30-scrolling.conf` | `Option "NaturalScrolling"`, for pointers and touchpads separately |
+
+Set them to `false` for the old direction; deleting the X file does the same,
+since `false` is what libinput does unconfigured. Change both if you use both
+sessions — nothing keeps them in step for you.
+
 ### One menu, two sides
 
 Super+Space used to open `wofi --show drun` — a flat searchable list of

@@ -7073,6 +7073,46 @@ stage_gui() {
     say "Installing the X server"
     setup-xorg-base
     apk add xf86-input-libinput
+
+    # SCROLLING DIRECTION, which X gets backwards on every machine this
+    # script targets. libinput's default is the 1990s one: the wheel moves
+    # the SCROLLBAR, so rolling it away from you sends the page up. Every
+    # touch device made since, and macOS since Lion, moves the CONTENT
+    # instead -- roll away, the page goes away from you -- and this desktop
+    # is most often run in a VM on a Mac, where the host has already done it
+    # that way and the guest then undoes it halfway down the same gesture.
+    #
+    # Set for pointers and touchpads alike, and the two need separate
+    # InputClass sections: MatchIsTouchpad and MatchIsPointer are both
+    # "matches" rather than a filter, so one section carrying both options
+    # would apply the touchpad's to a mouse that has no touchpad options.
+    mkdir -p /etc/X11/xorg.conf.d
+    cat > /etc/X11/xorg.conf.d/30-scrolling.conf <<'XORGSCROLL'
+# Written by copal-init.sh, stage 4.
+#
+# Natural scrolling: rolling the wheel (or pushing two fingers) away from you
+# moves the CONTENT away from you, which is what the page appears to follow.
+# This is macOS's default and every phone's, and it is the direction the host
+# has already applied when this is a VM on a Mac.
+#
+# To go back to the old direction, set both to "false" -- or delete this file,
+# because false is what libinput does with no configuration at all.
+Section "InputClass"
+    Identifier  "copal natural scrolling (pointers)"
+    MatchIsPointer  "on"
+    Driver      "libinput"
+    Option      "NaturalScrolling" "true"
+EndSection
+
+Section "InputClass"
+    Identifier  "copal natural scrolling (touchpads)"
+    MatchIsTouchpad "on"
+    Driver      "libinput"
+    Option      "NaturalScrolling" "true"
+    Option      "Tapping" "on"
+EndSection
+XORGSCROLL
+    note "/etc/X11/xorg.conf.d/30-scrolling.conf -- scrolling direction lives here"
     if is_vm && [ -e /dev/dri/card0 ]; then
         say "This is a guest with a KMS display -- using modesetting, not fbdev"
         # The DRI drivers. Without them modesetting still works and is still
@@ -11721,8 +11761,19 @@ input {
     kb_layout = us
     follow_mouse = 1
     sensitivity = 0
+    # SCROLLING DIRECTION. Upstream's config says false here and so did this
+    # one, which is libinput's own default: the wheel moves the SCROLLBAR, so
+    # rolling away sends the page up. Every touch device and every Mac moves
+    # the CONTENT instead, and this desktop is most often a VM on a Mac --
+    # where the host has already applied that direction and the guest was
+    # undoing it again. Both lines, because a mouse does not read the
+    # touchpad block: the outer one is the wheel, the inner one is fingers.
+    #
+    # Set both to false to go back. Stage 4's X session has the same setting
+    # in /etc/X11/xorg.conf.d/30-scrolling.conf, and the two should agree.
+    natural_scroll = true
     touchpad {
-        natural_scroll = false
+        natural_scroll = true
     }
 }
 
