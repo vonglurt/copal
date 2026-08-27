@@ -159,7 +159,9 @@ Full automatic answers every question except these:
    `~/code`. One URL per prompt, Enter on an empty one to finish, Enter on the
    first one to skip. Stage 7 clones them while the install still has a
    network. `make answers` can settle this in advance, in which case stage 1
-   only shows the list. See `copal-guide code` on the machine.
+   only shows the list. See `copal-guide code` on the machine. Copal itself is
+   cloned to `~/code/copal` whatever you answer here — the repository the
+   machine is built from, as a checkout you can edit and push.
 3. **A root password.** `setup-alpine` asks for it, and there is no answer-file
    variable for a password — this is the one thing a full-automatic install
    cannot fill in for you.
@@ -1364,7 +1366,7 @@ these stay.
 | `copal-install` · `copal-guide` | Fetch one catalogue entry; read the plain-text guides |
 | `copal-logs` · `copal-debug` | The log collection, and the switch that is off by default |
 | `copal-ssh` · `copal-logflush` · `copal-splash` | SSH policy; RAM logs down to the card; the key bindings on the wallpaper |
-| `copal-code` | The checkouts in `~/code` — the list, and cloning or pulling from it |
+| `copal-code` | The checkouts in `~/code` — the list, and cloning or pulling from it. `~/code/copal` is always there, listed or not |
 | `snapshot` · `mountdsk` | rsync snapshots; mount a disk image |
 
 ### Why one file, and not packages

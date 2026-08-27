@@ -2479,6 +2479,33 @@ IDFILE="$BOOT/copal-git"
 # Mac does arrive as a string, in PI_GIT_REPOS; this is where the answer lives.
 REPOFILE="$BOOT/copal-repos"
 
+# COPAL ITSELF, as a checkout you can edit.
+#
+# The machine is built by a shell script that is also a git repository, and
+# until now the script arrived on the card as a file and the repository did
+# not arrive at all. That is the wrong shape for what this system is: every
+# guide in it says "edit copal-prep.sh", and the copy on the boot partition is
+# an artefact -- editing it changes this one card and nothing else, and the
+# next `make pi4` overwrites it.
+#
+# So ~/code/copal is a real clone, on every machine, cloned by stage 7 beside
+# whatever else was listed and pulled by every later `copal-code`. Change it
+# there, commit it there, push it from there.
+#
+# https and not the ssh URL git uses on the Mac: an ssh remote needs a key THIS
+# MACHINE holds, which is not the key copal-prep.sh puts on the card (that one
+# authorises you into the machine, not the machine out to GitHub). A clone that
+# works unattended is worth more than one that is ready to push; `git remote
+# set-url origin git@github.com:vonglurt/copal.git` once, on the machine, is
+# the whole of the difference.
+#
+# It is NOT written into copal-repos. The list in that file is the answer
+# somebody gave in stage 1, and Copal is not their answer -- it is the floor
+# under it. Keeping it out means "I said none" still records none, and means
+# `copal-code rm copal` cannot leave a machine unable to rebuild itself by
+# quietly removing the thing it is built from.
+COPAL_SELF_URL="https://github.com/vonglurt/copal.git"
+
 # Full-automatic install state. Deliberately on the FAT boot partition and
 # nowhere else: it is the one filesystem that exists at every point in this
 # install -- before p2 is formatted, while / is still a tmpfs, and after
@@ -4870,7 +4897,7 @@ repos_ask() {
                 && note "from the card -- stage 7 clones these into ~/code:"
             printf '%s\n' "$_list" | while read -r _r; do note "  $_r"; done
         else
-            note "auto: none proposed on the card -- ~/code will be created empty"
+            note "auto: none proposed on the card -- ~/code gets Copal itself"
         fi
         return 0
     fi
@@ -4879,6 +4906,10 @@ repos_ask() {
     Anything listed here is cloned into ~/code by stage 7, while the install
     still has a network and you are still nearby. It is not a package list
     and nothing is built from it -- it is 'git clone', once, per line.
+
+    Copal itself is cloned there whatever you say here -- ~/code/copal, the
+    repository this machine is built from, as a checkout you can edit and
+    push. It is not part of this list and does not need to be typed.
 
     https URLs work with no further setup. An ssh URL needs a key that THIS
     MACHINE holds, which is not the key on the card -- that one authorises
@@ -4924,7 +4955,7 @@ MSG
 
     _list=$(printf '%s\n' "$_list" | awk 'NF')
     if [ -z "$_list" ]; then
-        note "Nothing listed -- ~/code will be created empty."
+        note "Nothing listed -- ~/code gets Copal itself and nothing else."
         note "Add to it later with: copal-code add URL"
         # An empty answer is still an answer: recording it stops the card's
         # proposal from being cloned behind the back of somebody who just
@@ -5912,6 +5943,36 @@ MSG
 #
 # Flathub publishes com.brave.Browser for x86_64 and aarch64 only. On armhf
 # there is nothing to install and saying so is more use than trying.
+# $BROWSER, the convention every CLI tool follows to open a URL -- Claude
+# Code's sign-in link among them, but also git's web commands, `xdg-open` on a
+# system with no desktop file database, and anything else that prints a link
+# rather than showing one.
+#
+# WRITTEN WHENEVER A BROWSER IS INSTALLED, not only when Claude Code is. It
+# used to live inside install_claude_code, which meant a machine that declined
+# the agent had a browser and no $BROWSER, and every tool on it printed an
+# xdg-open error at the one moment a link mattered.
+#
+# Brave leads the order. On a full install it is the browser the level chose,
+# and where somebody has installed it by hand beside another one it is still
+# the answer they went out of their way to get. Everything after it is the old
+# order: the real engines, then the small ones, then the text ones.
+set_default_browser() {
+    for _b in brave firefox-esr firefox chromium badwolf netsurf dillo links; do
+        command -v "$_b" >/dev/null 2>&1 || continue
+        mkdir -p /etc/profile.d
+        cat > /etc/profile.d/browser.sh <<BROWSERENV
+# Written by copal-init.sh. The browser CLI tools should open URLs with --
+# Claude Code's sign-in link among them.
+export BROWSER=$_b
+BROWSERENV
+        chmod +x /etc/profile.d/browser.sh
+        note "\$BROWSER=$_b -- the browser CLI tools will open links in"
+        return 0
+    done
+    return 1
+}
+
 install_brave() {
     say "Brave"
     _arch=$(apk --print-arch 2>/dev/null || echo unknown)
@@ -5941,7 +6002,33 @@ install_brave() {
 
 MSG
     have_space_mb 1200 "Brave and its Flatpak runtime" || return 0
-    confirm "Install Brave as a Flatpak?" || { note "Skipped."; return 0; }
+    confirm "Install Brave?" || { note "Skipped."; return 0; }
+
+    # THE PUBLISHED ONE-LINER, ACTUALLY RUN. Not because it is expected to
+    # work -- everything above says why it does not on Alpine -- but because
+    # it is the instruction Brave gives, it is the thing to try first, and it
+    # is cheap: the script detects the package manager and exits within a
+    # second or two. If Brave ever adds apk, or this machine is one where the
+    # script finds something it can use, that is the route to take and no
+    # Flatpak runtime is needed.
+    #
+    # Piped to sh, which is what the instruction says, and guarded by the
+    # `command -v brave` check afterwards rather than by the script's exit
+    # status: a shell script that prints "could not find a supported package
+    # manager" and exits 0 is not a Brave installation, and the only honest
+    # test of whether a browser was installed is whether it is there.
+    if command -v curl >/dev/null 2>&1 || try_add curl; then
+        say "Trying Brave's own installer"
+        note "curl -fsS https://dl.brave.com/install.sh | sh"
+        curl -fsS https://dl.brave.com/install.sh | sh || true
+        if command -v brave-browser >/dev/null 2>&1 || command -v brave >/dev/null 2>&1; then
+            note "installed by Brave's installer: $(command -v brave-browser 2>/dev/null || command -v brave)"
+            set_default_browser || true
+            return 0
+        fi
+        note "As expected on Alpine: apk is not one of the package managers"
+        note "that script supports. Falling back to the Flatpak, which works."
+    fi
 
     try_add flatpak || { warn "could not install flatpak"; return 1; }
     # --if-not-exists so a re-run is not an error. flathub is not configured by
@@ -5959,11 +6046,20 @@ MSG
         printf '#!/bin/sh\nexec flatpak run com.brave.Browser "$@"\n' > /usr/local/bin/brave
         chmod 0755 /usr/local/bin/brave
         note "or just:  brave"
+        set_default_browser || true
     else
         warn "the Flatpak install did not complete -- usually network or space"
         note "Try again with: flatpak install flathub com.brave.Browser"
         return 1
     fi
+}
+
+# The install level chosen in the guided install ('server', 'medium', 'full'),
+# recorded on the boot partition by pick_level so it survives the stage 3
+# reboot. Empty on a machine driven from the menu, which never chose one.
+copal_profile() {
+    [ -f "$BOOT/copal-profile" ] || return 0
+    tr -d '[:space:]' < "$BOOT/copal-profile" 2>/dev/null
 }
 
 install_modern_browser() {
@@ -5987,20 +6083,67 @@ install_modern_browser() {
       v   Brave         Chromium with the ad and tracker blocking built in.
                         Not an apk -- it arrives as a Flatpak, which brings a
                         glibc runtime with it (~600 MB all told). See below.
+                        The full-monty level installs this one AND BadWolf.
       n   None          keep Dillo/NetSurf/Links and move on
 
 MSG
-            # The automatic install picks BadWolf. It is the only one of the
-            # three that is a defensible unattended choice on a board this
-            # size, and it is the same answer on every architecture -- so an
-            # auto install behaves identically whichever Pi ran it.
-            if [ "${AUTO:-0}" = 1 ]; then AUTO_DEFAULT=b; fi
+            # What the automatic install picks depends on the level, because
+            # the levels are a statement about how much machine there is.
+            #
+            # MEDIUM and SERVER get BadWolf: the only one of these that is a
+            # defensible unattended choice on a board that might be a Zero 2 W,
+            # and the same answer on every architecture -- so an auto install
+            # at that level behaves identically whichever Pi ran it.
+            #
+            # FULL MONTY gets BOTH: Brave and BadWolf. That level already
+            # means Hyprland, a compositor, a themed desktop and the
+            # aarch64/x86_64 hardware to run them; a machine being furnished
+            # that far is a machine being used as a desktop, and the desktop
+            # browser is the one with the ad and tracker blocking already in
+            # it. Brave becomes $BROWSER and the browser you reach for.
+            #
+            # BadWolf goes on beside it and is not redundant. It is ~90 MB
+            # against Brave's ~600 MB with the Flatpak runtime, it starts in a
+            # fraction of the time, and it is a host-native apk rather than a
+            # sandboxed glibc userland -- so it is the one that still works
+            # when the Flatpak runtime is mid-update, when the machine is short
+            # of RAM, and when all that is wanted is to read one page. Two
+            # browsers with genuinely different costs is the point; two
+            # Chromiums would not be.
+            #
+            # Brave only where Flathub actually publishes it. 'full' on armv7
+            # lands here too (stage 16 declines itself later), and there is no
+            # Brave build for that architecture from any source, so it takes
+            # BadWolf alone like the other levels.
+            if [ "${AUTO:-0}" = 1 ]; then
+                case "$(copal_profile):$_arch" in
+                    full:x86_64|full:aarch64) AUTO_DEFAULT=v ;;
+                    *)                        AUTO_DEFAULT=b ;;
+                esac
+            fi
             ask "Choose [f/c/b/v/n]:"
             case "$REPLY" in
                 f|F) _br="firefox-esr"; _bin=firefox-esr ;;
                 c|C) _br="chromium";    _bin=chromium ;;
                 b|B) _br="badwolf";     _bin=badwolf ;;
-                v|V) install_brave; return 0 ;;
+                v|V) install_brave
+                     # Interactive, 'v' means Brave and only Brave: the person
+                     # is at the keyboard, they picked one from a list of five,
+                     # and stage 4 re-runs if they want another.
+                     [ "${AUTO:-0}" = 1 ] || return 0
+                     # Unattended at the full level, BadWolf goes on as well --
+                     # deliberately when Brave worked (see above: the small,
+                     # host-native, fast-starting one beside the big sandboxed
+                     # one) and necessarily when it did not, because a
+                     # full-monty desktop with no browser at all is the one
+                     # outcome worth ruling out.
+                     if command -v brave >/dev/null 2>&1 \
+                        || command -v brave-browser >/dev/null 2>&1; then
+                         note "and BadWolf beside it -- small, native, fast to start"
+                     else
+                         warn "Brave did not install -- BadWolf instead"
+                     fi
+                     _br="badwolf"; _bin=badwolf ;;
                 *)   note "Skipped."; return 0 ;;
             esac ;;
         armhf)
@@ -6034,6 +6177,7 @@ MSG
     if apk add "$_br"; then
         note "installed: $(command -v "$_bin" 2>/dev/null || echo "$_br")"
         note "It appears in the menu (Super+z) and in dmenu (Super+space)."
+        set_default_browser || true
     else
         warn "apk could not install $_br on $_arch."
         note "Check the name with: apk search -v $_br"
@@ -12263,11 +12407,12 @@ clone_user_repos() {
 
     _repos=$(repos_current)
     if [ -z "$_repos" ]; then
-        note "nothing listed -- ~/code is there and empty."
+        note "nothing listed -- Copal itself is the only checkout."
         note "Add to it with: doas copal-code add https://github.com/you/thing"
-        return 0
+    else
+        note "$(printf '%s\n' "$_repos" | wc -l | tr -d ' ') listed, plus Copal itself"
     fi
-    note "$(printf '%s\n' "$_repos" | wc -l | tr -d ' ') to clone -- git's own output follows"
+    note "git's own output follows"
 
     # su, then a plain run as the user. If su is not available or refuses, say
     # so and leave the list in place: the user can run copal-code themselves at
@@ -12302,10 +12447,19 @@ install_copal_code() {
 #                           thing a list editor should do.
 #   copal-code path         where the list is
 #
+# ~/code/copal is always one of them, listed or not: the repository this
+# machine was built from, as a checkout you can edit, commit and push. It is
+# not in the list file and 'rm' will not remove it. Point it somewhere else --
+# a fork, your own remote -- with 'git remote set-url' in the checkout itself.
+#
 # Rewritten by copal-init.sh every time stage 7 runs.
 set -eu
 
 CODE="$HOME/code"
+
+# Copal itself. Substituted from $COPAL_SELF_URL when this file is written, so
+# there is one URL in copal-init.sh and not two that can disagree.
+SELF="@COPAL_SELF_URL@"
 
 say()  { printf '\033[36m==>\033[0m %s\n' "$*"; }
 note() { printf '    %s\n' "$*"; }
@@ -12339,6 +12493,27 @@ name_of() {
     printf '%s\n' "$_n"
 }
 
+# The list, with Copal itself in front of it.
+#
+# In FRONT, so that on a fresh machine the thing every guide refers to is the
+# first clone rather than the last. Skipped if the list already names something
+# that would land in the same directory: somebody who listed their own fork of
+# Copal meant their fork, and upstream should not quietly win the name.
+all_repos() {
+    _sn=$(name_of "$SELF")
+    _r=$(repos)
+    _have=0
+    for _u in $_r; do
+        if [ "$(name_of "$_u")" = "$_sn" ]; then _have=1; fi
+    done
+    [ "$_have" = 1 ] || printf '%s\n' "$SELF"
+    [ -n "$_r" ] && printf '%s\n' "$_r"
+    return 0
+}
+
+# Is this URL in the file, as opposed to being the built-in one?
+listed() { repos | grep -qxF "$1"; }
+
 need_root() {
     [ "$(id -u)" = 0 ] || {
         echo "That edits $LIST on the boot partition. Re-run as: doas copal-code $*" >&2
@@ -12356,8 +12531,7 @@ sync)
         echo "Run this as the user who owns the checkouts, not as root." >&2
         exit 1
     fi
-    _r=$(repos)
-    [ -n "$_r" ] || { say "Nothing listed in ${LIST:-(no list found)}"; exit 0; }
+    _r=$(all_repos)
     mkdir -p "$CODE"
     _fail=0
     # A for loop and not `| while read`, because the pipeline would run the
@@ -12382,14 +12556,13 @@ sync)
     exit "$_fail" ;;
 list)
     say "${LIST:-(no list found)}"
-    _r=$(repos)
-    [ -n "$_r" ] || { note "(empty)"; exit 0; }
-    for _url in $_r; do
+    for _url in $(all_repos); do
         _dir="$CODE/$(name_of "$_url")"
         if [ -d "$_dir/.git" ]; then _st="cloned"
         elif [ -e "$_dir" ]; then   _st="IN THE WAY -- not a checkout"
         else                        _st="not cloned yet"
         fi
+        listed "$_url" || _st="$_st, built in"
         printf '    %-46s %s\n' "$_url" "$_st"
     done ;;
 add)
@@ -12412,6 +12585,16 @@ rm)
     [ "$#" -gt 0 ] || { echo "usage: copal-code rm NAME [NAME...]" >&2; exit 2; }
     need_root rm "$@"
     for _u in "$@"; do
+        # Copal itself is not in the file, so there is nothing to remove and
+        # the next sync would clone it again. Say that, rather than reporting
+        # a removal that did not happen.
+        if [ "$_u" = "$SELF" ] || [ "$_u" = "$(name_of "$SELF")" ]; then
+            if ! listed "$_u"; then
+                note "copal is built in, not listed -- nothing to remove."
+                note "The checkout is yours; 'git remote set-url' repoints it."
+                continue
+            fi
+        fi
         # By URL or by the directory name it produces, because the name is
         # what you can see in ~/code and the URL is what you would have to
         # go and look up.
@@ -12429,9 +12612,13 @@ rm)
 path)
     printf '%s\n' "${LIST:-}" ;;
 *)
-    sed -n '4,20p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+    sed -n '4,19p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac
 COPALCODE
+    # One URL, defined once, in copal-init.sh. The heredoc above is quoted --
+    # deliberately, it is full of $ that must survive verbatim -- so the one
+    # value that does need substituting is put in afterwards.
+    sed -i "s|@COPAL_SELF_URL@|$COPAL_SELF_URL|" /usr/local/bin/copal-code
     chmod 0755 /usr/local/bin/copal-code
     note "/usr/local/bin/copal-code -- the list, and cloning from it"
 }
@@ -12509,23 +12696,12 @@ MSG
         return 0
     fi
 
-    # $BROWSER is the convention CLI tools follow to open a URL. Point it at
-    # whatever stage 4 actually installed, in preference order, so the sign-in
-    # link opens rather than printing an error about xdg-open.
-    for _b in firefox-esr firefox chromium badwolf netsurf dillo; do
-        if command -v "$_b" >/dev/null 2>&1; then
-            cat > /etc/profile.d/browser.sh <<BROWSERENV
-# Written by copal-init.sh. The browser CLI tools should open URLs with --
-# Claude Code's sign-in link among them.
-export BROWSER=$_b
-BROWSERENV
-            chmod +x /etc/profile.d/browser.sh
-            note "\$BROWSER=$_b (for the sign-in link)"
-            break
-        fi
-    done
-    command -v "$_b" >/dev/null 2>&1 || \
-        note "no browser installed yet -- run stage 4, or paste the sign-in URL"
+    # Point $BROWSER at whatever stage 4 actually installed, so the sign-in
+    # link opens rather than printing an error about xdg-open. Stage 4 does
+    # this itself now; repeated here because stage 7 may be the first run on a
+    # machine whose browser arrived some other way.
+    set_default_browser \
+        || note "no browser installed yet -- run stage 4, or paste the sign-in URL"
     note "Sign in by running:  claude      (as $PI_USER, not as root)"
     note "Credentials land in ~/.claude, so run it as the account you use."
     note "If it runs out of memory: NODE_OPTIONS=--max-old-space-size=256 claude"
@@ -12791,7 +12967,29 @@ GUIDE
       ~/dev/hello    the worked example stage 7 writes. A C file, a Makefile
                      and a breakpoint to put the cursor on. It exists to prove
                      the toolchain works; delete it once it has.
-      ~/code         your repositories. Nothing here was written by Copal.
+      ~/code         your repositories, plus Copal itself.
+
+   COPAL ITSELF
+
+   ~/code/copal is a real git checkout of the repository this machine was
+   built from, cloned by stage 7 on every machine whether or not anything
+   was listed in stage 1. The copy on the boot partition -- /boot/copal-
+   init.sh -- is an artefact: editing it changes this one card, and the next
+   'make' from the Mac overwrites it. The checkout is the thing to edit.
+
+      cd ~/code/copal
+      $EDITOR copal-prep.sh          # the whole distribution is this file
+      git commit -am 'what I changed'
+
+   It is cloned over https so that it works with no key on the machine. To
+   push, point it at your own remote or at ssh:
+
+      git remote set-url origin git@github.com:you/copal.git
+
+   It is not in /boot/copal-repos and 'copal-code rm copal' will not remove
+   it -- it is the floor under the list rather than part of it. List your own
+   fork of Copal in stage 1 and that fork is cloned instead; the name in
+   ~/code is what decides, so only one of them ever lands there.
 
    WHERE THE LIST COMES FROM
 
@@ -12805,7 +13003,8 @@ GUIDE
 
       copal-code              clone anything not here yet, and 'git pull'
                               anything that is. Safe to run repeatedly.
-      copal-code list         the list, and which of it is on disk
+      copal-code list         the list, and which of it is on disk. Copal's
+                              own line is marked 'built in'
       copal-code add URL      add to the list        (needs doas)
       copal-code rm NAME      remove from the list   (needs doas). By URL or
                               by the directory name. The CHECKOUT is left
