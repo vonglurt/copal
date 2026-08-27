@@ -96,7 +96,8 @@ list (upstream README) was measured against pkgs.alpinelinux.org for
 | Quickshell > 0.3.0 | **not packaged** (absent from edge, too) | the radial shell, widgets and launcher cannot be apk-installed; configs installed anyway, launcher falls back to wofi (§V-D) |
 | hyprpaper | **not packaged** | `swaybg` (packaged) paints the wallpaper, behind `copal-wallpaper` |
 | hyprshot | **not packaged** | `grim` + `slurp` (packaged) behind `copal-shot` |
-| kitty | 0.47.0-r0 | used as vendored; font substitution only (§V-E) |
+| kitty | 0.47.0-r0 | **no longer the desktop's terminal.** Installed as an optional; `foot` replaces it on the spine (§III-1) because kitty is OpenGL-only and dies within a second on a compositor rendering in llvmpipe. Its config is still installed and still gets the font substitution (§V-E) |
+| foot | packaged (community) | **the terminal `$terminal` opens.** Wayland-native, renders on the CPU. Upstream ships no config for it; stage 16 writes a `foot.ini` translating the theme's `kitty/hades.conf` palette (§V-E) |
 | mako | 1.11.0-r0 | used as vendored, byte-identical |
 | nemo | 6.6.4-r0 | used; `pcmanfm` substituted when absent |
 | hyprpolkitagent | 0.1.3-r2 | present; upstream starts it via `systemctl --user`, which does not exist here → exec'd directly |
@@ -118,7 +119,11 @@ For reference, the complete chain stage 16 performs, in order. This is the
 "method of installation" in the OpenRC world, and each item exists because
 its absence has a specific failure:
 
-1. `apk add hyprland kitty mako` — the spine; hard failure stops the stage.
+1. `apk add hyprland foot mako` — the spine; hard failure stops the stage.
+   `kitty` follows as an *optional*: upstream's terminal needs OpenGL, and on
+   a machine compositing in software it opens and exits inside a second,
+   which on a fresh desktop means no way to type at all. A terminal that
+   cannot fail is worth more on the spine than the one in the screenshots.
 2. **Seat**: `apk add seatd`; `rc-update add seatd default`;
    `rc-service seatd start`; user added to `seat`, `input`, `video` groups.
    Without seatd the compositor cannot open `/dev/dri/card0` or the input
@@ -337,7 +342,8 @@ pre-existing directory moved aside to `~/copal-theme-backups/`.
 |---|---|---|
 | `~/.config/hypr/` | Hyprland | window frames, gaps, corners, blur, shadow, animations, every key binding, what autostarts |
 | `~/.config/quickshell/` | `qs` (quickshell) | the whole shell: taskbar, sidebar, menus, launcher, widgets, settings window, colour schemes |
-| `~/.config/kitty/` | kitty | the terminal — palette, font, padding, transparency |
+| `~/.config/foot/` | foot | **the terminal** — palette, font, padding, transparency |
+| `~/.config/kitty/` | kitty | the same, for kitty, where it is installed and the GPU is real |
 | `~/.config/mako/` | mako | notification popups |
 
 The division matters when something looks wrong: **if it has a window border,

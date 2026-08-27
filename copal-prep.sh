@@ -572,10 +572,32 @@ CFG_GIT_EMAIL=$(sanitise_conf_value "${CFG_GIT_EMAIL:-}")
 # more elaborate is needed, and a list that survives being one shell word is a
 # list copal.conf can carry without a second file on the card.
 #
-# There is no default. Guessing which repositories somebody wants on a machine
-# is not a thing this can do, and cloning something unasked-for onto a 512 MB
-# board is worse than asking. Set it in answers.txt (COPAL_GIT_REPOS), or in
-# the environment for one build:
+# THE DEFAULT IS THIS ACCOUNT'S WORK. It used to be empty, on the reasoning
+# that guessing which repositories somebody wants is not a thing this can do.
+# That reasoning holds for a stranger's card and not for this one: the machine
+# exists to work on these, and arriving without them means doing by hand, at
+# the first login, the one job the install was already positioned to do.
+#
+# Still only a PROPOSAL. Stage 1 lists them and Enter accepts; answering the
+# prompt replaces the list outright, and an empty answer is recorded as an
+# empty answer. Nothing here is forced on a machine whose owner said no.
+#
+# copal itself is NOT in this list -- it is the built-in floor under it, see
+# COPAL_SELF_URL in the init script -- so it arrives whatever is answered here
+# and does not need to be typed twice.
+#
+# https form, because that is the one that works with no key anywhere. It is
+# not necessarily the form that gets used: copal-code tries the ssh remote
+# first and falls back to this, so a machine holding a key pushes without
+# further setup and a machine holding none still clones. See clone_one().
+CFG_GIT_REPOS="${CFG_GIT_REPOS:-\
+https://github.com/vonglurt/urfinkel.git \
+https://github.com/vonglurt/ascitty.git \
+https://github.com/vonglurt/codexofconquest.git \
+https://github.com/vonglurt/birdshot.git}"
+
+# Override it in answers.txt (COPAL_GIT_REPOS), or in the environment for one
+# build:
 #
 #   CFG_GIT_REPOS="https://github.com/you/dotfiles https://github.com/you/site" make pi4
 #
@@ -6083,7 +6105,7 @@ install_modern_browser() {
       v   Brave         Chromium with the ad and tracker blocking built in.
                         Not an apk -- it arrives as a Flatpak, which brings a
                         glibc runtime with it (~600 MB all told). See below.
-                        The full-monty level installs this one AND BadWolf.
+                        The full-monty level installs this one unattended.
       n   None          keep Dillo/NetSurf/Links and move on
 
 MSG
@@ -6095,21 +6117,18 @@ MSG
             # and the same answer on every architecture -- so an auto install
             # at that level behaves identically whichever Pi ran it.
             #
-            # FULL MONTY gets BOTH: Brave and BadWolf. That level already
-            # means Hyprland, a compositor, a themed desktop and the
-            # aarch64/x86_64 hardware to run them; a machine being furnished
-            # that far is a machine being used as a desktop, and the desktop
-            # browser is the one with the ad and tracker blocking already in
-            # it. Brave becomes $BROWSER and the browser you reach for.
+            # FULL MONTY gets Brave. That level already means Hyprland, a
+            # compositor, a themed desktop and the aarch64/x86_64 hardware to
+            # run them; a machine being furnished that far is a machine being
+            # used as a desktop, and the desktop browser is the one with the
+            # ad and tracker blocking already in it. Brave becomes $BROWSER.
             #
-            # BadWolf goes on beside it and is not redundant. It is ~90 MB
-            # against Brave's ~600 MB with the Flatpak runtime, it starts in a
-            # fraction of the time, and it is a host-native apk rather than a
-            # sandboxed glibc userland -- so it is the one that still works
-            # when the Flatpak runtime is mid-update, when the machine is short
-            # of RAM, and when all that is wanted is to read one page. Two
-            # browsers with genuinely different costs is the point; two
-            # Chromiums would not be.
+            # ONE graphical browser from this stage, not two. BadWolf is
+            # installed here only if Brave could not be -- see the 'v' branch
+            # below -- because a full desktop with no browser at all is the
+            # outcome worth ruling out, and nothing else is. The second engine
+            # this level gets is Firefox ESR, from the stage 12 catalogue,
+            # which is where a browser that is merely wanted belongs.
             #
             # Brave only where Flathub actually publishes it. 'full' on armv7
             # lands here too (stage 16 declines itself later), and there is no
@@ -6127,22 +6146,21 @@ MSG
                 c|C) _br="chromium";    _bin=chromium ;;
                 b|B) _br="badwolf";     _bin=badwolf ;;
                 v|V) install_brave
-                     # Interactive, 'v' means Brave and only Brave: the person
-                     # is at the keyboard, they picked one from a list of five,
-                     # and stage 4 re-runs if they want another.
-                     [ "${AUTO:-0}" = 1 ] || return 0
-                     # Unattended at the full level, BadWolf goes on as well --
-                     # deliberately when Brave worked (see above: the small,
-                     # host-native, fast-starting one beside the big sandboxed
-                     # one) and necessarily when it did not, because a
-                     # full-monty desktop with no browser at all is the one
-                     # outcome worth ruling out.
+                     # Brave is the browser this stage installs. Interactive,
+                     # 'v' means Brave and only Brave; unattended it is the
+                     # same, and Firefox ESR arrives later from stage 12.
                      if command -v brave >/dev/null 2>&1 \
                         || command -v brave-browser >/dev/null 2>&1; then
-                         note "and BadWolf beside it -- small, native, fast to start"
-                     else
-                         warn "Brave did not install -- BadWolf instead"
+                         return 0
                      fi
+                     # Brave can decline itself: not enough card for the
+                     # Flatpak runtime, no network, a failed install. With
+                     # nobody at the keyboard that would leave a full desktop
+                     # with no browser at all until stage 12, so BadWolf goes
+                     # on instead. Interactive, the person is there and stage
+                     # 4 re-runs.
+                     [ "${AUTO:-0}" = 1 ] || return 0
+                     warn "Brave did not install -- BadWolf instead"
                      _br="badwolf"; _bin=badwolf ;;
                 *)   note "Skipped."; return 0 ;;
             esac ;;
@@ -7964,8 +7982,11 @@ out()  { printf '%s\n' "$*" >> "$CSV"; }
 # come up through Xwayland if it happens to be installed and not at all if it
 # is not, so the Wayland session asks for the terminals that session has.
 if wayland; then
-    TERM_EMU="${TERMINAL:-$(have kitty && echo kitty \
-                            || (have foot && echo foot) \
+    # foot first, for the reason stage 16 installs it first: it is the one
+    # that comes up on a compositor drawing in software, which is the case
+    # this picker most needs to survive. kitty and alacritty both want GL.
+    TERM_EMU="${TERMINAL:-$(have foot && echo foot \
+                            || (have kitty && echo kitty) \
                             || (have alacritty && echo alacritty) \
                             || echo xterm)}"
 else
@@ -10608,12 +10629,36 @@ stage_hyprland() {
     # The compositor and the theme's programs. hyprland, kitty and mako are
     # the spine -- without any one of them this is not the Antiquity desktop,
     # so plain `apk add` and a hard stop, unlike everything after them.
-    say "Installing Hyprland, kitty and mako"
-    apk add hyprland kitty mako || {
+    # foot AND NOT KITTY is the terminal on the spine, which is a change from
+    # what the theme ships, and the reason is a machine this was tested on.
+    #
+    # kitty draws through OpenGL and nothing else. Where the compositor is
+    # already on llvmpipe -- a VM with no VirGL, a Pi through fbdev, any host
+    # that does not hand a GPU through -- kitty opens a window and exits
+    # within a second, taking the only terminal on a fresh desktop with it.
+    # 'copal-gpu' names that case; the desktop it leaves has no way to type.
+    #
+    # There is a second reason, visible in the theme's own kitty.conf: it sets
+    # background and foreground to the SAME #eaeaea and relies on
+    # background_opacity 0.2 plus compositor blur to make text legible. With
+    # software rendering and no blur that is white on white -- so even the
+    # kitty that does start is not the terminal in the screenshots.
+    #
+    # foot is Wayland-native, renders on the CPU by design, is about a tenth
+    # of the size, and starts in a fraction of the time. It is the terminal
+    # this desktop should have had. kitty goes on afterwards as an optional --
+    # it is what upstream themes, it is right on a machine with a real GPU,
+    # and nothing here uninstalls it -- but it is no longer what Super+Return
+    # opens and no longer what a failed install takes the desktop down with.
+    say "Installing Hyprland, foot and mako"
+    apk add hyprland foot mako || {
         warn "the core packages did not install -- see apk's message above."
         note "hyprland lives in the community repository; check /etc/apk/repositories."
         return 1
     }
+    # Optional, and after the spine: a machine with no kitty is a working
+    # desktop, which was the entire problem with it being on the spine.
+    add_optional kitty
 
     # The seat and the bus. A Wayland compositor needs permission to open the
     # DRM device and the input devices; on a systemd distro logind brokers
@@ -11132,7 +11177,11 @@ ANTIQWALL
 # way upstream's hyprland.lua does if you want more than one arranged.
 monitor = , preferred, auto, 1
 
-$terminal = kitty
+# foot, not the kitty upstream names here: kitty needs OpenGL and this desktop
+# may well be compositing in software ('copal-gpu' says which), where it opens
+# and exits within the second. foot renders on the CPU and always comes up.
+# kitty is still installed where it could be -- 'kitty' at this prompt.
+$terminal = foot
 $fileManager = FILEMGR_PLACEHOLDER
 $menu = copal-launcher
 
@@ -11613,6 +11662,76 @@ ANTIQPAPER
     install_home_file .config/hypr/hyprpaper.conf /tmp/hyprpaper.$$
     rm -f /tmp/hyprpaper.$$
 
+    # foot.ini -- the theme's palette, on the terminal this desktop opens.
+    #
+    # Upstream ships no foot config, so this is a translation of its
+    # kitty/hades.conf rather than a design of its own: the sixteen colours
+    # are copied across unchanged, and so is the 0.2 alpha.
+    #
+    # ONE DELIBERATE DEPARTURE, and it is the reason this file is written by
+    # hand instead of converted mechanically. hades.conf sets background AND
+    # foreground to the same #eaeaea and lets background_opacity 0.2 plus the
+    # compositor's blur pull the text out of it. That is a real look on a
+    # machine with a GPU; on one compositing in llvmpipe -- no blur, and the
+    # alpha flattened against whatever is behind -- it is white on white, a
+    # terminal you cannot read. So foreground takes #000000, which is not an
+    # invention: it is hades.conf's own selection_foreground, the colour the
+    # theme already puts on top of #eaeaea. Everything else is upstream's.
+    say "Writing ~/.config/foot/foot.ini (the theme's palette)"
+    cat > /tmp/footini.$$ <<'ANTIQFOOT'
+# foot.ini -- written by copal-init.sh (stage 16).
+#
+# The Linux Antiquity palette, translated from the theme's kitty/hades.conf.
+# foot is the terminal this desktop opens because it renders on the CPU:
+# where the compositor is on llvmpipe, kitty's OpenGL window does not survive.
+# 'copal-gpu' says which case this machine is.
+#
+# font: the theme asks for Maple Mono, which Alpine does not package.
+# JetBrains Mono is the packaged cousin, and the same substitution kitty gets.
+font=JetBrains Mono:size=11
+pad=8x8
+
+[colors]
+# alpha and background are upstream's. foreground is hades.conf's
+# selection_foreground: upstream's foreground is the same #eaeaea as the
+# background and is legible only under blur, which software rendering has not
+# got. See the note in copal-prep.sh.
+alpha=0.2
+background=eaeaea
+foreground=000000
+
+regular0=9400ff
+regular1=ff0000
+regular2=00ff5d
+regular3=AC82E9
+regular4=7b91fc
+regular5=fce40f
+regular6=8F56E1
+regular7=ff00ee
+
+bright0=92fcfa
+bright1=ff0000
+bright2=00ff5d
+bright3=AC82E9
+bright4=7b91fc
+bright5=fce40f
+bright6=8F56E1
+bright7=ff00ee
+
+selection-background=eaeaea
+selection-foreground=000000
+
+[scrollback]
+lines=3000
+
+[key-bindings]
+# The two kitty binds the theme documents, kept on the same keys.
+font-increase=Control+shift+plus
+font-decrease=Control+shift+minus
+ANTIQFOOT
+    install_home_file .config/foot/foot.ini /tmp/footini.$$
+    rm -f /tmp/footini.$$
+
     # The theme's kitty.conf asks for Maple Mono, which Alpine does not
     # package. kitty falls back to its default monospace without complaint,
     # but JetBrains Mono is a close cousin and IS packaged -- when it landed
@@ -11867,7 +11986,7 @@ CURSORENV
     (It will no longer FAIL, at least: XDG_RUNTIME_DIR is now set for every
     login shell, which is what start-hyprland used to die without.)
 
-    Super+Return terminal (kitty)   Super+d/Space launcher
+    Super+Return terminal (foot)    Super+d/Space launcher
     Super+e      file manager       Super+Shift+s screenshot region
     Super+q      close window       Super+f      fullscreen
     Super+1..9,0 workspaces         Super+Shift+p power down (copal-halt)
@@ -12514,6 +12633,72 @@ all_repos() {
 # Is this URL in the file, as opposed to being the built-in one?
 listed() { repos | grep -qxF "$1"; }
 
+# THE TWO FORMS OF THE SAME REPOSITORY, and why both are tried.
+#
+# A checkout you can push from needs an ssh remote and a key this machine
+# holds. A checkout that works on a machine with no key needs https. Which of
+# those is true is not knowable when the list is written -- it depends on
+# whether anybody has run ssh-keygen here yet and pasted the result into
+# GitHub -- so the list records one form and this tries both.
+#
+# ssh FIRST, because it is the one with the better ending: a clone that can be
+# pushed from without 'git remote set-url' later. https second, because it is
+# the one that always works. Whichever succeeds sets origin, and 'git remote
+# -v' in the checkout says which happened.
+#
+# Only for URLs where the other form can actually be derived -- a host and a
+# owner/name path. Anything else (a local path, a self-hosted git://, an
+# unfamiliar shape) is cloned exactly as written and not second-guessed.
+ssh_form() {   # https://host/owner/repo(.git) -> git@host:owner/repo.git
+    case "$1" in
+        https://*/*/*) : ;;
+        *) return 1 ;;
+    esac
+    _rest=${1#https://}
+    _host=${_rest%%/*}
+    _path=${_rest#*/}
+    case "$_path" in */*) : ;; *) return 1 ;; esac
+    printf 'git@%s:%s\n' "$_host" "${_path%.git}.git"
+}
+https_form() { # git@host:owner/repo(.git) -> https://host/owner/repo.git
+    case "$1" in
+        *@*:*/*) : ;;
+        *) return 1 ;;
+    esac
+    _hp=${1#*@}
+    _host=${_hp%%:*}
+    _path=${_hp#*:}
+    printf 'https://%s/%s\n' "$_host" "${_path%.git}.git"
+}
+
+# git over ssh, without the two ways it can hang an unattended install:
+# a host key it has never seen (asks yes/no) and a key with a passphrase or no
+# key at all (asks for a password). BatchMode turns both into a fast failure,
+# which is the whole point -- a failure here is not an error, it is the signal
+# to try https.
+GIT_SSH_BATCH="ssh -o BatchMode=yes -o StrictHostKeyChecking=accept-new -o ConnectTimeout=10"
+
+clone_one() {  # <url> <dir>
+    _u="$1"; _d="$2"
+    _ssh=$(ssh_form "$_u" 2>/dev/null || true)
+    _https=$(https_form "$_u" 2>/dev/null || true)
+    # The written form is always tried, and first if it is already ssh.
+    case "$_u" in
+        *@*:*/*) _first="$_u";  _second="$_https" ;;
+        *)       _first="${_ssh:-$_u}"; _second="${_ssh:+$_u}" ;;
+    esac
+    if [ "$_first" != "$_u" ]; then
+        note "trying ssh first: $_first"
+    fi
+    if GIT_SSH_COMMAND="$GIT_SSH_BATCH" git clone "$_first" "$_d"; then
+        return 0
+    fi
+    [ -n "$_second" ] || return 1
+    warn "$_first did not clone -- falling back to $_second"
+    note "(no key on this machine yet? 'copal-guide code' says how to add one)"
+    git clone "$_second" "$_d"
+}
+
 need_root() {
     [ "$(id -u)" = 0 ] || {
         echo "That edits $LIST on the boot partition. Re-run as: doas copal-code $*" >&2
@@ -12550,7 +12735,7 @@ sync)
             # --depth is NOT used. This is a machine to work on, and a shallow
             # clone cannot be pushed from without a fetch --unshallow first,
             # which is a trap to leave for somebody a month from now.
-            git clone "$_url" "$_dir" || { warn "clone failed: $_url"; _fail=1; }
+            clone_one "$_url" "$_dir" || { warn "clone failed: $_url"; _fail=1; }
         fi
     done
     exit "$_fail" ;;
@@ -13018,15 +13203,29 @@ GUIDE
    there -- the same reason the git identity and the install's own state live
    on that partition.
 
-   HTTPS AND SSH
+   HTTPS AND SSH -- BOTH, IN THAT ORDER
 
-   An https URL works with nothing further. An ssh URL -- git@github.com:you/
-   thing.git -- needs a key THIS MACHINE holds, and the key copal-prep.sh put
-   on the card is not it: that one authorises you INTO this machine, not this
-   machine out to GitHub. If you want ssh URLs:
+   Every clone tries the SSH remote first and falls back to HTTPS. You do not
+   choose between them and the list does not have to be written in one form:
+   whichever URL is listed, both are derived and tried.
+
+      git@github.com:you/thing.git      tried first
+      https://github.com/you/thing.git  used if that fails
+
+   SSH first because it is the one you can push from. HTTPS second because it
+   is the one that always works. The ssh attempt runs with BatchMode on, so a
+   machine with no key fails it in a second rather than stopping to ask for a
+   password -- an unattended install is never held up by this.
+
+   'git remote -v' in a checkout says which one it got. If it says https and
+   you would rather push, add a key and repoint it:
 
       ssh-keygen -t ed25519 -C "$(hostname)"
       cat ~/.ssh/id_ed25519.pub        # paste into GitHub -> SSH keys
+      git -C ~/code/thing remote set-url origin git@github.com:you/thing.git
+
+   The key copal-prep.sh put on the card is NOT this key: that one authorises
+   you INTO this machine, not this machine out to GitHub.
 
    Nothing is shallow-cloned. A --depth 1 checkout cannot be pushed from until
    it has been fetched --unshallow, and this is a machine to work on rather
@@ -14247,8 +14446,10 @@ GUIDE
 # pitch is speed. On a Pi 4 or 5 with real video they are reasonable. They are in
 # the catalogue with that noted, and not installed here.
 #
-# foot is deliberately absent from the catalogue entirely: it is Wayland-only and
-# this is an X11 desktop, so it would install and then never open a window.
+# foot is absent from THIS list because it is Wayland-only and this is the X11
+# catalogue -- it would install and then never open a window. It is not absent
+# from the system: stage 16 installs it as the Antiquity desktop's terminal,
+# which is the session where it does open one.
 dev_install_terminals() {
     say "Terminal multiplexers"
     add_optional tmux screen
@@ -17431,8 +17632,33 @@ MSG
         m|M) _want="dillo links lynx bombadillo claws-mail audacious
                     audacious-plugins mousepad pcmanfm gpicview zathura
                     zathura-pdf-mupdf galculator xarchiver 7zip unzip" ;;
-        a|A) _want=$(catalogue_available \
-                     | grep -vE '\|(gimp|blender|freecad|kicad|libreoffice-writer|calibre@testing|texlive-full|krita|chromium|thunderbird|remmina|filezilla)\|' \
+        a|A) # The standing exclusions: too big to install unattended, and
+             # listed in the 'a' description above so this is not a surprise.
+             _excl='gimp|blender|freecad|kicad|libreoffice-writer|calibre@testing|texlive-full|krita|chromium|thunderbird|remmina|filezilla'
+             # AND, at the FULL level only, the other graphical browsers.
+             #
+             # That level installs Brave in stage 4, and Firefox ESR is left
+             # in the catalogue as the second engine -- Gecko beside Blink,
+             # which is the pair worth having. Dillo, NetSurf and BadWolf are
+             # then three more rendering engines nobody asked for on a machine
+             # that already has two good ones, and a browser you never open is
+             # just card and menu clutter.
+             #
+             # Only at 'full'. On medium and server BadWolf may be the ONLY
+             # browser the machine gets (stage 4 picks it there), and Dillo
+             # and NetSurf are the small-and-fast pair that make a Zero
+             # usable -- removing them there would be taking the browser off
+             # the boards that need one most.
+             #
+             # The TEXT browsers stay at every level: links, elinks, w3m, lynx
+             # and retawq are a few hundred kB each, they work over SSH with
+             # no display at all, and they are tools rather than browsers.
+             if [ "$(copal_profile)" = full ]; then
+                 _excl="$_excl|dillo|netsurf|badwolf"
+                 note "full install: Brave and Firefox ESR only -- skipping Dillo, NetSurf, BadWolf"
+             fi
+             _want=$(catalogue_available \
+                     | grep -vE "\|($_excl)\|" \
                      | cut -d'|' -f3 | tr '\n' ' ') ;;
         s|S)
             note "Sections: $(echo "$_secs" | tr '\n' ' ')"
