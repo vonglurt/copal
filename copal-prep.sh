@@ -11278,6 +11278,22 @@ $mainMod = SUPER
 
 bind = $mainMod, Return, exec, $terminal
 bind = $mainMod, Q, killactive,
+# Three ways to be rid of a window, and they are not the same operation.
+#
+#   killactive       asks the window to close, the way its own X button does.
+#                    The program gets to run its "save changes?" and may
+#                    refuse. This is what you want almost every time.
+#   forcekillactive  SIGKILLs the client. Nothing is asked and nothing is
+#                    saved -- it is 'kill -9' aimed with the mouse, for the
+#                    program that has stopped answering.
+#
+# Super+grave is the second close binding: 'grave' is the ` / ~ key, named
+# for the character unshifted, which is the name Hyprland (and XKB under it)
+# knows it by -- writing 'asciitilde' there would bind Super+Shift+` instead.
+# Super+Escape is the hard one, deliberately the more awkward reach of the
+# two: an unrecoverable action should not sit next to Tab.
+bind = $mainMod, grave, killactive,
+bind = $mainMod, Escape, forcekillactive,
 bind = $mainMod SHIFT, S, exec, copal-shot
 bind = $mainMod, E, exec, $fileManager
 bind = $mainMod SHIFT, SPACE, togglefloating,
@@ -11989,7 +12005,8 @@ CURSORENV
 
     Super+Return terminal (foot)    Super+d/Space launcher
     Super+e      file manager       Super+Shift+s screenshot region
-    Super+q      close window       Super+f      fullscreen
+    Super+q · Super+`  close window Super+f      fullscreen
+    Super+Esc    force-quit program (SIGKILL -- nothing is saved)
     Super+1..9,0 workspaces         Super+Shift+p power down (copal-halt)
     Super+arrows move focus         Super+Shift+arrows move the window
     Alt+Tab      switch window      Super+Ctrl+arrows resize
