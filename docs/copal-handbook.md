@@ -166,6 +166,14 @@ the machine you are testing on is the machine you are typing on. `make
 redeploy` refuses to run anywhere that has no `answers.txt` on a boot
 partition, which is how it tells the Mac apart from the guest.
 
+It reports which branch the checkout is on and whether it is dirty — "I
+redeployed and my change was not in it" is nearly always one of those two —
+and if the branch is behind its remote it *asks* before pulling. It never
+pulls unasked: the reason to run this target is usually an edit that is not
+committed yet. `PULL=1` answers yes, `PULL=0` skips the question, no terminal
+means no. After a pull it stops rather than continuing, because make had
+already read the pre-pull Makefile.
+
 The name is the design. Copal is tree resin caught halfway to amber: hardened,
 but not yet stone. Alpine is the sap — small, generic, still runny. This
 repository distils it: holds it in a shape long enough to set, without turning

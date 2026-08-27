@@ -14095,12 +14095,24 @@ GUIDE
       make redeploy STAGES=16     ...and re-run that stage, unattended
       make redeploy STAGES=4,16   several, in that order
       make redeploy-check         what would change; changes nothing
+      make redeploy PULL=1        pull first without being asked
 
-   That is the loop. It syntax-checks copal-prep.sh AND the copal-init.sh
+   That is the loop. It says which branch this checkout is on and whether it
+   has uncommitted changes, syntax-checks copal-prep.sh AND the copal-init.sh
    extracted out of it, replaces /boot/copal-init.sh (keeping the old one as
    .bak) and re-runs the stages you name -- no image to rebuild on the Mac, no
    commit to push, no card to write. Every stage has always been re-runnable;
    this only removes the menu from in front of them.
+
+   IF THE BRANCH IS BEHIND ITS REMOTE IT ASKS whether to pull, and does not
+   pull unless you say so: the usual reason to run this is an edit that is not
+   committed yet, and a target that quietly pulled on top of your work would
+   be reaching into it. A tree with local changes is not asked about at all --
+   it is reported and left alone. PULL=1 answers yes without asking, PULL=0
+   skips the question, and a run with no terminal behaves as PULL=0. After a
+   pull it stops and asks you to run the command again, because make read the
+   old Makefile before the pull and should not install a tree it is out of
+   step with.
 
    The same two commands by hand, if you would rather see them:
 

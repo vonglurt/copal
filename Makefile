@@ -745,9 +745,17 @@ lint: | $(BUILDDIR)
 #     make redeploy STAGES=16     ...and re-run stage 16, unattended
 #     make redeploy STAGES=4,16   several, in that order
 #     make redeploy-check         say what would change, change nothing
+#     make redeploy PULL=1        pull first, without being asked
+#     make redeploy PULL=0        never ask, never pull
 #
 # WHAT IT ACTUALLY DOES, because none of it is magic:
 #
+#   0. Looks at the checkout: which branch, whether it is dirty, and whether
+#      the tracking branch has commits this tree does not. If it is behind, it
+#      ASKS before pulling -- because the reason to run this target is usually
+#      an edit you have not committed, and a target that silently pulled on
+#      top of that would be reaching into your working tree. PULL=1 answers
+#      yes without asking, PULL=0 skips the question, and no tty is PULL=0.
 #   1. sh -n on copal-prep.sh, and on the copal-init.sh extracted out of it.
 #      A syntax error in the heredoc survives every check that reads the
 #      generator alone, and this target's whole job is to install that heredoc.
@@ -767,6 +775,9 @@ lint: | $(BUILDDIR)
 # confusing thing about /boot rather than "you are on the wrong machine".
 STAGES ?=
 
+# Unset means "ask, if there is somebody to ask". 1 pulls, 0 does not.
+PULL ?=
+
 # doas rather than sudo: Copal locks root in stage 13 and doas is what it
 # installs. Empty when already root, so this works from a root shell too.
 DOAS = $(shell [ "$$(id -u)" = 0 ] || command -v doas 2>/dev/null || command -v sudo 2>/dev/null)
@@ -783,8 +794,87 @@ define GUEST_GUARD
 	printf '  boot partition  %s\n' "$$_b"
 endef
 
+# WHERE THIS CHECKOUT STANDS, before anything is installed from it. Reported
+# always, because "I redeployed and my change was not in it" is nearly always
+# one of these three lines -- wrong branch, uncommitted edit, or a tree that
+# was never the tree you thought.
+#
+# git fetch is given a timeout: a guest with no network yet is the normal case
+# on a fresh install, and a redeploy must not hang for two minutes on a DNS
+# lookup before doing the local work it could always have done.
+# STOPFILE is how one recipe line tells the next one not to bother. Each line
+# of a recipe is its own shell, so an `exit 0` after the pull would end that
+# line and nothing else -- make would carry on and install anyway. A file is
+# the smallest thing that crosses that boundary. Cleared at the start of every
+# run so a killed one cannot leave a stale veto behind.
+STOPFILE = /tmp/.copal-redeploy-stop
+
+define GIT_STATE
+	@rm -f $(STOPFILE)
+	@if git -C "$(CURDIR)" rev-parse --is-inside-work-tree >/dev/null 2>&1; then \
+	    _br=$$(git -C "$(CURDIR)" rev-parse --abbrev-ref HEAD 2>/dev/null); \
+	    _sh=$$(git -C "$(CURDIR)" rev-parse --short HEAD 2>/dev/null); \
+	    _dirty=$$(git -C "$(CURDIR)" status --porcelain 2>/dev/null | wc -l | tr -d ' '); \
+	    printf '  checkout        %s @ %s' "$$_br" "$$_sh"; \
+	    [ "$$_dirty" = 0 ] && printf '\n' || printf ' \033[33m(%s file(s) with local changes)\033[0m\n' "$$_dirty"; \
+	else \
+	    printf '  checkout        \033[33mnot a git checkout -- nothing to pull\033[0m\n'; \
+	fi
+endef
+
+# The pull, offered rather than done. Three ways it declines without asking:
+# not a git tree, no tracking branch, or nothing to pull.
+#
+# A DIRTY TREE IS NOT AN ERROR HERE, it is the usual reason to be running this
+# at all -- so it is reported and the pull is not offered, rather than the
+# other way round. Stash or commit first if you did want both.
+#
+# AND IT STOPS AFTER PULLING. A pull can change this Makefile, and make has
+# already read the old one: the recipe running now is the previous version,
+# and carrying on would install a tree that make itself is out of step with.
+# So it says what happened and asks for the command again, which costs one
+# line of typing and cannot be wrong.
+define GIT_PULL
+	@if ! git -C "$(CURDIR)" rev-parse --is-inside-work-tree >/dev/null 2>&1; then :; \
+	elif [ "$(PULL)" = 0 ]; then :; \
+	elif ! git -C "$(CURDIR)" rev-parse --abbrev-ref '@{u}' >/dev/null 2>&1; then \
+	    printf '  upstream        \033[2mnone -- this branch tracks nothing, so nothing to pull\033[0m\n'; \
+	elif [ -n "$$(git -C "$(CURDIR)" status --porcelain 2>/dev/null)" ]; then \
+	    printf '  upstream        \033[2mnot checked: local changes here, which is usually the point\033[0m\n'; \
+	else \
+	    _to=''; command -v timeout >/dev/null 2>&1 && _to='timeout 20'; \
+	    $$_to git -C "$(CURDIR)" fetch --quiet 2>/dev/null || \
+	        printf '  upstream        \033[2mcould not fetch (no network?) -- using what is here\033[0m\n'; \
+	    _behind=$$(git -C "$(CURDIR)" rev-list --count 'HEAD..@{u}' 2>/dev/null || echo 0); \
+	    if [ "$$_behind" -gt 0 ] 2>/dev/null; then \
+	        _u=$$(git -C "$(CURDIR)" rev-parse --abbrev-ref '@{u}'); \
+	        printf '  upstream        \033[33m%s is %s commit(s) ahead of this tree\033[0m\n' "$$_u" "$$_behind"; \
+	        _do="$(PULL)"; \
+	        if [ -z "$$_do" ]; then \
+	            if [ -t 0 ]; then \
+	                printf '  pull them first? [y/N] '; read _a </dev/tty || _a=n; \
+	                case "$$_a" in [Yy]*) _do=1 ;; *) _do=0 ;; esac; \
+	            else \
+	                _do=0; \
+	                printf '  \033[2mnot asking (no terminal) -- make redeploy PULL=1 to pull\033[0m\n'; \
+	            fi; \
+	        fi; \
+	        if [ "$$_do" = 1 ]; then \
+	            git -C "$(CURDIR)" pull --ff-only || { \
+	                printf '\033[31merror:\033[0m pull failed -- sort the checkout out first\n'; exit 1; }; \
+	            : > $(STOPFILE); \
+	            printf '\n  Pulled. \033[33mRun the same command again\033[0m -- make read the old\n'; \
+	            printf '  Makefile before the pull, so this one stops here rather than\n'; \
+	            printf '  installing a tree it is out of step with.\n\n'; \
+	            exit 0; \
+	        fi; \
+	    fi; \
+	fi
+endef
+
 redeploy-check: lint
 	$(GUEST_GUARD)
+	$(GIT_STATE)
 	@if command -v copal >/dev/null 2>&1; then \
 	    $(DOAS) copal --check --from "$(CURDIR)"; \
 	else \
@@ -794,7 +884,10 @@ redeploy-check: lint
 
 redeploy: lint
 	$(GUEST_GUARD)
-	@if command -v copal >/dev/null 2>&1; then \
+	$(GIT_STATE)
+	$(GIT_PULL)
+	@if [ -f $(STOPFILE) ]; then rm -f $(STOPFILE); exit 0; fi; \
+	if command -v copal >/dev/null 2>&1; then \
 	    $(DOAS) copal -U --from "$(CURDIR)" || exit 1; \
 	    if [ -n "$(STAGES)" ]; then \
 	        printf '\n  Running stage(s) %s, unattended.\n\n' '$(STAGES)'; \
