@@ -155,6 +155,17 @@ helper and the whole catalogue live inside it, so `copal -U` is one fetch and
 one `sh -n` rather than a package manager, an index and a signing key — none of
 which help on a board whose commonest problem is having no network yet.
 
+**And the same mechanism runs backwards, from a checkout on the machine
+itself.** `copal -U --from ~/code/copal` extracts `copal-init.sh` out of the
+`copal-prep.sh` in a working tree instead of fetching one over HTTPS — same
+`sh -n` gate, same `copal-init.sh.bak` — and `copal --stage 16 --auto` re-runs
+named stages without the menu. In the checkout, `make redeploy STAGES=16` is
+those two commands with the lint in front of them. That is the edit-and-see-it
+loop for anyone changing a stage: no image to rebuild, no commit to push, and
+the machine you are testing on is the machine you are typing on. `make
+redeploy` refuses to run anywhere that has no `answers.txt` on a boot
+partition, which is how it tells the Mac apart from the guest.
+
 The name is the design. Copal is tree resin caught halfway to amber: hardened,
 but not yet stone. Alpine is the sap — small, generic, still runny. This
 repository distils it: holds it in a shape long enough to set, without turning

@@ -14,6 +14,8 @@
 #   make sd-zero2      write a physical card for a Pi Zero 2 W
 #   make img-pc        write a bootable disk image for a PC
 #   make lint          syntax-check both scripts, including the generated one
+#   make redeploy      inside the guest: install this checkout's installer onto
+#                      the running machine and re-run stages (STAGES=16)
 #   make space         what is here, what it costs, and which target removes it
 #   make clean         empties build/, keeping build/cache. Reports what it freed
 #   make distclean     clean, and the download cache with it
@@ -86,7 +88,8 @@ model_of = $(patsubst pizero%,zero%,$(1))
 .PHONY: alldebug build-all-debug imagedebug freshdebug purge \
 	help menu flow targets boards configure require-tools vm graphical check \
         fresh auto image refresh utm utm-x86 layout layout-auto answers answers-show lint space clean distclean \
-        all cache build-all release capture video screens verify gallery chain walkthrough release-cast logs utm-export install
+        all cache build-all release capture video screens verify gallery chain walkthrough release-cast logs utm-export install \
+        redeploy redeploy-check
 
 help:
 	@printf '\nCopal Linux -- make targets\n\n'
@@ -142,6 +145,8 @@ help:
 	@printf '\n'
 	@printf '\033[1m  Housekeeping\033[0m\n'
 	@printf '  make lint       sh -n on copal-prep.sh and on the copal-init.sh it generates\n'
+	@printf '  make redeploy   \033[2m(run this INSIDE the guest)\033[0m install this checkout onto the\n'
+	@printf '                  machine you are on and re-run stages. \033[2mmake redeploy STAGES=16\033[0m\n'
 	@printf '  make space      what is taking up room and which target removes it. Removes nothing\n'
 	@printf '  make purge      everything: images, payloads, logs AND the UTM machines\n'
 	@printf '                  \033[2mAsks first. Their virtual disks go too -- make purge YES=1 to skip the prompt\033[0m\n'
@@ -728,6 +733,87 @@ lint: | $(BUILDDIR)
 	    printf '\033[31merror:\033[0m shortcut names a target this Makefile does not define:%s\n' "$$_bad"; \
 	    exit 1; }; \
 	printf '  ok      every shortcut names a real target\n'
+
+# ------------------------------------------------------------- redeploying ---
+#
+# EVERY OTHER TARGET IN THIS FILE RUNS ON THE MAC AND WRITES A CARD. This one
+# runs on the machine the card made, from the checkout stage 7 puts at
+# ~/code/copal, and it is the loop that was missing: edit a stage, see it, on
+# the machine itself, without writing an image or pushing a commit.
+#
+#     make redeploy               install this checkout's installer, then the menu
+#     make redeploy STAGES=16     ...and re-run stage 16, unattended
+#     make redeploy STAGES=4,16   several, in that order
+#     make redeploy-check         say what would change, change nothing
+#
+# WHAT IT ACTUALLY DOES, because none of it is magic:
+#
+#   1. sh -n on copal-prep.sh, and on the copal-init.sh extracted out of it.
+#      A syntax error in the heredoc survives every check that reads the
+#      generator alone, and this target's whole job is to install that heredoc.
+#   2. `copal -U --from .`, which extracts it again, checks it parses, backs
+#      up the installed copy as copal-init.sh.bak and writes the new one onto
+#      the boot partition, remounting it read-write if it has to.
+#   3. `copal --stage $(STAGES) --auto` if STAGES is set -- every question in
+#      those stages answered automatically, which is what you want from a
+#      Makefile and not what you want at a terminal.
+#
+# Nothing here is destructive in a way a rebuild is: the stages are the same
+# re-runnable stages the menu offers, and stage 16 moves any config it
+# replaces into ~/copal-theme-backups/ rather than deleting it.
+#
+# THE GUARD IS THE POINT of the first three lines. Running this on the Mac
+# would find no boot partition and no copal, and the failure would be some
+# confusing thing about /boot rather than "you are on the wrong machine".
+STAGES ?=
+
+# doas rather than sudo: Copal locks root in stage 13 and doas is what it
+# installs. Empty when already root, so this works from a root shell too.
+DOAS = $(shell [ "$$(id -u)" = 0 ] || command -v doas 2>/dev/null || command -v sudo 2>/dev/null)
+
+define GUEST_GUARD
+	@_b=''; for _d in /boot /media/*; do [ -f "$$_d/answers.txt" ] && { _b="$$_d"; break; }; done; \
+	if [ -z "$$_b" ]; then \
+	    printf '\033[31merror:\033[0m this target runs INSIDE a Copal machine, not on the Mac.\n'; \
+	    printf '  No answers.txt under /boot or /media/*, so there is no Copal install here.\n'; \
+	    printf '  On the Mac you want: \033[36mmake fresh\033[0m (build an image) or \033[36mmake vm\033[0m (boot one).\n'; \
+	    printf '  In the guest: \033[36mcd ~/code/copal && make redeploy\033[0m\n'; \
+	    exit 1; \
+	fi; \
+	printf '  boot partition  %s\n' "$$_b"
+endef
+
+redeploy-check: lint
+	$(GUEST_GUARD)
+	@if command -v copal >/dev/null 2>&1; then \
+	    $(DOAS) copal --check --from "$(CURDIR)"; \
+	else \
+	    printf '\033[33mnote:\033[0m no "copal" front door installed -- redeploy would run the\n'; \
+	    printf '  extracted copal-init.sh straight from /tmp instead.\n'; \
+	fi
+
+redeploy: lint
+	$(GUEST_GUARD)
+	@if command -v copal >/dev/null 2>&1; then \
+	    $(DOAS) copal -U --from "$(CURDIR)" || exit 1; \
+	    if [ -n "$(STAGES)" ]; then \
+	        printf '\n  Running stage(s) %s, unattended.\n\n' '$(STAGES)'; \
+	        exec $(DOAS) copal --stage "$(STAGES)" --auto; \
+	    else \
+	        printf '\n  Installed. Now: \033[36mcopal\033[0m for the menu, or\n'; \
+	        printf '        \033[36mmake redeploy STAGES=16\033[0m to re-run a stage straight away.\n\n'; \
+	    fi; \
+	else \
+	    printf '  no "copal" front door here -- running the extracted installer from /tmp\n'; \
+	    sed -n "/^cat > .*copal-init\.sh\" <<.COPALINIT.$$/,/^COPALINIT$$/p" $(PREP) \
+	        | sed '1d;$$d' > /tmp/copal-init.redeploy.sh; \
+	    test -s /tmp/copal-init.redeploy.sh || { printf '\033[31merror:\033[0m extraction failed\n'; exit 1; }; \
+	    if [ -n "$(STAGES)" ]; then \
+	        exec $(DOAS) sh /tmp/copal-init.redeploy.sh --stage "$(STAGES)" --auto; \
+	    else \
+	        exec $(DOAS) sh /tmp/copal-init.redeploy.sh; \
+	    fi; \
+	fi
 
 # --------------------------------------------------------------- cleaning ---
 #

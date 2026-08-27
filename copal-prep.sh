@@ -14089,6 +14089,27 @@ GUIDE
       $EDITOR copal-prep.sh          # the whole distribution is this file
       git commit -am 'what I changed'
 
+   AND RUNNING WHAT YOU JUST EDITED, ON THIS MACHINE, WITHOUT LEAVING IT:
+
+      make redeploy               install this checkout's installer here
+      make redeploy STAGES=16     ...and re-run that stage, unattended
+      make redeploy STAGES=4,16   several, in that order
+      make redeploy-check         what would change; changes nothing
+
+   That is the loop. It syntax-checks copal-prep.sh AND the copal-init.sh
+   extracted out of it, replaces /boot/copal-init.sh (keeping the old one as
+   .bak) and re-runs the stages you name -- no image to rebuild on the Mac, no
+   commit to push, no card to write. Every stage has always been re-runnable;
+   this only removes the menu from in front of them.
+
+   The same two commands by hand, if you would rather see them:
+
+      copal -U --from ~/code/copal      install the checkout's installer
+      copal --stage 16 --auto           run stage 16, answering its questions
+
+   'make redeploy' refuses to run anywhere without a Copal boot partition, so
+   running it on the Mac by mistake says so rather than half-doing something.
+
    It is cloned over https so that it works with no key on the machine. To
    push, point it at your own remote or at ssh:
 
@@ -20826,14 +20847,96 @@ grep -q "Raspberry Pi" /proc/device-tree/model 2>/dev/null \
 # The question is asked first because it is the only one whose answer changes
 # what the whole session is. Answering no gives the ordinary menu and is not
 # asked again this run.
+# ONE STAGE, BY NUMBER, WITHOUT THE MENU.
+#
+# The menu and the unattended run each had their own copy of the number ->
+# function mapping, which is fine while there are two and a bug the day there
+# are three. This is the third caller, so the mapping moves here and the menu
+# uses it. The auto loop keeps its own copy on purpose: it sets AUTO_DEFAULT
+# per stage (9 takes Mini vMac + VICE and not Basilisk, 12 the whole
+# catalogue, 14 every bundle) and those choices belong to that path, not to
+# this one.
+#
+# WHAT IT IS FOR is the edit-and-see-it loop. Every stage is re-runnable and
+# always has been, but re-running one meant starting the script, reading a
+# screen of menu and typing a number -- which is a fine thing to ask of
+# somebody installing a machine and the wrong thing to ask of somebody who has
+# just changed four lines of stage 16 and wants to look at the result. See
+# 'make redeploy' in the repository, which is this with the extraction in
+# front of it.
+run_stage() {  # <number>
+    case "$1" in
+        1)  stage_base_config ;;
+        2)  stage_ext4_cache ;;
+        3)  stage_sys_install ;;
+        4)  stage_gui ;;
+        5)  stage_zram ;;
+        6)  stage_sshkey ;;
+        7)  stage_dev ;;
+        8)  stage_grow ;;
+        9)  stage_emulators ;;
+        10) stage_extras ;;
+        11) stage_snapshots ;;
+        12) stage_apps ;;
+        13) stage_lockroot ;;
+        14) stage_workshop ;;
+        15) stage_sdcard ;;
+        16) stage_hyprland ;;
+        v|V) stage_verify ;;
+        *)  warn "not a stage: $1"; return 2 ;;
+    esac
+}
+
+# The stages named on the command line, in the order given. Commas or spaces,
+# because both are what people type: --stage 16 and --stage 4,16 and
+# --stage "4 16" all mean the same thing.
+#
+# set +e around each one for the same reason the auto loop does it: this
+# script runs under set -e, and a stage that returns non-zero would otherwise
+# end the run silently with no summary. Here the exit status is kept and
+# returned, so a script or a Makefile can tell whether the redeploy worked.
+run_stages() {  # <list> ...
+    _rc_all=0
+    for _spec in "$@"; do
+        for _s in $(printf '%s' "$_spec" | tr ',' ' '); do
+            say "STAGE $_s"
+            set +e
+            run_stage "$_s"
+            _rc=$?
+            set -e
+            [ "$_rc" = 0 ] || { warn "stage $_s exited $_rc"; _rc_all=$_rc; }
+        done
+    done
+    say "Done. Transcript: $LOG"
+    return "$_rc_all"
+}
+
 case "${1:-}" in
     --auto|-a) auto_run; exit 0 ;;
+    --stage|-s)
+        shift
+        [ $# -gt 0 ] || { echo "usage: copal-init.sh --stage N[,N...] [--auto]" >&2; exit 2; }
+        # --auto here means "and do not ask me anything", which is the same
+        # AUTO the unattended install uses: every question answers itself. It
+        # is what a redeploy from a Makefile wants and the wrong default for a
+        # person at a terminal, so it is a word you type.
+        _stages=""
+        for _a in "$@"; do
+            case "$_a" in
+                --auto|-a) AUTO=1 ;;
+                *) _stages="$_stages $_a" ;;
+            esac
+        done
+        run_stages $_stages
+        exit $? ;;
     --help|-h)
-        echo "usage: copal [--auto]"
-        echo "  --auto   run every stage unattended, resuming across reboots"
+        echo "usage: copal [--auto] [--stage N[,N...] [--auto]]"
+        echo "  --auto         run every stage unattended, resuming across reboots"
+        echo "  --stage N,...  run only those stages, in that order. Add --auto"
+        echo "                 to answer their questions automatically."
         echo
         echo "The 'copal' command itself has more: -U to update from the"
-        echo "repository, --check, --version. Run: copal --help"
+        echo "repository or from a checkout, --check, --version. Run: copal --help"
         exit 0 ;;
 esac
 
@@ -21001,19 +21104,85 @@ copal -- Copal Alpine Linux, on the machine itself.
 
   copal                 the stage menu
   copal --auto          every stage, unattended, resuming across reboots
+  copal --stage N,...   run only those stages. Add --auto after them to
+                        answer their questions automatically.
   copal -U [ref]        update from the repository (default branch: main).
                         'ref' may be any branch, tag or commit SHA, which is
                         how you pin a version or go back to an older one.
+  copal -U --from PATH  update from a checkout on THIS machine instead of the
+                        network: a directory holding copal-prep.sh, the file
+                        itself, or an already-extracted copal-init.sh. This is
+                        how you test a change you have not pushed.
   copal --check [ref]   say whether an update is available; change nothing
+  copal --check --from PATH   the same, against a checkout
   copal --version       what is installed, and where it came from
   copal --help          this
 
-Updating fetches copal-prep.sh over HTTPS and extracts copal-init.sh from it --
-one file, because every stage, guide and helper on this machine lives inside
-it. The old copy is kept as copal-init.sh.bak. Updating changes what the
-stages WILL do; it does not re-run anything. Re-run the stages you care about
-afterwards.
+Updating fetches copal-prep.sh -- over HTTPS, or from --from -- and extracts
+copal-init.sh from it: one file, because every stage, guide and helper on this
+machine lives inside it. The old copy is kept as copal-init.sh.bak. Updating
+changes what the stages WILL do; it does not re-run anything. Re-run the
+stages you care about afterwards, with the menu or with --stage.
+
+  copal -U --from ~/code/copal && copal --stage 16 --auto
+
+is the whole edit-and-see-it loop on the machine itself. 'make redeploy' in
+that checkout is the same two commands with the checks in front of them.
 USAGE
+}
+
+# THE EXTRACTION, shared by the network path and the --from path.
+#
+# copal-init.sh is a heredoc inside copal-prep.sh; this is the same sed the
+# Makefile's lint target runs on the Mac. The sh -n at the end is the check
+# that makes any of this safe to do unattended: a truncated download, an HTML
+# error page or a half-saved editor buffer cannot parse, and an unparseable
+# init script is a machine with no way to run any stage at all.
+extract_init() {  # <copal-prep.sh> <destination>
+    sed -n '/^cat > .*copal-init\.sh" <<.COPALINIT.$/,/^COPALINIT$/p' "$1" \
+        | sed '1d;$d' > "$2"
+    [ -s "$2" ] || return 1
+    sh -n "$2" >&2 || return 2
+    return 0
+}
+
+# A local checkout instead of the network. Three things are accepted because
+# all three are things somebody will type: the directory they cloned into, the
+# copal-prep.sh inside it, or a copal-init.sh they extracted earlier by hand.
+local_init() {  # <path> <destination>
+    _path="$1"; _dest="$2"
+    [ -e "$_path" ] || die "no such path: $_path"
+    [ -d "$_path" ] && _path="$_path/copal-prep.sh"
+    [ -f "$_path" ] || die "not a file: $_path (a checkout should hold copal-prep.sh)"
+    # The file that was actually read, absolute where it can be worked out, so
+    # /etc/copal/version records something meaningful rather than "." -- the
+    # point of that file is to answer "where did this machine's installer come
+    # from" a month later.
+    case "$_path" in
+        /*) INIT_SOURCE="$_path" ;;
+        *)  INIT_SOURCE="$(cd "$(dirname "$_path")" 2>/dev/null && pwd)/$(basename "$_path")" ;;
+    esac
+
+    if grep -q '^cat > .*copal-init\.sh" <<.COPALINIT.$' "$_path" 2>/dev/null; then
+        printf 'Extracting copal-init.sh from %s\n' "$_path" >&2
+        _rc=0; extract_init "$_path" "$_dest" || _rc=$?
+        case "$_rc" in
+            0) : ;;
+            1) die "no copal-init.sh inside $_path" ;;
+            *) die "the extracted copal-init.sh does not parse -- refusing to install it" ;;
+        esac
+    else
+        # Already an init script? It has to look like one and it has to parse;
+        # anything else is somebody pointing --from at the wrong file, which is
+        # worth saying rather than installing.
+        head -1 "$_path" | grep -q '^#!/bin/sh' \
+            || die "$_path is neither copal-prep.sh nor a copal-init.sh"
+        grep -q 'copal-init\.sh -- the installer' "$_path" \
+            || die "$_path does not look like copal-init.sh"
+        sh -n "$_path" || die "$_path does not parse -- refusing to install it"
+        cat "$_path" > "$_dest"
+        printf 'Using %s as it is\n' "$_path" >&2
+    fi
 }
 
 # Fetch and extract, into $2. Prints the temporary source path on success.
@@ -21034,43 +21203,57 @@ fetch_init() {  # <ref> <destination>
     [ "$_sz" -gt 100000 ] || { rm -f "$_src"; die "downloaded $_sz bytes -- that is not copal-prep.sh"; }
     head -1 "$_src" | grep -q '^#!/bin/bash' || { rm -f "$_src"; die "downloaded file is not a shell script"; }
 
-    # The same extraction the Makefile does on the Mac: the heredoc, minus its
-    # own opening and closing lines.
-    sed -n '/^cat > .*copal-init\.sh" <<.COPALINIT.$/,/^COPALINIT$/p' "$_src" \
-        | sed '1d;$d' > "$_dest"
-    [ -s "$_dest" ] || { rm -f "$_src"; die "no copal-init.sh inside that copal-prep.sh"; }
-
-    # The check that makes this safe to do unattended: a corrupt or truncated
-    # extraction cannot parse, and an unparseable init script is a machine with
-    # no way to run any stage at all.
-    sh -n "$_dest" || { rm -f "$_src"; die "the extracted copal-init.sh does not parse -- refusing to install it"; }
+    _rc=0; extract_init "$_src" "$_dest" || _rc=$?
+    case "$_rc" in
+        0) : ;;
+        1) rm -f "$_src"; die "no copal-init.sh inside that copal-prep.sh" ;;
+        *) rm -f "$_src"; die "the extracted copal-init.sh does not parse -- refusing to install it" ;;
+    esac
 
     echo "$_src"
 }
 
 sha() { sha256sum "$1" 2>/dev/null | cut -d' ' -f1; }
 
-cmd_update() {  # <ref> <check-only 0|1>
-    _ref="${1:-main}"; _checkonly="${2:-0}"
+# Whatever the source was, in one string, for the messages and for
+# /etc/copal/version: "vonglurt/copal@main" or "/home/user/code/copal".
+cmd_update() {  # <ref-or-path> <check-only 0|1> <from-a-checkout 0|1>
+    _ref="${1:-main}"; _checkonly="${2:-0}"; _from="${3:-0}"
     _cur=$(find_init) || die "cannot find copal-init.sh -- is the boot partition mounted?"
 
     _new=$(mktemp /tmp/copal-init.XXXXXX) || die "cannot write to /tmp"
-    _src=$(fetch_init "$_ref" "$_new")
+    _src=""
+    if [ "$_from" = 1 ]; then
+        INIT_SOURCE=""
+        local_init "$_ref" "$_new"
+        _label="${INIT_SOURCE:-$_ref}"
+    else
+        _src=$(fetch_init "$_ref" "$_new")
+        _label="$REPO@$_ref"
+    fi
+    # The network path leaves a downloaded copal-prep.sh behind; the checkout
+    # path leaves nothing, and rm with an empty argument is an error on
+    # busybox, so every removal goes through here.
+    _clean() { rm -f "$_new"; [ -n "$_src" ] && rm -f "$_src"; return 0; }
 
     if [ "$(sha "$_new")" = "$(sha "$_cur")" ]; then
-        rm -f "$_new" "$_src"
-        printf 'Already current: %s is identical to %s@%s\n' "$_cur" "$REPO" "$_ref"
+        _clean
+        printf 'Already current: %s is identical to %s\n' "$_cur" "$_label"
         return 0
     fi
 
     # busybox wc does not pad, GNU/BSD wc does; strip it either way.
     _oldl=$(wc -l < "$_cur" | tr -d ' '); _newl=$(wc -l < "$_new" | tr -d ' ')
-    printf 'Update available: %s lines installed, %s lines at %s@%s\n' \
-           "$_oldl" "$_newl" "$REPO" "$_ref"
+    printf 'Update available: %s lines installed, %s lines at %s\n' \
+           "$_oldl" "$_newl" "$_label"
 
     if [ "$_checkonly" = 1 ]; then
-        rm -f "$_new" "$_src"
-        printf 'Nothing changed. Run "copal -U %s" to install it.\n' "$_ref"
+        _clean
+        if [ "$_from" = 1 ]; then
+            printf 'Nothing changed. Run "copal -U --from %s" to install it.\n' "$_ref"
+        else
+            printf 'Nothing changed. Run "copal -U %s" to install it.\n' "$_ref"
+        fi
         return 0
     fi
 
@@ -21094,20 +21277,21 @@ cmd_update() {  # <ref> <check-only 0|1>
     fi
 
     mkdir -p /etc/copal 2>/dev/null || true
-    { printf 'repo=%s\nref=%s\nsha256=%s\nupdated=%s\n' \
-             "$REPO" "$_ref" "$(sha "$_cur")" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
+    { printf 'source=%s\nsha256=%s\nupdated=%s\n' \
+             "$_label" "$(sha "$_cur")" "$(date -u '+%Y-%m-%dT%H:%M:%SZ')"
     } > "$VERFILE" 2>/dev/null || true
 
     [ "$_remounted" = 1 ] && mount -o remount,ro "$_mnt" 2>/dev/null || true
-    rm -f "$_new" "$_src"
+    _clean
 
     cat <<'AFTER'
 
 Updated. Nothing has been re-run: an update changes what the stages will do,
 not what is already installed. To pick the changes up, re-run the stages they
-touch -- "copal" for the menu. Stage 1 is the cheap one to re-run and repairs
-the admin account, doas and the shell files; stage 4 rewrites the desktop, its
-key bindings and the helper programs.
+touch -- "copal" for the menu, or "copal --stage N,... --auto" for a named few
+without one. Stage 1 is the cheap one to re-run and repairs the admin account,
+doas and the shell files; stage 4 rewrites the desktop, its key bindings and
+the helper programs; stage 16 the Hyprland desktop and its theme.
 AFTER
 }
 
@@ -21125,12 +21309,29 @@ cmd_version() {
     fi
 }
 
+# -U and --check take either a git ref or "--from PATH", never both: one names
+# a place on the network and the other a place on this disk, and a command that
+# accepted both would have to decide which wins.
+update_args() {  # <check-only 0|1> [ref | --from PATH]
+    _co="$1"; shift
+    case "${1:-}" in
+        --from|-f)
+            shift
+            [ -n "${1:-}" ] || die "--from wants a path: a checkout, a copal-prep.sh, or a copal-init.sh"
+            cmd_update "$1" "$_co" 1 ;;
+        *)  cmd_update "${1:-main}" "$_co" 0 ;;
+    esac
+}
+
 case "${1:-}" in
-    -U|--update)  shift; cmd_update "${1:-main}" 0 ;;
-    --check)      shift; cmd_update "${1:-main}" 1 ;;
+    -U|--update)  shift; update_args 0 "$@" ;;
+    --check)      shift; update_args 1 "$@" ;;
     --version|-V) cmd_version ;;
     --help|-h)    usage ;;
     -a|--auto)    _i=$(find_init) || die "cannot find copal-init.sh"; exec sh "$_i" --auto ;;
+    # Straight through to the installer, which is where the stage numbers and
+    # their meanings live -- this command knows only that it is not its own.
+    -s|--stage)   shift; _i=$(find_init) || die "cannot find copal-init.sh"; exec sh "$_i" --stage "$@" ;;
     "")           _i=$(find_init) || die "cannot find copal-init.sh"; exec sh "$_i" ;;
     *)            printf 'copal: unknown option "%s"\n\n' "$1" >&2; usage >&2; exit 2 ;;
 esac
@@ -22135,22 +22336,7 @@ MSG
                  reboot
                  exit 0
              fi ;;
-        1) stage_base_config ;;
-        2) stage_ext4_cache ;;
-        3) stage_sys_install ;;
-        4) stage_gui ;;
-        5) stage_zram ;;
-        6) stage_sshkey ;;
-        7) stage_dev ;;
-        8) stage_grow ;;
-        9) stage_emulators ;;
-        10) stage_extras ;;
-        11) stage_snapshots ;;
-        12) stage_apps ;;
-        13) stage_lockroot ;;
-        14) stage_workshop ;;
-        15) stage_sdcard ;;
-        16) stage_hyprland ;;
+        [1-9]|1[0-6]) run_stage "$REPLY" ;;
         g|G) guided_install ;;
         a|A) auto_run ;;
         v|V) stage_verify ;;

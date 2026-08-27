@@ -1305,6 +1305,13 @@ card, and does nothing it does not have to. **Nothing travels between them but
 one shell script** — which is what makes `copal -U` a single fetch rather than
 a package manager.
 
+The one path that runs the other way is for developing the installer, not for
+using it: on a Copal machine with a checkout (stage 7 puts one at
+`~/code/copal`), `copal -U --from ~/code/copal` installs *that tree's*
+`copal-init.sh`, and `copal --stage 16 --auto` re-runs a stage with no menu.
+`make redeploy STAGES=16` in the checkout is both, with `make lint` first. It
+only runs in the guest — on the Mac it says so and stops.
+
 ### What each script is for
 
 Everything on the Mac. None of it runs on the target.
