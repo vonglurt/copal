@@ -8157,6 +8157,15 @@ out '^sep(Style)'
 have copal-wallpaper && out "Wallpaper...,copal-wallpaper --pick" || true
 have copal-wallpaper && out "Get more wallpapers,$TERM_EMU -e sh -c 'copal-wallpaper --fetch; echo; echo Press Enter to close; read x'" || true
 have copal-theme && out "Theme (tokyo-night / antiquity),$TERM_EMU -e sh -c 'copal-theme list; echo; echo \"copal-theme NAME to switch\"; echo Press Enter to close; read x'" || true
+# The desktop widgets, shown as whichever of the two things it would do next:
+# a menu entry called "toggle" makes somebody guess which way it is pointing.
+if have copal-widgets && [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/waybar/desktop.json" ]; then
+    if [ -e "${XDG_CONFIG_HOME:-$HOME/.config}/copal/no-desktop-widgets" ]; then
+        out "Show the desktop widgets,copal-widgets --on"
+    else
+        out "Hide the desktop widgets,copal-widgets --off"
+    fi
+fi
 [ -f /usr/local/share/copal/guides/widgets.txt ] \
     && out "Configure the bar and widgets,$TERM_EMU -e copal-guide widgets" || true
 
@@ -9752,6 +9761,65 @@ GUIDE
    One rule covers every readout, so adding a module does not mean adding
    CSS unless you want it to look different from the rest.
 
+ THE WIDGETS ON THE WALLPAPER
+
+   The big clock, the date and the weather sitting ON the desktop -- under
+   your windows, not on the bar -- are the theme's "desktop widgets", and
+   this is the part people go looking for after seeing the screenshots.
+
+       copal-widgets --off        hide them
+       copal-widgets --on         bring them back
+       copal-widgets --status     what is running, and from where
+
+   ~/.config/waybar/desktop.json      what is drawn, and where
+   ~/.config/waybar/desktop.css       the type and the colour
+
+   It is a SECOND waybar, on the bottom layer -- below every window, above
+   the wallpaper, and click-through, so the desktop underneath still
+   behaves like the desktop. One file holds both rows because waybar reads
+   a JSON array as several bars: the clock is the first, the date and the
+   weather the second. "margin-top" is what moves them down the screen.
+   copal-bar starts it beside the ordinary bar at login.
+
+   Same rules as the bar for the rest: a widget is any command that prints
+   one line, "interval" is how often it runs, and the id in the CSS is the
+   module name with the slash turned into a dash.
+
+ WHY THE THEME'S OWN WIDGETS LOOK BROKEN (THEY ARE NOT)
+
+   Linux Antiquity's desktop widgets are quickshell, which Alpine does not
+   package -- but that is only half the reason you have never seen them.
+   The other half is true on Arch too, and it catches everybody:
+
+   UPSTREAM SHIPS NO widgets.json. WidgetScreen.qml opens a transparent
+   window per monitor and fills it from Config.widgets[<monitor name>],
+   which is read from ~/.config/quickshell/widgets.json. That file does not
+   exist in the repository. It is written by the shell's own settings
+   window -- the sidebar, then Settings, then the Widgets tab, then "+"  --
+   and until somebody clicks that, the model is empty and the desktop draws
+   nothing at all. Nothing is broken; nothing was ever placed.
+
+   So Copal places them for you:
+
+       copal-widgets --seed
+
+   which writes a clock -- centred, upper third -- for every monitor
+   hyprctl reports, and leaves alone any monitor that already has widgets.
+   copal-bar runs it at login. On a machine with no quickshell it is a
+   small JSON file and nothing else; the day a quickshell appears, the real
+   widgets are already on the desktop.
+
+   THE WEATHER ONE IS NOT SEEDED UNTIL YOU HAVE A KEY. It draws from
+   OpenWeatherMap, which needs an account, and an unkeyed weather widget is
+   an empty square. Put the key and your city in the theme's settings and
+   run --seed again. The wallpaper weather above asks wttr.in instead,
+   which needs no key -- which is why it is the one you have today.
+
+   ONLY TWO OF THE THEME'S WIDGETS ARE REAL, whatever the file names
+   suggest: Clock and Weather. CPUTemperatureWidget.qml exists but is an
+   unfinished sketch -- a red rectangle -- and RAM, GPU and Date are
+   commented out in Config.qml. Nothing here can switch them on.
+
  THE WALLPAPER IS NOT A WIDGET
 
    It has its own command, because it is not on the bar:
@@ -10571,6 +10639,311 @@ WOFICSS
     install_home_file .config/wofi/style.css /tmp/woficss.$$
     rm -f /tmp/woficss.$$
 
+    # ----------------------------------------------------------------------
+    # DESKTOP WIDGETS -- the clock and the weather that sit ON the wallpaper.
+    #
+    # This is the piece of the theme that people ask after by name and then
+    # cannot find, and the reason is worth writing down because it is not a
+    # bug in anything. Linux Antiquity's desktop widgets are quickshell:
+    # widgets/WidgetScreen.qml opens one transparent layer-shell window per
+    # monitor on the BOTTOM layer -- wallpaper height, below every window --
+    # and fills it from a Repeater over Config.widgets[<monitor name>]. That
+    # model is a JSON file, ~/.config/quickshell/widgets.json, written by a
+    # JsonAdapter and edited from the shell's own settings window (sidebar ->
+    # Settings -> Widgets). Upstream ships NO widgets.json, so on a fresh
+    # install the model is empty, the Repeater draws nothing, and the desktop
+    # looks like the widgets are broken. They were never placed. copal-widgets
+    # below places them, so this machine starts with the clock already on the
+    # wallpaper the way the screenshots have it.
+    #
+    # ONLY TWO OF THEM ARE REAL, whatever the file listing suggests.
+    # Config.qml's widgetPaths has Weather and Clock live and CPUTemp, GPUTemp,
+    # RAM and TheDate commented out; CPUTemperatureWidget.qml exists but is a
+    # 500x500 red rectangle with the layer-shell lines commented out -- a
+    # sketch, not a widget. So there is nothing to switch on there, and this
+    # does not pretend otherwise.
+    #
+    # AND QUICKSHELL IS NOT PACKAGED, which is the whole reason this stage
+    # exists. So the widgets are done twice, on purpose:
+    #
+    #   copal-widgets --seed    writes widgets.json for the monitors this
+    #                           machine actually has, for the day a quickshell
+    #                           appears. Costs nothing until then.
+    #   desktop.json/.css       a SECOND waybar, on the bottom layer, drawing
+    #                           the same two readouts on the wallpaper today.
+    #
+    # WHY A SECOND WAYBAR AND NOT eww, conky OR A LITTLE GTK PROGRAM. Because
+    # waybar is already here and already packaged for both architectures, and
+    # because it can do the one thing this needs: "layer": "bottom" puts a
+    # layer-shell surface underneath the windows, "exclusive": false stops it
+    # reserving screen space, and "passthrough": true lets the pointer fall
+    # through to whatever is behind it. eww and conky-wayland are packaged for
+    # neither arch, and a GTK program of our own would be a new dependency and
+    # a new thing to maintain for two lines of text.
+    #
+    # waybar reads an ARRAY of bar objects from one file, which is what makes
+    # the stacked layout possible: the big clock is one bar, the date and the
+    # weather are a second one below it, and margin-top places each.
+    say "Writing ~/.config/waybar/desktop.json (the widgets on the wallpaper)"
+    cat > /tmp/waybardesk.$$ <<'WAYBARDESK'
+[
+  // Generated by copal-init.sh -- the desktop widgets, on the wallpaper.
+  //
+  // Two bars rather than two files: waybar reads a JSON array as several
+  // bars from one config. Both sit on the BOTTOM layer, so windows cover
+  // them, and both are passthrough, so a click goes to the desktop and not
+  // to a clock. Nothing regenerates this after the install; it is yours.
+  //
+  // Turn them off:   copal-widgets --off      (and --on to bring them back)
+  // Move them:       margin-top, below
+  {
+    "name": "desktopclock",
+    "layer": "bottom",
+    "position": "top",
+    "exclusive": false,
+    "passthrough": true,
+    "height": 130,
+    "margin-top": 96,
+    "spacing": 0,
+    "modules-center": ["clock"],
+
+    // 30 seconds, not 1: the face shows hours and minutes, so a per-second
+    // tick would be 86,400 redraws a day to change a digit 1,440 times.
+    "clock": { "format": "{:%H:%M}", "interval": 30, "tooltip": false }
+  },
+  {
+    "name": "desktopinfo",
+    "layer": "bottom",
+    "position": "top",
+    "exclusive": false,
+    "passthrough": true,
+    "height": 44,
+    "margin-top": 218,
+    "spacing": 22,
+    "modules-center": ["custom/date", "custom/weather"],
+
+    // Hourly: the date changes once a day, and this way it is right by 00:01
+    // without a timer that fires while you sleep.
+    "custom/date": {
+      "format": "{}",
+      "interval": 3600,
+      "exec": "date '+%A, %-d %B %Y'",
+      "tooltip": false
+    },
+
+    // The same wttr.in call the bar makes, on the same 30-minute interval and
+    // for the same reason -- see the note above "custom/weather" in
+    // ~/.config/waybar/config. %C spells the condition out, which there is
+    // room for here and not on the bar.
+    "custom/weather": {
+      "format": "{}",
+      "interval": 1800,
+      "exec": "curl -sS --max-time 8 'https://wttr.in/?format=%c+%t,+%C' 2>/dev/null || true",
+      "tooltip": false
+    }
+  }
+]
+WAYBARDESK
+    install_home_file .config/waybar/desktop.json /tmp/waybardesk.$$
+    rm -f /tmp/waybardesk.$$
+
+    # The type is the theme's, not the bar's. quickshell's ClockWidget.qml
+    # draws the time at 104px in Boska, weight 500, in the accent gold with a
+    # soft drop shadow; stage 16 installs Boska system-wide, so the same face
+    # is available to waybar and this is as close as CSS gets. Where the fonts
+    # did not install, the fallbacks are the bar's own and it still reads.
+    cat > /tmp/waybardeskcss.$$ <<'WAYBARDESKCSS'
+/* Generated by copal-init.sh -- the desktop widgets' type and colour.
+   Boska is the theme's own display face, installed by stage 16 and the one
+   quickshell's ClockWidget.qml asks for; the rest are fallbacks so this still
+   reads on a machine where the fonts did not land. */
+
+* {
+    border: none;
+    border-radius: 0;
+    min-height: 0;
+}
+
+/* TRANSPARENT, BOTH OF THEM. A bottom-layer bar with a background is a grey
+   band across the wallpaper -- the widget is the text, not a panel. */
+window#waybar.desktopclock,
+window#waybar.desktopinfo {
+    background: transparent;
+    color: #d0daed;
+}
+
+window#waybar.desktopclock #clock {
+    font-family: "Boska", "Recia", "DejaVu Serif", serif;
+    font-size: 96px;
+    font-weight: 500;
+    color: #fccf8a;                  /* accent, as in ClockWidget.qml */
+    /* The theme's DropShadow, in the one form CSS has. Without it the gold
+       disappears into a pale wallpaper. */
+    text-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
+    padding: 0;
+}
+
+window#waybar.desktopinfo #custom-date,
+window#waybar.desktopinfo #custom-weather {
+    font-family: "Quilon", "JetBrains Mono", "DejaVu Sans", sans-serif;
+    font-size: 15px;
+    color: #d0daed;
+    text-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
+    padding: 0 6px;
+}
+
+/* The weather is the quieter of the two: the date is where the eye lands. */
+window#waybar.desktopinfo #custom-weather { color: #87704f; }
+WAYBARDESKCSS
+    install_home_file .config/waybar/desktop.css /tmp/waybardeskcss.$$
+    rm -f /tmp/waybardeskcss.$$
+
+    # ----------------------------------------------------------------------
+    # copal-widgets -- the one command for both halves of the story.
+    cat > /usr/local/bin/copal-widgets <<'COPALWIDGETS'
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# copal-widgets -- the widgets on the wallpaper: place them, hide them, seed
+# them for the shell that is not installed yet.
+#
+# TWO THINGS WEAR THE NAME "desktop widget" on this machine, because the shell
+# the theme was written for is not packaged for Alpine:
+#
+#   the waybar pair  ~/.config/waybar/desktop.json -- the clock, the date and
+#                    the weather that are actually on your wallpaper now.
+#   widgets.json     ~/.config/quickshell/widgets.json -- the model Linux
+#                    Antiquity's own WidgetScreen.qml reads. Upstream ships
+#                    none, which is why a fresh install of the theme shows no
+#                    widgets at all and everyone assumes they are broken: they
+#                    were simply never placed. --seed places them, so the day
+#                    a quickshell binary appears here the real widgets are
+#                    already on the desktop.
+#
+# Both are plain files. Nothing here regenerates them once they exist.
+set -eu
+
+CFG="${XDG_CONFIG_HOME:-$HOME/.config}"
+OFF="$CFG/copal/no-desktop-widgets"
+
+usage() {
+    cat <<'USAGE'
+copal-widgets -- the clock and the weather on the wallpaper
+
+  copal-widgets --off        hide them (takes effect now)
+  copal-widgets --on         show them again
+  copal-widgets --status     which of them are running, and from where
+  copal-widgets --seed       place the theme's own widgets in
+                             ~/.config/quickshell/widgets.json, one set per
+                             monitor. Runs at login; safe to repeat -- a
+                             monitor that already has widgets is left alone.
+
+Files:
+  ~/.config/waybar/desktop.json    what is drawn, and where
+  ~/.config/waybar/desktop.css     the type and the colour
+  ~/.config/quickshell/widgets.json  the theme's model, for the day quickshell
+                                     is packaged
+
+  copal-guide widgets              the longer version
+USAGE
+}
+
+# The desktop layer, started and stopped without touching the bar: both are
+# waybar, so a bare pkill would take the bar down with them. -f matches the
+# full command line, which is the only thing that tells the two apart.
+start_desktop() {
+    [ -f "$CFG/waybar/desktop.json" ] || return 0
+    pkill -f 'waybar .*desktop\.json' 2>/dev/null || true
+    waybar -c "$CFG/waybar/desktop.json" -s "$CFG/waybar/desktop.css" \
+        >/dev/null 2>&1 &
+}
+stop_desktop() { pkill -f 'waybar .*desktop\.json' 2>/dev/null || true; }
+
+seed() {
+    # Nothing to seed without the compositor: the model is keyed by MONITOR
+    # NAME -- Config.widgets[screen.name] in WidgetScreen.qml -- and only
+    # hyprctl knows what this machine's outputs are called. jq does the
+    # editing because the file belongs to quickshell's JsonAdapter, which
+    # rewrites it whenever the settings window touches a widget; hand-rolled
+    # string surgery on a file another program owns is how you lose someone's
+    # layout.
+    command -v hyprctl >/dev/null 2>&1 || return 0
+    command -v jq >/dev/null 2>&1 || return 0
+    qs_dir="$CFG/quickshell"
+    [ -d "$qs_dir" ] || return 0
+    f="$qs_dir/widgets.json"
+
+    cur='{"monitors":{}}'
+    if [ -f "$f" ] && jq -e . "$f" >/dev/null 2>&1; then cur=$(cat "$f"); fi
+
+    # The weather widget draws from OpenWeatherMap and needs a key, which this
+    # machine cannot have by default -- placing it unkeyed would put an empty
+    # square on the wallpaper and call it a widget. So: clock always, weather
+    # only once a key is in the theme's settings (sidebar -> Settings).
+    key=""
+    [ -f "$qs_dir/settings.json" ] && key=$(jq -r \
+        '.settings.openWeatherMap.apiKey // ""' "$qs_dir/settings.json" \
+        2>/dev/null || echo "")
+
+    new=$(hyprctl monitors -j 2>/dev/null | jq --argjson cur "$cur" --arg key "$key" '
+      reduce .[] as $m ($cur;
+        # A monitor that already has widgets is somebody having placed them.
+        if ((.monitors[$m.name] // {}) | length) > 0 then .
+        else
+          # Logical pixels: the widget is placed in the same coordinates the
+          # layer-shell window uses, which are already divided by the scale.
+          (($m.width  / ($m.scale // 1)) | floor) as $w |
+          (($m.height / ($m.scale // 1)) | floor) as $h |
+          # ClockWidget.qml is 460x220, WeatherWidget.qml 500x500. Centred,
+          # upper third -- where the screenshots have them, and clear of the
+          # bar at the top and the radial taskbar at the bottom.
+          .monitors[$m.name] = (
+            { "0": { widgetName: "Clock", widgetType: 1,
+                     x: ((($w - 460) / 2) | floor), y: (($h * 0.14) | floor),
+                     enableBackground: false,
+                     monitorName: $m.name, widgetId: "0" } }
+            + (if $key == "" then {} else
+               { "1": { widgetName: "Weather", widgetType: 0,
+                        x: ((($w - 500) / 2) | floor),
+                        y: (($h * 0.14 + 240) | floor),
+                        enableBackground: false,
+                        monitorName: $m.name, widgetId: "1" } }
+              end)
+          )
+        end)' 2>/dev/null) || return 0
+
+    [ -n "$new" ] || return 0
+    printf '%s\n' "$new" > "$f.copal.$$" && mv "$f.copal.$$" "$f"
+}
+
+case "${1:---status}" in
+    --seed)   seed ;;
+    --off)    mkdir -p "$(dirname "$OFF")"; : > "$OFF"; stop_desktop
+              echo "desktop widgets off -- copal-widgets --on brings them back" ;;
+    --on)     rm -f "$OFF"; start_desktop
+              echo "desktop widgets on" ;;
+    --status)
+        if [ -e "$OFF" ]; then echo "desktop widgets: off ($OFF)"
+        elif pgrep -f 'waybar .*desktop\.json' >/dev/null 2>&1; then
+            echo "desktop widgets: running (waybar, ~/.config/waybar/desktop.json)"
+        else echo "desktop widgets: on, but not running -- start them with: copal-bar &"
+        fi
+        if [ -f "$CFG/quickshell/widgets.json" ]; then
+            echo "quickshell model: $CFG/quickshell/widgets.json"
+            command -v jq >/dev/null 2>&1 && jq -r \
+                '.monitors | to_entries[] | "  " + .key + ": " +
+                 ([.value[].widgetName] | join(", "))' \
+                "$CFG/quickshell/widgets.json" 2>/dev/null || true
+        fi
+        command -v quickshell >/dev/null 2>&1 || command -v qs >/dev/null 2>&1 \
+            || echo "quickshell is not installed -- the model waits for it" ;;
+    -h|--help|help) usage ;;
+    *) usage; exit 1 ;;
+esac
+COPALWIDGETS
+    chmod 0755 /usr/local/bin/copal-widgets
+    note "copal-widgets -- the clock and weather on the wallpaper (--off to hide)"
+
     # The wrapper the session starts, rather than naming waybar in
     # hyprland.conf. One place decides which shell runs, and it prefers the
     # real one -- so the day quickshell is packaged, nothing here is edited.
@@ -10587,9 +10960,29 @@ WOFICSS
 # with nothing here changed.
 set -eu
 
+# The desktop widgets, before either shell starts. This only writes
+# ~/.config/quickshell/widgets.json -- the model the theme's WidgetScreen.qml
+# reads and which upstream ships empty -- so it costs nothing on a machine
+# with no quickshell and means the widgets are already placed on the machine
+# that gets one. See copal-widgets.
+command -v copal-widgets >/dev/null 2>&1 && copal-widgets --seed >/dev/null 2>&1 || true
+
+# quickshell draws its own desktop widgets, so these two exec before the
+# waybar pair below is ever started.
 if command -v qs >/dev/null 2>&1; then exec qs; fi
 if command -v quickshell >/dev/null 2>&1; then exec quickshell; fi
-if command -v waybar >/dev/null 2>&1; then exec waybar; fi
+
+if command -v waybar >/dev/null 2>&1; then
+    # The widgets on the wallpaper: a second waybar on the bottom layer,
+    # backgrounded, unless somebody said no with copal-widgets --off. It is
+    # not exec'd -- the bar is the thing this script must not return from.
+    _cfg="${XDG_CONFIG_HOME:-$HOME/.config}"
+    if [ ! -e "$_cfg/copal/no-desktop-widgets" ] && [ -f "$_cfg/waybar/desktop.json" ]; then
+        waybar -c "$_cfg/waybar/desktop.json" -s "$_cfg/waybar/desktop.css" \
+            >/dev/null 2>&1 &
+    fi
+    exec waybar
+fi
 
 # Neither. Say so somewhere it will be seen -- a desktop with no bar and no
 # explanation is the thing this whole script exists to avoid.
@@ -11577,8 +11970,10 @@ ANTIQHYPR
  WHERE THINGS ARE
    ~/.config/hypr/hyprland.conf    these bindings
    ~/.config/waybar/config         what is on the bar
+   ~/.config/waybar/desktop.json   the clock and weather ON the wallpaper
    ~/.config/wofi/style.css        the launcher and the menu
-   copal-guide widgets             how to change the bar
+   copal-guide widgets             how to change the bar and the
+                                   widgets on the wallpaper
    copal-guide wallpapers          how to change the wallpaper
 GUIDE
 

@@ -1499,6 +1499,14 @@ a date on it.
 > character carry over and the layout is an honest waybar.
 > `copal-bar` decides which shell runs and prefers quickshell, so the day Alpine
 > packages it the real shell returns with nothing edited.
+>
+> The **desktop widgets** — the big clock, the date and the weather that sit on
+> the wallpaper under your windows — come from a second waybar on the bottom
+> layer (`copal-widgets --off` hides them). The theme's own widgets need one
+> more thing than a quickshell: upstream ships no `widgets.json`, which is the
+> whole model `WidgetScreen.qml` draws from, so they are invisible on a fresh
+> install of the theme anywhere until somebody places them in the settings
+> window. `copal-widgets --seed` writes that file per monitor at login.
 
 That split is not a hedge, but the ground under it is moving:
 

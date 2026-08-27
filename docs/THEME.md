@@ -428,6 +428,33 @@ things live in it:
 - `widgets/` — desktop widgets, placed per monitor: `WeatherWidget.qml` (the
   humoral chart), `ClockWidget.qml`, `CPUTemperatureWidget.qml`, laid out by
   `WidgetScreen.qml`.
+
+  **Two of those three are real.** `Config.qml`'s `widgetPaths` lists only
+  `Weather` and `Clock`; `CPUTemp`, `GPUTemp`, `RAM` and `TheDate` are
+  commented out, and `CPUTemperatureWidget.qml` is an unfinished sketch — a
+  500×500 rectangle at 20% red with its layer-shell lines commented out.
+
+  **And nothing is drawn until something writes `widgets.json`.**
+  `WidgetScreen.qml` repeats over `Config.widgets[<monitor name>]`, which is a
+  `JsonAdapter` over `~/.config/quickshell/widgets.json` — a file the
+  repository does not contain. It is created by the settings window
+  (sidebar → Settings → Widgets → **+**, which calls `Config.addWidget()`), so
+  on a fresh install of the theme the model is empty and the desktop shows no
+  widgets at all. This is the single most common "the widgets are broken"
+  report and it is not a fault: they were never placed. Copal's
+  `copal-widgets --seed` writes the file for the monitors `hyprctl` reports —
+  a clock per monitor, and the weather one only once an OpenWeatherMap key is
+  present, since an unkeyed weather widget renders empty. `copal-bar` runs it
+  at login, so the day a `quickshell` binary appears here the widgets are
+  already in place.
+
+  Until then the same two readouts are drawn by a **second waybar** on the
+  bottom layer (`~/.config/waybar/desktop.json`, `desktop.css`): `layer:
+  bottom` + `exclusive: false` + `passthrough: true` is a click-through
+  surface above the wallpaper and below every window, and waybar's JSON-array
+  form gives the stacked clock / date+weather rows from one file. Weather
+  there comes from wttr.in, which needs no account. `copal-widgets --off`
+  hides them; `copal-guide widgets` is the user-facing version of all this.
 - `assets/` and `smallicons/` — the drawn artwork: celestial bodies, faces,
   the star-chart/armillary background (`BackgroundPatternOne.qml`, 476 kB of
   vector data, the largest single QML file in the theme).

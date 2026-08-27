@@ -1398,6 +1398,23 @@ To change any of it: `copal-guide widgets`, which covers moving things between
 the three lists, the clock's format, pinning the weather to a city, naming a
 sensor path, and adding a widget of your own.
 
+**And the widgets on the wallpaper.** The big clock, the date and the weather
+that sit on the desktop under your windows — the thing the theme's screenshots
+show and the part people go hunting for — are drawn by a second waybar on the
+bottom layer, click-through, from `~/.config/waybar/desktop.json`.
+`copal-widgets --off` hides them, `--on` brings them back, `--status` says what
+is running.
+
+The theme's own versions of those widgets are quickshell, and they have a
+second reason for being invisible that has nothing to do with Alpine: upstream
+ships no `widgets.json`, and that file is the entire model
+`WidgetScreen.qml` draws from. It is written by the shell's settings window,
+so until somebody clicks *Settings → Widgets → +* there is nothing to draw and
+the widgets look broken when they were only never placed. `copal-widgets
+--seed` writes it — a clock per monitor that `hyprctl` reports, the weather one
+too once an OpenWeatherMap key exists — and `copal-bar` runs it at login, so a
+machine that later gets a quickshell already has its widgets laid out.
+
 ### Wallpapers
 
 `copal-wallpaper --pick` (or `Super`+`Shift`+`W`, or the menu's Style branch)
