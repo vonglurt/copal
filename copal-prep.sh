@@ -11701,13 +11701,12 @@ bind = $mainMod, Q, killactive,
 #                    saved -- it is 'kill -9' aimed with the mouse, for the
 #                    program that has stopped answering.
 #
-# Super+grave is the second close binding: 'grave' is the ` / ~ key, named
-# for the character unshifted, which is the name Hyprland (and XKB under it)
-# knows it by -- writing 'asciitilde' there would bind Super+Shift+` instead.
-# Super+Escape is the hard one, deliberately the more awkward reach of the
-# two: an unrecoverable action should not sit next to Tab.
-bind = $mainMod, grave, killactive,
-bind = $mainMod, Escape, forcekillactive,
+# Super+Escape is the second close binding, and Super+Shift+Escape is the
+# hard one -- the same pair on the same key, with Shift as the difference,
+# because the unrecoverable action should cost an extra finger rather than
+# sit on a key of its own that can be hit by accident.
+bind = $mainMod, Escape, killactive,
+bind = $mainMod SHIFT, Escape, forcekillactive,
 bind = $mainMod SHIFT, S, exec, copal-shot
 bind = $mainMod, E, exec, $fileManager
 bind = $mainMod SHIFT, SPACE, togglefloating,
@@ -11939,7 +11938,9 @@ ANTIQHYPR
    Super + Ctrl + V     the clipboard history -- the last hundred things
 
  WINDOWS
-   Super + Q            close this window
+   Super + Q            close this window. Super + Escape does the same.
+   Super + Shift + Esc  KILL this window -- no "save changes?", nothing
+                        asked. For the program that has stopped answering.
    Alt + Tab            switch window   (Super + Tab does the same)
    Alt + Shift + Tab    switch backwards
    Super + arrows       move focus

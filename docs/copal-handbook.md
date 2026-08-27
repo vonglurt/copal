@@ -1383,6 +1383,45 @@ to `llvmpipe`, which is software rendering with a hardware-sounding name, while
 the kernel, the driver and glamor all report success. `mesa-demos` is installed
 in a guest so that `glxinfo` is there to catch it.
 
+### The keys on this desktop
+
+Not the i3 list above. The modifier is the same and almost nothing else is, so
+the desktop ships its own list: **Super + /** (or **Super + F1**) opens it in a
+window, and `copal-guide antiquity-keys` prints it anywhere.
+
+| Key | Action |
+|---|---|
+| **Super + Space** or **Super + D** | Run a program |
+| **Super + Return** | Terminal |
+| **Super + E** | File manager |
+| **Super + Shift + N / M / W** | Editor / music / the wallpaper picker |
+| **Super + Ctrl + A / T** | Volume / what the machine is doing |
+| **Super + C / X / V** | Copy / cut / paste — the terminal included |
+| **Super + Ctrl + V** | Clipboard history |
+| **Super + arrows** or **H J K L** | Move focus |
+| **Super + Shift +** those | Move the window |
+| **Super + Ctrl + arrows** | Resize. Held down; there is no resize mode here |
+| **Alt + Tab** (**Super + Tab**) | Switch window; add Shift to go backwards |
+| **Super + F** | Fullscreen |
+| **Super + Shift + Space** | Float this window, or put it back |
+| **Super + 1..0** | Workspaces, ten of them; add Shift to send the window |
+| **Super + Shift + S** | Screenshot a region |
+| **Super + Shift + P** / **Super + Shift + Delete** | Shut down / reboot |
+| **Super + Shift + E** | Leave the session |
+
+**Closing a window is two keys, and they are not the same operation.** Both are
+listed because the polite one can fail:
+
+| Key | What it does |
+|---|---|
+| **Super + Q**, or **Super + Escape** | *Close*. Asks the window to go, the way its own X button does — the program runs its "save changes?" and may refuse. This is the one you want. |
+| **Super + Shift + Escape** | *Kill*. SIGKILLs the client: nothing asked, nothing saved. `kill -9` aimed with the mouse, for the program that has stopped answering. |
+
+The pair sits on one key with Shift as the whole difference, so the
+unrecoverable one costs a finger rather than occupying a key of its own that can
+be hit by accident. Nothing is bound to **Super + `** — an earlier arrangement
+put *close* there, and it is gone.
+
 ### The bar, the menu button, and the widgets
 
 The Antiquity theme's bar is 99 QML files for quickshell, which no Alpine
