@@ -117,6 +117,7 @@ be retyped at the Pi's console.
 |---|---|
 | `copal` | The installer. Fifteen stages, all optional, all re-runnable |
 | `copal --auto` | Run every stage unattended, resuming across the reboot |
+| `copal-desk` | Lay the workspaces out the same way every time (**Super+Shift+D**) |
 | `copal-menu` | The menu, built from what is installed: applications on the left, categories/settings/session on the right (**Super+Space**, or **Super+Z** for the right side) |
 | `copal-center` | One window listing all 316 programs — run or install (**Super+C**) |
 | `copal-guide` | Plain-text guides — eleven of them, on the machine, no network (**Super+Shift+G**) |
@@ -1423,6 +1424,83 @@ The pair sits on one key with Shift as the whole difference, so the
 unrecoverable one costs a finger rather than occupying a key of its own that can
 be hit by accident. Nothing is bound to **Super + `** — an earlier arrangement
 put *close* there, and it is gone.
+
+### The desk, laid out the same way every time
+
+`copal-desk` (**Super + Shift + D**, or *Style → Lay the desk out* in the menu)
+opens a set of programs on fixed workspaces in one command. The layout that
+ships is called `code`:
+
+| Workspace | What lands there |
+|---|---|
+| **1** | nothing — where you are left standing, and where you throw a window when you need room |
+| **2** | the editor and a terminal, side by side. The work. |
+| **3** | a Claude Code session, already `cd`'d to `~/code`, waiting for input |
+| **5** | the browser |
+
+4 and 6–10 stay empty on purpose: a layout that fills every workspace leaves
+nowhere for the thing you did not plan for.
+
+**Why fixed numbers rather than "wherever it opens".** This is the one idea
+worth stealing from competitive StarCraft, and Day[9]'s macro drills are its
+clearest statement: you do not get faster by thinking faster, you get faster by
+moving decisions out of your head and into your hands — and hands can only
+learn a position that does not move. A tiling desktop with ten interchangeable
+workspaces is the opposite of that. Whatever you opened first is on 1 today and
+on 3 tomorrow, so every switch starts with a look at the screen to find out
+where you are. Omarchy answers this with numbered workspaces that always hold
+the same kind of thing; `copal-desk` is that answer plus one key that puts them
+there.
+
+**Writing your own.** A layout is a text file. Copy the shipped one and edit it:
+
+```sh
+mkdir -p ~/.config/copal/layouts
+copal-desk --show code > ~/.config/copal/layouts/mine.layout
+copal-desk mine
+```
+
+Each line is a workspace number and a role, in the order they should open —
+the first line on a workspace is the left-hand window:
+
+```
+focus 1
+2 editor
+2 terminal
+3 claude
+5 browser
+```
+
+Roles resolve to whatever the machine actually has: `editor` is a graphical
+editor if one is installed and `nvim` in a terminal if not, `browser` walks the
+same preference list `$BROWSER` does, and `terminal`, `files`, `music` and
+`claude` do the obvious thing. A role this machine cannot fill is reported at
+the end and skipped, not treated as a failure. For anything not covered there
+are two escape hatches:
+
+```
+4 run: mpv --no-video ~/Music     run this command as it stands
+4 term: ssh pi@fileserver         run it inside a terminal
+```
+
+`copal-desk --list` shows the layouts on the machine; `--show NAME` prints one
+without running it.
+
+**Both desktops.** On Hyprland each window is placed before it opens
+(`[workspace N silent]`), so the layout builds behind you and the screen does
+not flick through five workspaces. i3 has no such thing, so there `copal-desk`
+switches workspace before each program and switches back at the end.
+
+**It does not run itself at login.** On a board this size, five programs
+starting during login is the slowest possible moment for them to do it — and a
+layout that runs itself is one you cannot decline on the morning you wanted an
+empty machine. If you want it anyway, add `exec-once = copal-desk` to
+`~/.config/hypr/hyprland.conf`.
+
+`COPAL_DESK_DELAY` (default 1 second) is the pause between windows. It exists
+because two windows opening on one workspace in the same instant race to be the
+first half of the split, which is the one thing the layout is supposed to
+decide. A Pi Zero starting a browser may want 2 or 3.
 
 ### Scrolling goes the way the content goes
 

@@ -7372,6 +7372,8 @@ bindsym $mod+Shift+q kill
 # A clickable menu, built from what is actually installed. Falls back to
 # dmenu over the same list when jgmenu is absent, so it always works.
 bindsym $mod+z      exec copal-menu
+# The desk, laid out the same way every time -- see copal-desk.
+bindsym $mod+Shift+d exec --no-startup-id copal-desk
 # And the same menu on a right-click on the desktop, which is where everyone
 # who has ever used a computer looks for it first. i3 has no desktop of its
 # own -- what you are clicking is the X root window, visible wherever no
@@ -8277,6 +8279,8 @@ fi
 out '^tag(style)'
 out "Back,^back()"
 out '^sep(Style)'
+have copal-desk && out "Lay the desk out (workspaces 1-5),copal-desk" || true
+have copal-desk && out "Which desk layouts exist,$TERM_EMU -e sh -c 'copal-desk --list; echo; echo Press Enter to close; read x'" || true
 have copal-wallpaper && out "Wallpaper...,copal-wallpaper --pick" || true
 have copal-wallpaper && out "Get more wallpapers,$TERM_EMU -e sh -c 'copal-wallpaper --fetch; echo; echo Press Enter to close; read x'" || true
 have copal-theme && out "Theme (tokyo-night / antiquity),$TERM_EMU -e sh -c 'copal-theme list; echo; echo \"copal-theme NAME to switch\"; echo Press Enter to close; read x'" || true
@@ -8432,6 +8436,233 @@ fi
 walk
 COPALMENU
     chmod 0755 /usr/local/bin/copal-menu
+    # ----------------------------------------------------------------------
+    # copal-desk: the desk, laid out the same way every time.
+    #
+    # WHY THIS EXISTS, and it is not tidiness. Competitive StarCraft has a
+    # word for the thing a layout buys: the hands stop looking. Day[9]'s
+    # macro/micro drills are the canonical statement of it -- you do not get
+    # faster by thinking faster, you get faster by moving the decisions your
+    # hands make into muscle memory, and muscle memory needs the thing to be
+    # in the SAME PLACE every time. A tiling desktop with ten empty
+    # workspaces is exactly the wrong shape for that: whatever you opened
+    # first is on 1 today and on 3 tomorrow, so every switch begins with a
+    # look. Omarchy's answer is numbered workspaces with fixed contents;
+    # this is the same answer, plus one command that puts them there.
+    #
+    # The layout that ships is called 'code' and reads:
+    #
+    #   1  nothing -- the empty one you land on, and the one you throw a
+    #      window onto when you need room to think
+    #   2  the editor and a terminal, side by side, which is the work
+    #   3  a Claude Code session, already in ~/code, ready for input
+    #   5  the browser
+    #
+    # 4 and the rest are deliberately empty. A layout that fills every
+    # workspace leaves nowhere to put the thing you did not plan for.
+    #
+    # It is a text file and there is nothing special about it -- write your
+    # own into ~/.config/copal/layouts/NAME and copal-desk NAME runs it.
+    say "Installing /usr/local/bin/copal-desk"
+    mkdir -p /usr/local/share/copal/layouts
+    cat > /usr/local/share/copal/layouts/code.layout <<'DESKCODE'
+# The code desk. 'copal-desk' with no arguments runs this one.
+#
+#   <workspace>  <role>            put that program on that workspace
+#   focus <workspace>              where to leave you at the end
+#
+# Roles are resolved to whatever this machine actually has: 'editor' is the
+# graphical editor if one is installed and nvim in a terminal if not, and so
+# on. Two escape hatches for anything not covered:
+#
+#   4  run: mpv --no-video ~/Music     run this command as it stands
+#   4  term: ssh pi@fileserver         run it inside a terminal
+#
+# Lines are executed in order, so on a workspace with two windows the first
+# line is the left-hand one.
+focus 1
+2 editor
+2 terminal
+3 claude
+5 browser
+DESKCODE
+
+    cat > /usr/local/bin/copal-desk <<'COPALDESK'
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# copal-desk -- put the workspaces into a known shape, in one command.
+#
+# Reads a layout file and opens what it names on the workspace it names.
+# Works on both desktops: Hyprland is told where a window goes before it
+# opens ([workspace N silent] on the exec dispatcher, which places it without
+# dragging your eyes to it), i3 is told by switching workspace first, which
+# is the only mechanism it has.
+#
+# NOT AN AUTOSTART. It is a key (Super+Shift+D) and a menu entry, because a
+# layout that runs itself at login is a layout you cannot decline on the
+# morning you wanted an empty machine -- and on a board this size, five
+# programs starting at once during login is the slowest possible moment for
+# them to do it.
+set -eu
+
+LAYOUT_SYS=/usr/local/share/copal/layouts
+LAYOUT_USR="${XDG_CONFIG_HOME:-$HOME/.config}/copal/layouts"
+have() { command -v "$1" >/dev/null 2>&1; }
+wayland() { [ -n "${WAYLAND_DISPLAY:-}" ]; }
+
+usage() {
+    cat <<USAGE
+usage: copal-desk [NAME]      lay the desk out; NAME defaults to 'code'
+       copal-desk --list      the layouts on this machine
+       copal-desk --show NAME print one, without running it
+
+Layouts live in $LAYOUT_SYS and in
+$LAYOUT_USR, which wins where both have the name.
+USAGE
+}
+
+layout_file() {  # <name> -> path, or nothing
+    [ -f "$LAYOUT_USR/$1.layout" ] && { printf '%s\n' "$LAYOUT_USR/$1.layout"; return 0; }
+    [ -f "$LAYOUT_SYS/$1.layout" ] && { printf '%s\n' "$LAYOUT_SYS/$1.layout"; return 0; }
+    return 1
+}
+
+list_layouts() {
+    for _d in "$LAYOUT_SYS" "$LAYOUT_USR"; do
+        [ -d "$_d" ] || continue
+        for _f in "$_d"/*.layout; do
+            [ -f "$_f" ] || continue
+            printf '  %-12s %s\n' "$(basename "$_f" .layout)" \
+                   "$(awk 'NF && /^#/ { sub(/^# ?/, ""); print; exit }' "$_f")"
+        done
+    done
+}
+
+# ---- the roles, resolved against what is installed -------------------------
+# Same preference orders the rest of Copal uses: foot first on Wayland because
+# it is the terminal that comes up on a compositor drawing in software, and
+# the browser list is the one /etc/profile.d/browser.sh picks $BROWSER from.
+if wayland; then
+    TERM_EMU="${TERMINAL:-$(have foot && echo foot || (have kitty && echo kitty) \
+                            || (have alacritty && echo alacritty) || echo xterm)}"
+else
+    TERM_EMU="${TERMINAL:-$(have urxvt && echo urxvt || echo xterm)}"
+fi
+
+first_of() { for _c in "$@"; do have "$_c" && { printf '%s\n' "$_c"; return 0; }; done; return 1; }
+
+role_cmd() {  # <role> -> a command line, or nothing if this machine cannot
+    case "$1" in
+        terminal) printf '%s\n' "$TERM_EMU" ;;
+        # A graphical editor if there is one, and nvim in a terminal if not.
+        # The terminal editor is not a lesser answer here -- on the small
+        # boards it is the only one that opens in under a second.
+        editor)
+            _e=$(first_of lapce codium code kate geany mousepad 2>/dev/null || true)
+            if [ -n "${_e:-}" ]; then printf '%s\n' "$_e"
+            else _e=$(first_of nvim vim vi) && printf '%s -e %s\n' "$TERM_EMU" "$_e"
+            fi ;;
+        browser)
+            _b=$(first_of "${BROWSER:-}" brave firefox-esr firefox chromium \
+                          badwolf netsurf dillo 2>/dev/null || true)
+            [ -n "${_b:-}" ] && printf '%s\n' "$_b" || return 1 ;;
+        files|filemanager)
+            _f=$(first_of thunar pcmanfm xfe 2>/dev/null || true)
+            if [ -n "${_f:-}" ]; then printf '%s\n' "$_f"
+            else _f=$(first_of mc nnn ranger) && printf '%s -e %s\n' "$TERM_EMU" "$_f"
+            fi ;;
+        # The one role with a working directory in it. ~/code is where Copal
+        # puts a checkout and where the agent is most useful; it is created
+        # if it is not there, because a shell that starts with 'cd: no such
+        # file' has wasted the whole point of the workspace.
+        claude)
+            have claude || return 1
+            printf "%s -e sh -c 'mkdir -p \"\$HOME/code\"; cd \"\$HOME/code\"; exec claude'\n" "$TERM_EMU" ;;
+        music)
+            _m=$(first_of cmus mocp 2>/dev/null || true)
+            [ -n "${_m:-}" ] && printf '%s -e %s\n' "$TERM_EMU" "$_m" || return 1 ;;
+        *) return 1 ;;
+    esac
+}
+
+# ---- placing one window ----------------------------------------------------
+# The pause is not decoration. Two windows opening on one workspace inside the
+# same tenth of a second race to be the first child of the split, so the
+# left-hand one in the layout file is whichever won -- which is the one thing
+# a layout is supposed to decide. COPAL_DESK_DELAY tunes it; a Pi Zero
+# starting a browser wants more than a laptop does.
+DELAY="${COPAL_DESK_DELAY:-1}"
+
+spawn() {  # <workspace> <command line>
+    if wayland && have hyprctl; then
+        # 'silent' places it without following it: the layout builds behind
+        # you and the screen does not flick through five workspaces.
+        hyprctl dispatch exec "[workspace $1 silent] $2" >/dev/null 2>&1 || return 1
+    elif have i3-msg; then
+        # i3 has no per-window placement on exec, so the workspace has to be
+        # the current one when the window maps. The focus is put back at the
+        # end, by the 'focus' line.
+        i3-msg "workspace number $1" >/dev/null 2>&1 || true
+        i3-msg "exec --no-startup-id $2" >/dev/null 2>&1 || return 1
+    else
+        echo "copal-desk: neither hyprctl nor i3-msg -- no window manager to ask" >&2
+        exit 1
+    fi
+    sleep "$DELAY"
+}
+
+go_to() {  # <workspace>
+    if wayland && have hyprctl; then hyprctl dispatch workspace "$1" >/dev/null 2>&1 || true
+    elif have i3-msg;         then i3-msg "workspace number $1" >/dev/null 2>&1 || true
+    fi
+}
+
+# ---- arguments -------------------------------------------------------------
+NAME=code
+SHOW=""
+case "${1:-}" in
+    -h|--help) usage; exit 0 ;;
+    --list) list_layouts; exit 0 ;;
+    --show) SHOW=1; NAME="${2:?--show needs a layout name}" ;;
+    -*) usage >&2; exit 2 ;;
+    "") ;;
+    *) NAME="$1" ;;
+esac
+
+FILE=$(layout_file "$NAME") || {
+    echo "copal-desk: no layout called '$NAME'. There is:" >&2
+    list_layouts >&2
+    exit 1
+}
+[ -n "$SHOW" ] && { cat "$FILE"; exit 0; }
+
+# ---- running it ------------------------------------------------------------
+FOCUS=""
+MISSING=""
+while read -r ws rest; do
+    case "${ws:-}" in ''|'#'*) continue ;; esac
+    case "$ws" in
+        focus) FOCUS="$rest"; continue ;;
+    esac
+    [ -n "${rest:-}" ] || continue
+    case "$rest" in
+        run:*)  cmd=$(printf '%s' "${rest#run:}"  | sed 's/^ *//') ;;
+        term:*) cmd="$TERM_EMU -e sh -c '$(printf '%s' "${rest#term:}" | sed "s/^ *//; s/'/'\\\\''/g")'" ;;
+        *)      cmd=$(role_cmd "$rest" || true)
+                # A role this machine cannot fill is a note at the end, not a
+                # failure: a layout naming a browser is still worth running on
+                # the machine that has no browser yet.
+                [ -n "${cmd:-}" ] || { MISSING="$MISSING $rest"; continue; } ;;
+    esac
+    spawn "$ws" "$cmd" || echo "copal-desk: could not start: $cmd" >&2
+done < "$FILE"
+
+[ -n "$FOCUS" ] && go_to "$FOCUS"
+[ -n "$MISSING" ] && echo "copal-desk: not installed, so not opened:$MISSING" >&2
+exit 0
+COPALDESK
+    chmod 0755 /usr/local/bin/copal-desk
 
     # ----------------------------------------------------------------------
     # The Copal Center.
@@ -9499,6 +9730,10 @@ COPALGPU
                         twenty more.
    Super + Ctrl + A     volume (alsamixer)
    Super + Ctrl + T     what the machine is doing (btop, or htop)
+   Super + Shift + D    lay the desk out: the editor and a terminal on
+                        workspace 2, a Claude session in ~/code on 3, the
+                        browser on 5, and you are left on an empty 1.
+                        'copal-desk --list' shows the layouts.
 
  COPY AND PASTE -- THE SAME KEYS EVERYWHERE
    Super + C            copy
@@ -11885,6 +12120,11 @@ bind = $mainMod, SPACE, exec, $menu
 # some time while nothing here bound it at all. All three keys are now the
 # same menu, so which one somebody remembers no longer decides what they get.
 bind = $mainMod, Z, exec, copal-menu --system
+# THE DESK, laid out the same way every time: copal-desk opens the editor and
+# a terminal on 2, an agent on 3, the browser on 5, and leaves you on an empty
+# 1. Muscle memory needs things to be in the same place; see the essay above
+# copal-desk in stage 4.
+bind = $mainMod SHIFT, D, exec, copal-desk
 
 # MOVING BETWEEN WINDOWS, which this config did not bind AT ALL until now.
 # Upstream's hyprland.conf assumes you will add your own; the result on a
@@ -12106,6 +12346,11 @@ ANTIQHYPR
    Super + Shift + W    the wallpaper picker, with thumbnails
    Super + Ctrl + A     volume (alsamixer)
    Super + Ctrl + T     what the machine is doing (btop, or htop)
+   Super + Shift + D    LAY THE DESK OUT. Editor and terminal on 2, a
+                        Claude session in ~/code on 3, the browser on 5,
+                        and you are left on an empty 1. 'copal-desk --list'
+                        for the layouts; write your own into
+                        ~/.config/copal/layouts/NAME.layout
 
  COPY AND PASTE -- THE SAME KEYS EVERYWHERE, TERMINAL INCLUDED
    Super + C            copy
