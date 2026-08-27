@@ -705,6 +705,74 @@ fresh-img-%: | require-tools $(BUILDDIR)
 # check reads the target out of each script's `exec make` line and looks for
 # it among the targets defined below, so renaming one here fails the lint
 # rather than leaving a shortcut that only fails when somebody runs it.
+# THE HOST'S /bin/sh IS NOT THE TARGET'S. macOS ships bash as /bin/sh, and bash
+# parses things busybox ash refuses -- so `sh -n` here can pass a file that the
+# machine this whole repository exists to build cannot read. One shipped that
+# way: a lone backtick in an unquoted heredoc, inside a help message, opening a
+# command substitution that ran to the end of the file. bash -n: fine. The
+# guest: "syntax error: unexpected end of file", on the first login, with
+# nothing installed.
+#
+# dash is the closest POSIX parser most Macs can get (brew install dash), and
+# busybox itself is better still if it is there. Neither present is not a
+# failure -- it is a line saying which check did not run, because a lint that
+# quietly stops checking is worse than one that admits it.
+POSIX_SH := $(shell for c in dash /bin/dash busybox; do command -v $$c >/dev/null 2>&1 && { echo $$c; break; }; done)
+
+define POSIX_PARSE_INIT
+	@if [ -z "$(POSIX_SH)" ]; then \
+	    printf '  \033[33mskip\033[0m    POSIX parse -- no dash or busybox here (brew install dash)\n'; \
+	    printf '          bash -n passed, but the target runs busybox ash, which is stricter\n'; \
+	else \
+	    _p="$(POSIX_SH)"; case "$$_p" in *busybox) _p="busybox sh" ;; esac; \
+	    $$_p -n $(BUILDDIR)/.copal-init.lint.sh \
+	        && printf '  ok      copal-init.sh parses under %s (the target'"'"'s parser)\n' "$$_p" \
+	        || { printf '\033[31merror:\033[0m copal-init.sh does not parse under %s -- this would ship\n' "$$_p"; exit 1; }; \
+	fi
+endef
+
+# The scripts INSIDE that file, which the first check cannot see: to the shell
+# reading copal-init.sh they are heredoc data, and they are only parsed on the
+# target, when something runs them. Every one that starts #!/bin/sh is pulled
+# out and parsed here -- copal-bar, copal-widgets, copal-menu, copal-halt and
+# the thirty-odd others.
+#
+# ONLY THE SINGLE-QUOTED, WRITTEN-IN-ONE-GO ONES. A `cat > f <<DELIM` without
+# quotes is expanded as it is written, so what lands on the target is not what
+# is in this file; and copal-startx is assembled from two heredocs, an
+# unquoted half and a quoted one, so neither half is a whole script to parse.
+# Checking those would mean re-implementing the shell's expansion here to find
+# out what the file will say, which is a worse bug factory than the thing it
+# would catch.
+define POSIX_PARSE_EMBEDDED
+	@if [ -n "$(POSIX_SH)" ]; then \
+	    _p="$(POSIX_SH)"; case "$$_p" in *busybox) _p="busybox sh" ;; esac; \
+	    _d=$(BUILDDIR)/.embedded.lint; rm -rf $$_d; mkdir -p $$_d; \
+	    awk '/^[ \t]*cat > [^ ]+ <<'"'"'[A-Z0-9_]+'"'"'[ \t]*$$/ { \
+	            delim = $$0; sub(/^.*<<'"'"'/, "", delim); sub(/'"'"'[ \t]*$$/, "", delim); \
+	            path = $$0; sub(/^[ \t]*cat > /, "", path); sub(/ <<.*$$/, "", path); \
+	            n = split(path, parts, "/"); name = parts[n]; \
+	            out = ""; first = 1; body = ""; \
+	            while ((getline line) > 0) { \
+	                if (line == delim) break; \
+	                if (first) { if (line !~ /^#!\/bin\/sh/) { body = ""; break } first = 0 } \
+	                body = body line "\n"; \
+	            } \
+	            if (body != "") printf "%s", body > (dir "/" name); \
+	        }' dir="$$_d" $(BUILDDIR)/.copal-init.lint.sh; \
+	    _n=0; _bad=""; \
+	    for _f in $$_d/*; do \
+	        [ -f "$$_f" ] || continue; _n=$$((_n+1)); \
+	        $$_p -n "$$_f" 2>/dev/null || _bad="$$_bad $$(basename $$_f)"; \
+	    done; \
+	    rm -rf $$_d; \
+	    if [ -n "$$_bad" ]; then \
+	        printf '\033[31merror:\033[0m embedded script(s) do not parse under %s:%s\n' "$$_p" "$$_bad"; exit 1; \
+	    fi; \
+	    printf '  ok      %s embedded /bin/sh scripts parse under %s\n' "$$_n" "$$_p"; \
+	fi
+endef
+
 lint: | $(BUILDDIR)
 	@sh -n $(PREP) && printf '  ok      copal-prep.sh\n'
 	@sh -n $(VMRUN) && printf '  ok      copal-vm.sh\n'
@@ -716,6 +784,8 @@ lint: | $(BUILDDIR)
 	         rm -f $(BUILDDIR)/.copal-init.lint.sh; exit 1; }
 	@sh -n $(BUILDDIR)/.copal-init.lint.sh \
 	    && printf '  ok      copal-init.sh (generated, %s lines)\n' "$$(wc -l < $(BUILDDIR)/.copal-init.lint.sh | xargs)"
+	@$(POSIX_PARSE_INIT)
+	@$(POSIX_PARSE_EMBEDDED)
 	@rm -f $(BUILDDIR)/.copal-init.lint.sh
 	@for _s in bin/*.sh; do sh -n "$$_s" || exit 1; done; \
 	    printf '  ok      bin/*.sh (%s shortcuts)\n' "$$(ls bin/*.sh | wc -l | xargs)"

@@ -12400,7 +12400,7 @@ CURSORENV
 
     Super+Return terminal (foot)    Super+d/Space launcher
     Super+e      file manager       Super+Shift+s screenshot region
-    Super+q · Super+`  close window Super+f      fullscreen
+    Super+q · Super+\`  close window Super+f      fullscreen
     Super+Esc    force-quit program (SIGKILL -- nothing is saved)
     Super+1..9,0 workspaces         Super+Shift+p power down (copal-halt)
     Super+arrows move focus         Super+Shift+arrows move the window
@@ -22417,6 +22417,56 @@ for required in $_verify; do
         MISSING=1
     fi
 done
+
+# THE FILE IS THERE. DOES IT PARSE?
+#
+# Every check above asks whether a file exists, and copal-init.sh is the one
+# file on this card where that is not the interesting question: it is 20,000
+# lines of shell that the target runs as its whole install, and a syntax error
+# in it is a card that boots to
+#
+#     /media/vda1/copal-init.sh: line 2951: syntax error: unexpected end of
+#     file (expecting "}")
+#
+# which is exactly what one shipped as, once. The bug was a lone backtick in
+# an UNQUOTED heredoc -- text, in a help message -- which opens a command
+# substitution that runs to the end of the file.
+#
+# AND `sh -n` ON THIS MAC DID NOT CATCH IT. /bin/sh here is bash, which parses
+# that without complaint; the target runs busybox ash, which does not. So the
+# check that matters is a POSIX shell, not the host's: dash if this machine
+# has one, and if it does not, say so rather than printing a tick that means
+# nothing. bash -n stays as the fallback because it still catches the ordinary
+# unbalanced-quote kind of mistake.
+_posix_sh=""
+for _c in dash /bin/dash busybox; do
+    command -v "$_c" >/dev/null 2>&1 && { _posix_sh="$_c"; break; }
+done
+case "$_posix_sh" in
+    busybox) _parse="busybox sh -n" ;;
+    "")      _parse="" ;;
+    *)       _parse="$_posix_sh -n" ;;
+esac
+if [ -n "$_parse" ]; then
+    if $_parse "$MNT/copal-init.sh" 2>/tmp/copalparse.$$; then
+        printf '    ok      copal-init.sh parses (%s)\n' "$_parse"
+    else
+        printf '    BROKEN  copal-init.sh does not parse under %s:\n' "$_parse"
+        sed 's/^/            /' /tmp/copalparse.$$
+        printf '            The target runs busybox ash, which parses the same way.\n'
+        printf '            This card would boot to that error and install nothing.\n'
+        MISSING=1
+    fi
+    rm -f /tmp/copalparse.$$
+else
+    if sh -n "$MNT/copal-init.sh" 2>/dev/null; then
+        printf '    ok      copal-init.sh parses (bash -n -- no POSIX shell here)\n'
+        printf '    \033[2m        install dash for the check the target actually needs\033[0m\n'
+    else
+        printf '    BROKEN  copal-init.sh does not parse\n'
+        MISSING=1
+    fi
+fi
 
 # Device tree: one match is enough, and which one depends on the board. A PC has
 # none -- the firmware describes itself through ACPI -- so this whole check is
