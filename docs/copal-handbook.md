@@ -117,7 +117,7 @@ be retyped at the Pi's console.
 |---|---|
 | `copal` | The installer. Fifteen stages, all optional, all re-runnable |
 | `copal --auto` | Run every stage unattended, resuming across the reboot |
-| `copal-menu` | Clickable app menu, built from what is installed (**Super+Z**) |
+| `copal-menu` | The menu, built from what is installed: applications on the left, categories/settings/session on the right (**Super+Space**, or **Super+Z** for the right side) |
 | `copal-center` | One window listing all 316 programs — run or install (**Super+C**) |
 | `copal-guide` | Plain-text guides — eleven of them, on the machine, no network (**Super+Shift+G**) |
 | `copal-startx` | Starts the desktop, and refuses to do it as root |
@@ -1391,7 +1391,9 @@ window, and `copal-guide antiquity-keys` prints it anywhere.
 
 | Key | Action |
 |---|---|
-| **Super + Space** or **Super + D** | Run a program |
+| **Super + Space** or **Super + D** | The menu, on the applications side |
+| **Super + Z** | The same menu, on the system side |
+| **Left / Right** in the menu | Move between the two sides |
 | **Super + Return** | Terminal |
 | **Super + E** | File manager |
 | **Super + Shift + N / M / W** | Editor / music / the wallpaper picker |
@@ -1421,6 +1423,36 @@ The pair sits on one key with Shift as the whole difference, so the
 unrecoverable one costs a finger rather than occupying a key of its own that can
 be hit by accident. Nothing is bound to **Super + `** — an earlier arrangement
 put *close* there, and it is gone.
+
+### One menu, two sides
+
+Super+Space used to open `wofi --show drun` — a flat searchable list of
+`.desktop` files, with no categories, no settings and no way to log out — and
+Super+Z opened `copal-menu`, which had all of that and no search across the
+applications. Two menus on adjacent keys, each missing the other's half.
+Omarchy ships the same split; there was no reason to inherit it.
+
+They are now one menu with two panes, and **Left** and **Right** move between
+them:
+
+- **Left — applications.** Every `.desktop` file the system advertises, which
+  is what drun showed, *plus* every installed row of the catalogue — the
+  terminal programs, which have no `.desktop` file and are most of what is on
+  a machine this size. Deduplicated by name and sorted. Type to filter.
+- **Right — everything else.** The key list, the categories (each a submenu of
+  what is installed under it), Development, Emulators, Style, **Install
+  software** for the rest of the catalogue, the guides, System, and Session —
+  lock, log out, reboot, shut down.
+
+Super+Space and Super+D open it on the applications; **Super+Z** opens it on
+the system side (`copal-menu --system`), which is where that key always led.
+The first entry of each pane crosses to the other, because the mouse and the
+X11/dmenu fallback have no arrow keys to bind.
+
+The cost, stated plainly: **Left and Right no longer move the cursor inside the
+search box.** wofi gives a key to one binding only, and navigating the menu is
+the better use of an arrow key. Typing, backspace and Ctrl-W still edit the
+query. On X11 the pane entries do the same job and the arrows are untouched.
 
 ### The bar, the menu button, and the widgets
 

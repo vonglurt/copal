@@ -3680,6 +3680,7 @@ Internet|Transmission (torrents)|transmission-gtk|transmission-gtk|x|*
 Internet|qBittorrent (torrents)|qbittorrent|qbittorrent|x|*
 Internet|lftp (FTP - terminal)|lftp|lftp|t|*
 Mail|Thunderbird (full mail client)|thunderbird|thunderbird|x|!v6,!x32
+Mail|KMail (KDE mail, with Akonadi)|kmail|kmail|x|64
 Mail|Claws Mail (GUI - Sylpheed lineage)|claws-mail|claws-mail|x|*
 Mail|Alpine (pine - terminal)|alpine|alpine|t|*
 Mail|Mutt (terminal)|mutt|mutt|t|*
@@ -3845,6 +3846,7 @@ Files|PCManFM (file manager)|pcmanfm|pcmanfm|x|*
 Files|Thunar (file manager)|thunar|thunar|x|*
 Files|Xfe (two-pane file manager)|xfe|xfe|x|*
 Files|Krusader (two-pane - powerful)|krusader|krusader|x|!v6
+Files|KRename (batch renaming)|krename|krename|x|!v6
 Files|Xarchiver (zip/tar/7z)|xarchiver 7zip unzip|xarchiver|x|*
 Files|Midnight Commander|mc|mc|t|*
 Files|nnn (terminal file manager)|nnn|nnn|t|*
@@ -3863,6 +3865,9 @@ System|Disk usage (Baobab)|baobab|baobab|x|*
 System|Task manager (Xfce)|xfce4-taskmanager|xfce4-taskmanager|x|*
 System|htop (process viewer)|htop|htop|t|*
 System|Meld (compare files and folders)|meld|meld|x|*
+System|KDiff3 (three-way diff and merge)|kdiff3|kdiff3|x|!v6
+System|Kompare (visual diff, KDE)|kompare|kompare|x|!v6
+System|GNU coreutils (md5sum, sha224sum)|coreutils|sha224sum|h|*
 System|lazygit (git TUI)|lazygit|lazygit|t|*
 System|gitui (git TUI)|gitui|gitui|t|*
 System|tig (git history TUI)|tig|tig|t|*
@@ -3875,6 +3880,10 @@ Discs|cdrdao (audio CD burning)|cdrdao|cdrdao|h|*
 Discs|cdparanoia (CD ripper)|cdparanoia|cdparanoia|h|*
 Discs|abcde (rip and encode)|abcde|abcde|h|!v7
 Discs|zip and unzip|zip unzip|zip|h|*
+Discs|7-Zip (7z, and reads rar)|7zip|7z|h|*
+Discs|unarj (.arj archives)|unarj|unarj|h|*
+Discs|rpm (open Red Hat packages)|rpm|rpm|h|*
+Discs|dpkg (open Debian packages)|dpkg|dpkg|h|*
 Discs|bsdtar (reads almost anything)|libarchive-tools|bsdtar|h|*
 Discs|SquashFS tools|squashfs-tools|mksquashfs|h|*
 Smallweb|Bombadillo (gopher + gemini + finger)|bombadillo|bombadillo|t|*
@@ -7965,11 +7974,18 @@ CATFILE=/usr/local/share/copal/catalogue
 # desktop binding wants. Only jgmenu can honour it; the dmenu fallback is a
 # full-width bar with nowhere to put it, so there the flag is simply dropped
 # rather than made into an error.
+#
+# --system: open on the right-hand pane rather than the applications. Super+Z
+# used to open a menu that WAS the structure, so it still arrives there;
+# Super+Space and Super+D arrive on the applications. Same menu, two doors,
+# and Left/Right crosses between them either way.
 AT_POINTER=""
+START_PANE="apps"
 case "${1:-}" in
     --at-pointer) AT_POINTER="--at-pointer" ;;
+    --system)     START_PANE="" ;;
     "") ;;
-    *) echo "usage: copal-menu [--at-pointer]" >&2; exit 2 ;;
+    *) echo "usage: copal-menu [--at-pointer|--system]" >&2; exit 2 ;;
 esac
 
 have() { command -v "$1" >/dev/null 2>&1; }
@@ -8047,7 +8063,10 @@ elif [ -f "$HOME/.config/i3/keys.txt" ]; then
 elif [ -f /usr/local/share/copal/guides/i3-keys.txt ]; then
     out "Key bindings,$TERM_EMU -e copal-guide i3-keys"
 fi
-out "Run a program...,dmenu_run"
+# The other pane, named as a direction because that is how you get there:
+# Left/Right walk between the two sides, and this entry is the same move for
+# somebody who reached the menu with the mouse.
+out "All applications  >,^checkout(apps)"
 out "Terminal,$TERM_EMU"
 have copal-center && out "Copal Center,copal-center" || true
 have copal-config && out "System Settings,copal-config" || true
@@ -8071,6 +8090,70 @@ out "Install software,^checkout(install)"
     && out "Guides,^checkout(guides)" || true
 out "System,^checkout(system)"
 out "Session,^checkout(session)"
+
+# ----- the applications pane: everything runnable, flat and searchable -----
+#
+# THE LEFT-HAND SIDE OF ONE MENU, and the reason there is no longer a separate
+# launcher. This desktop used to answer Super+Space with 'wofi --show drun' --
+# a flat list of .desktop files, searchable, with no structure and no way to
+# reach the settings or the session -- and Super+Z with this menu, which has
+# the structure and not the search. Two menus, each missing the other's half,
+# and no way across. Omarchy has the same split and lives with it; here they
+# are one menu with two panes, and Left/Right moves between them.
+#
+# What is in this pane: every .desktop file the system advertises, which is
+# what drun would have shown, PLUS every installed row of the catalogue, which
+# is what drun cannot show -- the terminal programs, which have no .desktop
+# file and are most of what is on a machine this size. Deduplicated by label,
+# sorted, case-insensitively, so it reads as one list rather than two.
+out '^tag(apps)'
+out "System and settings  <,^back()"
+out '^sep(Applications)'
+{
+    # The catalogue half. Every section, installed rows only, through the same
+    # cmd_for() the submenus use -- so a terminal program still gets a
+    # terminal wrapped around it here.
+    for s in $(sections); do
+        rows "$s" installed | while IFS='|' read -r label pkgs bin mode; do
+            printf '%s,%s\n' "$label" "$(cmd_for "$bin" "$mode")"
+        done
+    done
+    # The .desktop half, in one awk over every file rather than one awk per
+    # file: on a board where the menu takes a second to appear, a hundred
+    # forks is most of that second.
+    #
+    # Only the [Desktop Entry] group is read (an Action group has its own Name
+    # and Exec and would otherwise overwrite the real ones), NoDisplay and
+    # Hidden entries are dropped the way every launcher drops them, and the
+    # field codes -- %U, %f and the rest -- are stripped, because they are
+    # meant to be replaced with a filename and a shell would take them
+    # literally.
+    for _d in /usr/share/applications /usr/local/share/applications \
+              "$HOME/.local/share/applications"; do
+        [ -d "$_d" ] || continue
+        find "$_d" -maxdepth 1 -name '*.desktop' -type f 2>/dev/null
+    done | tr '\n' '\0' | xargs -0 -r awk -v term="$TERM_EMU" '
+        function emit(   c) {
+            if (skip || name == "" || cmd == "" || (type != "" && type != "Application"))
+                return
+            gsub(/%[a-zA-Z]/, "", cmd)
+            sub(/[ \t]+$/, "", cmd)
+            gsub(/,/, ";", name)
+            c = isterm ? (term " -e " cmd) : cmd
+            print name "," c
+        }
+        FNR == 1 { emit(); name = ""; cmd = ""; type = ""; skip = 0; isterm = 0; grp = 0 }
+        /^\[/   { grp = ($0 ~ /^\[Desktop Entry\]/); next }
+        !grp    { next }
+        /^Name=/      && name == "" { name = substr($0, 6) }
+        /^Exec=/      && cmd  == "" { cmd  = substr($0, 6) }
+        /^Type=/      && type == "" { type = substr($0, 6) }
+        /^Terminal=[Tt]rue/         { isterm = 1 }
+        /^NoDisplay=[Tt]rue/        { skip = 1 }
+        /^Hidden=[Tt]rue/           { skip = 1 }
+        END { emit() }
+    ' 2>/dev/null
+} | awk -F, 'NF && !seen[tolower($1)]++' | sort -f -t, -k1,1 >> "$CSV"
 
 # ----- one submenu per catalogue section, installed entries only -----
 for s in $(sections); do
@@ -8229,8 +8312,17 @@ out "Shut down,copal-halt"
 # ^checkout(x) enters one, ^back() leaves it, and the loop below turns those
 # three markers into the walk. The CSV is unchanged and jgmenu still reads it
 # the way it always did.
+# LEFT AND RIGHT MOVE BETWEEN THE PANES. wofi has no side-by-side layout and
+# never will -- it draws one list -- so the two panes are one list shown twice
+# and the arrow keys swap which. That is the whole trick, and it is why a
+# pane's first entry also does the move: on X11 with dmenu, or with the mouse,
+# there are no custom keys and the entry is the only way across.
+#
+# The cost is real and worth stating: Left and Right no longer move the cursor
+# inside the search box, because wofi gives a key to one binding only. Typing,
+# backspace and Ctrl-W still edit the query; the arrows navigate the menu.
 walk() {
-    _tag=""                       # "" is the top level, before any ^tag()
+    _tag="$START_PANE"            # the applications pane unless --system
     while :; do
         # The entries belonging to $_tag: everything after its ^tag() line and
         # before the next one. awk rather than sed, because the top level is
@@ -8242,7 +8334,19 @@ walk() {
         [ -n "$_items" ] || return 0
 
         # Labels only for the picker; the command half is looked up after.
-        _sel=$(printf '%s\n' "$_items" | cut -d, -f1 | menu_cmd "$_tag") || return 0
+        # The exit status matters as much as the selection here: wofi answers
+        # a custom key with a status in the tens and no output, which is the
+        # pane switch. Anything else empty is Escape, and Escape closes.
+        _sel=$(printf '%s\n' "$_items" | cut -d, -f1 | menu_cmd "$_tag") || _rc=$?
+        _rc=${_rc:-0}
+        if [ "$_rc" -ge 10 ] && [ "$_rc" -le 29 ]; then
+            # Two panes, so both arrows are the same move: toggle. Anywhere
+            # inside a submenu, either arrow surfaces to the applications side.
+            [ "$_tag" = "apps" ] && _tag="" || _tag="apps"
+            unset _rc
+            continue
+        fi
+        unset _rc
         [ -n "$_sel" ] || return 0
 
         # First match wins, and it is matched against the label field alone --
@@ -8264,7 +8368,13 @@ walk() {
 # once on a machine that has had both desktops installed.
 menu_cmd() {  # <prompt>
     if wayland && have wofi; then
-        wofi --dmenu --insensitive --prompt "${1:-menu}" --lines 15 --width 460
+        # key_custom_0/1 are wofi's user-bound keys; it exits with a status in
+        # the 10-29 range when one is pressed. Passed with --define rather
+        # than a config file so nothing has to be installed for it, and
+        # harmless on a wofi too old to know the keys -- an unknown define is
+        # ignored and the arrows simply keep editing the query.
+        wofi --dmenu --insensitive --prompt "${1:-menu}" --lines 15 --width 460 \
+             --define key_custom_0=Left --define key_custom_1=Right
     elif have dmenu; then
         dmenu -i -l 15 -p "${1:-menu}"
     else
@@ -11209,22 +11319,27 @@ stage_hyprland() {
 #!/bin/sh
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
-# copal-launcher -- Super+D on the Antiquity desktop.
+# copal-launcher -- Super+Space, Super+D and Super+Z on the Antiquity desktop.
 #
-# The theme's launcher is quickshell's radial menu, reached over IPC with the
-# focused monitor's name in the target -- the same call upstream binds. Alpine
-# packages no quickshell yet, so: quickshell if it is running, wofi if not,
-# dmenu as the X11-era last resort.
-if command -v qs >/dev/null 2>&1 && command -v jq >/dev/null 2>&1; then
-    _mon=$(hyprctl monitors -j 2>/dev/null \
-           | jq -r '.[] | select(.focused == true) | .name' 2>/dev/null)
-    if [ -n "$_mon" ]; then
-        qs ipc call "appLauncher_$_mon" toggleAppLauncher 2>/dev/null && exit 0
-    fi
-fi
+# ONE MENU, WHICH IS THE POINT OF THIS FILE NOW. It used to be a second menu:
+# 'wofi --show drun' if quickshell was absent, which is a flat searchable list
+# of .desktop files and nothing else -- no categories, no settings, no way to
+# log out -- while Super+Z opened copal-menu, which had all of that and no
+# search across the applications. Two menus, each missing the other's half,
+# on adjacent keys. Omarchy ships that same split; there is no reason to
+# inherit it.
+#
+# So every launcher key now opens copal-menu, whose left pane IS the drun list
+# (plus the terminal programs drun cannot see) and whose right pane is the
+# structure. Left and Right move between them.
+#
+# The quickshell radial launcher is deliberately not preferred any more, even
+# where quickshell exists: it is the third menu, and it knows about neither
+# pane.
+command -v copal-menu >/dev/null 2>&1 && exec copal-menu
 command -v wofi >/dev/null 2>&1 && exec wofi --show drun
 command -v dmenu_run >/dev/null 2>&1 && exec dmenu_run
-echo "copal-launcher: no launcher installed (quickshell, wofi, dmenu)" >&2
+echo "copal-launcher: no launcher installed (copal-menu, wofi, dmenu)" >&2
 exit 1
 ANTIQLAUNCH
     chmod 0755 /usr/local/bin/copal-launcher
@@ -11715,6 +11830,10 @@ bind = $mainMod, D, exec, $menu
 # Omarchy's launcher key as well as upstream's, because Super+Space is the one
 # people arrive already knowing and stage 4's i3 config binds it too.
 bind = $mainMod, SPACE, exec, $menu
+# Super+Z, which stage 4 binds and this desktop's own key list advertised for
+# some time while nothing here bound it at all. All three keys are now the
+# same menu, so which one somebody remembers no longer decides what they get.
+bind = $mainMod, Z, exec, copal-menu --system
 
 # MOVING BETWEEN WINDOWS, which this config did not bind AT ALL until now.
 # Upstream's hyprland.conf assumes you will add your own; the result on a
@@ -11917,14 +12036,20 @@ ANTIQHYPR
  note at the end if this machine is a VM on a Mac.
 
  Show this list again:   Super + /      or   copal-guide antiquity-keys
- The menu:               Super + Z      or the button in the top-left
+ The menu:               Super + Space, Super + D or Super + Z, and the
+                         button in the top-left. One menu, two sides:
+                         applications on the left, everything else on the
+                         right, LEFT and RIGHT between them.
 
  START SOMETHING
-   Super + Space        run a program. Super + D does the same.
+   Super + Space        THE MENU. Super + D and Super + Z are the same key.
+                        It opens on the applications: type to search, and
+                        every program is there, the terminal ones included.
+                        LEFT and RIGHT move to the other side -- the
+                        categories, the settings, install, and log out.
    Super + Return       a terminal
    Super + E            the file manager
-   Super + Z            the menu -- everything installed, sorted, plus an
-                        Install branch for everything that is not
+   Super + Z            the same menu, opened on the right-hand side
    Super + Shift + N    the editor (nvim)
    Super + Shift + M    music (cmus, or mpv on ~/Music)
    Super + Shift + W    the wallpaper picker, with thumbnails
