@@ -1473,15 +1473,18 @@ nothing on this system set it — `start-hyprland` died with *XDG_RUNTIME_DIR is
 not set!* before it ever reached Hyprland. Now that the variable is set for the
 session, the launcher works and `copal-session` uses it.
 
-**"Your system does not have hyprland-qtutils installed."** This one stays, and
-there is nothing to install. Alpine packages no `hyprland-qtutils`: it has
+**"Your system does not have hyprland-guiutils installed."** Stage 16 now
+switches this off, and there is still nothing to install. Alpine packages
+neither `hyprland-guiutils` nor its old name `hyprland-qtutils`: it has
 `hyprland-qt-support`, which is the QML style and not the binaries, and
 `hyprpolkitagent`, which is something else again — neither provides
-`hyprland-dialog`, the program the warning looks for. Nor can it be switched
-off; `misc:disable_hyprland_qtutils_check` postdates 0.54.3, which answers *no
-such option*. What it powers is the update screen and the donate screen, and
-Copal updates through `copal -U`. Stage 16 says so in its output so it does not
-read as a fault.
+`hyprland-dialog`, the program the check looks for. The knob that silences it
+is `misc:disable_hyprland_guiutils_check`, and the spelling is the whole story:
+upstream renamed the package and the variable together, so 0.54.3 registers
+only the *guiutils* name and answers *no such option* to *qtutils* — which is
+why this warning looked permanent for a while. The generated `hyprland.conf`
+sets it. What it powers is the update screen, the donate screen and the
+app-not-responding prompt, and Copal updates through `copal -U`.
 
 Stage 4 reports the kernel half of the same answer at install time, when
 somebody is actually watching — the host's VirGL offer is knowable then, and it

@@ -11105,6 +11105,12 @@ stage_hyprland() {
     # already prefer them. Today all three are expected to be missing.
     try_add hyprpaper  || note "hyprpaper is not packaged -- swaybg paints the wallpaper instead"
     try_add hyprshot   || note "hyprshot is not packaged -- grim + slurp take the screenshots"
+    # hyprland-guiutils is hyprland-qtutils renamed; both are asked for so
+    # whichever name a repository carries is the one that answers. It brings
+    # hyprland-dialog, which is all the login-time warning is looking for --
+    # and the .conf silences that warning either way, so this is a nicety.
+    try_add hyprland-guiutils || try_add hyprland-qtutils \
+        || note "hyprland-guiutils is not packaged -- its dialogs are unused here"
     if ! try_add quickshell; then
         warn "quickshell is not packaged in this Alpine release -- not even edge has it."
         note "The theme's radial taskbar, widgets and launcher are quickshell; without"
@@ -11665,6 +11671,21 @@ master {
 misc {
     force_default_wallpaper = 0
     disable_hyprland_logo = true
+    # The toast that says "Your system does not have hyprland-guiutils
+    # installed. This is a runtime dependency for some dialogs." Alpine
+    # packages no such thing -- hyprland-qt-support is the QML style, not
+    # the binaries, and nothing in any repository provides hyprland-dialog,
+    # which is the program the check looks for. What it gates is the update
+    # and donate screens plus the app-not-responding dialog; Copal updates
+    # through 'copal -U' and shows its own key list. So the warning is about
+    # a component this system does not use and cannot obtain, and it is
+    # switched off rather than displayed at every login.
+    #
+    # THE OPTION IS SPELLED guiutils, NOT qtutils. Upstream renamed the
+    # package (and this variable with it); 0.54.3 registers only
+    # misc:disable_hyprland_guiutils_check and answers "no such option" to
+    # the old qtutils name, which is what made this look unsilenceable.
+    disable_hyprland_guiutils_check = true
 }
 
 $mainMod = SUPER
@@ -12333,30 +12354,34 @@ CURSORENV
             note "  (Xwayland is a different binary and keeps every X program working)"
         fi
         configure_desktop_autostart Hyprland
-        # THE TOAST YOU WILL SEE, said here so it does not read as a fault.
+        # THE TOAST THAT USED TO APPEAR AT EVERY LOGIN, and why it no longer
+        # does:
         #
-        #     Your system does not have hyprland-qtutils installed. This is a
+        #     Your system does not have hyprland-guiutils installed. This is a
         #     runtime dependency for some dialogs. Consider installing it.
         #
-        # There is nothing to install. hyprland-qtutils is not packaged in any
-        # Alpine repository -- checked on a real guest: apk has
-        # hyprland-qt-support, which is the QML style and NOT the binaries,
-        # and hyprpolkitagent, which is something else again. Neither provides
-        # hyprland-dialog, which is the program the warning is looking for.
+        # There is still nothing to install. Neither hyprland-guiutils nor its
+        # old name hyprland-qtutils is packaged in any Alpine repository --
+        # not community, not edge/testing. apk has hyprland-qt-support, which
+        # is the QML style and NOT the binaries, and hyprpolkitagent, which is
+        # something else again. Neither provides hyprland-dialog, which is the
+        # program the check looks for.
         #
-        # Nor can it be switched off: misc:disable_hyprland_qtutils_check
-        # arrives after this version, and 0.54.3 answers "no such option".
+        # But it CAN be switched off, which an earlier reading of this got
+        # wrong. The knob is misc:disable_hyprland_guiutils_check, and it is
+        # spelled guiutils: upstream renamed the package and the variable
+        # together, so 0.54.3 registers only the guiutils name and answers
+        # "no such option" to qtutils -- which is exactly what made the
+        # warning look permanent. The .conf written above sets it.
         #
         # What it costs is nothing that is used here. The dialogs are the
-        # update screen and the donate screen; Copal updates through 'copal
-        # -U' and shows its own key list. So it is a notice about a component
-        # this system does not use, that Alpine does not ship, with no way to
-        # silence it -- which is worth one line of output rather than a
-        # bug report.
+        # update screen, the donate screen and the app-not-responding prompt;
+        # Copal updates through 'copal -U' and shows its own key list.
         if ! command -v hyprland-dialog >/dev/null 2>&1; then
-            note "Hyprland will warn about missing hyprland-qtutils on every start."
-            note "  Alpine does not package it, 0.54.3 has no way to switch the"
-            note "  warning off, and nothing here uses the dialogs it provides."
+            note "hyprland-guiutils is not packaged by Alpine and is not installed."
+            note "  The login-time warning about it is switched off in hyprland.conf"
+            note "  (misc:disable_hyprland_guiutils_check); nothing here uses the"
+            note "  dialogs it provides."
         fi
     else
         warn "Hyprland is not on PATH -- the session is being left as it was."
