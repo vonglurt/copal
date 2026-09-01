@@ -874,9 +874,10 @@ end.
 need a human, and both are answered in the same minute rather than an hour and
 a half apart:
 
-- **Your git identity.** A name and an email for commits. Whatever the Mac that
-  wrote the card commits under is offered as the default, so Enter accepts it;
-  Enter with no default skips. The answer is saved to
+- **Your git identity.** A name and an email for commits. Whatever `make
+  answers` put in answers.txt is offered as the default, so Enter accepts it;
+  with nothing there the prompt is empty and Enter skips. The installer does
+  not read the Mac's own git config. The answer is saved to
   `COPALBOOT/copal-git` and applied by stage 7 to `user`'s `~/.gitconfig`, not
   root's — which is what stops stage 7 sitting at a prompt with nobody in the
   room. There is no defensible *invented* default for somebody's name: a
