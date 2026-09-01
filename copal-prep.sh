@@ -11804,6 +11804,17 @@ stage_hyprland() {
             fi
             mkdir -p "$_h/.config"
             cp -r "$_d" "$_tgt"
+            # THE ONE FILE THAT COMES BACK. local.conf is the person's, not
+            # the theme's -- created once by this stage and never rewritten,
+            # see install_home_once -- and moving it aside with the rest of
+            # the directory would be exactly the "your edit is in a backup
+            # you did not ask for" this file exists to end. The second VM run
+            # of this stage reported it "created once" a second time, which
+            # is how this was found.
+            if [ -d "${_b:-}" ] && [ -f "$_b/local.conf" ]; then
+                cp -p "$_b/local.conf" "$_tgt/local.conf"
+                note "kept: $_tgt/local.conf (yours)"
+            fi
         done
         # The licence travels with what it licenses.
         cp "$_tdir/LICENSE" "$_h/.config/hypr/LICENSE.linux-antiquity" 2>/dev/null || true
@@ -14627,11 +14638,22 @@ shape_of() {  # <dir> -> cmake | cargo | npm | cc65 | none
 # Each recipe appends the programs it put in $BIN to $MADE, one name a line.
 # Compiler output goes to the terminal, not into a captured string: on a slow
 # board the build IS the progress bar, and it must be watchable.
+# -U_FORTIFY_SOURCE, on both languages, because of what Alpine's compiler does
+# by default and what a Release build of these trees does on top of it. Alpine
+# gcc defines _FORTIFY_SOURCE=2 itself, which routes stdio through
+# /usr/include/fortify/*.h -- always_inline wrappers. A project that turns on
+# link-time optimisation (birdshot does: CheckIPOSupported, then ON) then dies
+# at link with "inlining failed in call to 'always_inline' 'vsnprintf':
+# function body can be overwritten at link time", which is the two features
+# refusing each other and not a bug in the tree. Alpine's own packages that
+# use LTO do the same thing. Undefined on the command line, where it comes
+# after the compiler's built-in define and so wins.
 build_cmake() {  # <dir>
     _s="$1"; [ -f "$_s/CMakeLists.txt" ] || _s="$1/native"
     have cmake || { warn "cmake is not installed (doas apk add cmake) -- skipped"; return 1; }
     run_in "$_s" cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
-                       -DCMAKE_INSTALL_PREFIX="$PREFIX" || return 1
+                       -DCMAKE_INSTALL_PREFIX="$PREFIX" \
+                       -DCMAKE_C_FLAGS=-U_FORTIFY_SOURCE -DCMAKE_CXX_FLAGS=-U_FORTIFY_SOURCE || return 1
     run_in "$_s" cmake --build build -j "$JOBS" || return 1
     run_in "$_s" cmake --install build || return 1
     # What landed in bin/, from cmake's own record of the install.
@@ -14659,12 +14681,15 @@ build_cargo() {  # <dir>
 # case. Two things happen over the network here and both are normal: the
 # module cache fills, and if go.mod asks for a newer Go than Alpine ships
 # (gonex says 1.27, v3.24 ships 1.26) the toolchain fetches that release
-# itself -- GOTOOLCHAIN=auto, the default -- and builds with it. The fetched
+# itself and builds with it. That is GOTOOLCHAIN=auto, which is upstream's
+# default and NOT Alpine's: Alpine's go is built with GOTOOLCHAIN=local, and
+# the first VM build stopped at "go.mod requires go >= 1.27.0 (running go
+# 1.26.3; GOTOOLCHAIN=local)". Set here, for this build only. The fetched
 # toolchain is static, so it does not care that this is musl.
 build_go() {  # <dir>
     have go || { warn "go is not installed (doas apk add go) -- skipped"; return 1; }
     if [ -d "$1/cmd" ]; then _pk=./cmd/...; else _pk=.; fi
-    run_in "$1" env GOBIN="$BIN" go install "$_pk" || return 1
+    run_in "$1" env GOBIN="$BIN" GOTOOLCHAIN=auto go install "$_pk" || return 1
     if [ -d "$1/cmd" ]; then
         for _c in "$1"/cmd/*/; do
             [ -d "$_c" ] || continue
