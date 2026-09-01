@@ -941,7 +941,7 @@ copal --auto      # also starts it, and is what the resume hook calls
 | 4 | X.Org on the framebuffer, i3, terminal, file manager, the Copal menu, Center, guides and splash. Tokyo Night everywhere | 3, network |
 | 5 | zram — compressed swap in RAM. The biggest single win on 512 MB | network |
 | 6 | Installs the Mac's public key for `user` with the permissions sshd insists on | 1 |
-| 7 | Development environment: **gcc and clang, Rust, Go, Fortran, PHP+Composer+Xdebug, Forth, and a dozen more**; Neovim as an IDE via its built-in LSP (no plugins); gdb/cgdb/lldb/valgrind; terminals and multiplexers; the morse trainer; eight guides; and the git identity from stage 1, written to `user`'s `~/.gitconfig` | 3, network |
+| 7 | Development environment: **gcc and clang, Rust, Go, Fortran, PHP+Composer+Xdebug, Forth, and a dozen more**; Neovim as an IDE via its built-in LSP (no plugins); gdb/cgdb/lldb/valgrind; terminals and multiplexers; the morse trainer; eight guides; and the git identity from stage 1, written to `user`'s `~/.gitconfig`; the `~/code` checkouts from stage 1, cloned (`copal-code`) and then compiled onto `PATH` (`copal-build`) — birdshot, the camera, among them | 3, network |
 | 8 | Grows `COPALROOT` into any unallocated space after it. Non-destructive, works on a mounted root | network |
 | 9 | Retro emulators: Mini vMac (Macintosh Plus — fast, and the one that works) and VICE (C64, now a package rather than an overnight build). Both get a directory under your home with disk images and launchers | 7, network |
 | 10 | Peripherals and media: wifi, bluetooth, HDMI audio, tcpdump/tshark, hex editors, HFS and disk-image tools | 3, network |

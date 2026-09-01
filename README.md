@@ -158,10 +158,12 @@ Full automatic answers every question except these:
 2. **What you came here to work on** — the repositories to check out into
    `~/code`. One URL per prompt, Enter on an empty one to finish, Enter on the
    first one to skip. Stage 7 clones them while the install still has a
-   network. `make answers` can settle this in advance, in which case stage 1
-   only shows the list. See `copal-guide code` on the machine. Copal itself is
-   cloned to `~/code/copal` whatever you answer here — the repository the
-   machine is built from, as a checkout you can edit and push.
+   network, then builds them (`copal-build`) and puts what they make on
+   `PATH` — birdshot, the camera application, among them. `make answers` can
+   settle this in advance, in which case stage 1 only shows the list. See
+   `copal-guide code` on the machine. Copal itself is cloned to `~/code/copal`
+   whatever you answer here — the repository the machine is built from, as a
+   checkout you can edit and push.
 3. **A root password.** `setup-alpine` asks for it, and there is no answer-file
    variable for a password — this is the one thing a full-automatic install
    cannot fill in for you.
@@ -1374,6 +1376,8 @@ these stay.
 | `copal-logs` · `copal-debug` | The log collection, and the switch that is off by default |
 | `copal-ssh` · `copal-logflush` · `copal-splash` | SSH policy; RAM logs down to the card; the key bindings on the wallpaper |
 | `copal-code` | The checkouts in `~/code` — the list, and cloning or pulling from it. `~/code/copal` is always there, listed or not |
+| `copal-build` | Compile the checkouts in `~/code` and install what they make into `~/.local/bin`: cmake, cargo, npm and cc65 shapes, by shape rather than by name. Run by `copal-code` after every sync |
+| `copal-camera` | The camera application — birdshot, built from `~/code`, or `$CAMERA`. The Camera menu entry, Super+Shift+B and the `camera` desk role all ask it |
 | `copal-fonts` | The font sets — coding faces with and without ligatures, console/TTY, the IBM PC pack — and which font the text console uses |
 | `snapshot` · `mountdsk` | rsync snapshots; mount a disk image |
 

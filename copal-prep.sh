@@ -7368,6 +7368,9 @@ bindsym Mod1+space  exec dmenu_run
 bindsym $mod+Return exec $term
 bindsym $mod+e      exec pcmanfm
 bindsym $mod+t      exec $term -e htop
+# The camera -- birdshot, built from ~/code by stage 7, or whatever $CAMERA
+# names. copal-camera is the one place that decision is made.
+bindsym $mod+Shift+b exec copal-camera
 bindsym $mod+Shift+q kill
 # A clickable menu, built from what is actually installed. Falls back to
 # dmenu over the same list when jgmenu is absent, so it always works.
@@ -8084,6 +8087,18 @@ sections() { [ -f "$CATFILE" ] && cut -d'|' -f1 "$CATFILE" | awk '!s[$0]++' || t
 # this is where they get a readable form for the part people see.
 pretty() { case "$1" in Smallweb) echo "Small Web" ;; *) echo "$1" ;; esac; }
 count()    { rows "$1" "$2" | grep -c . || true; }
+# The programs copal-build made from ~/code, in the same label|command|mode
+# shape as a catalogue row, and filtered the same way: only what is actually
+# on PATH now. The file is copal-build's; it is read here and edited nowhere.
+PROJFILE="${XDG_DATA_HOME:-$HOME/.local/share}/copal/projects"
+projects() {
+    [ -f "$PROJFILE" ] || return 0
+    while IFS='|' read -r _name _label _cmd _mode; do
+        case "${_name:-}" in ''|'#'*) continue ;; esac
+        have "${_cmd%% *}" || continue
+        printf '%s|%s|%s\n' "$(echo "$_label" | tr ',' ';')" "$_cmd" "$_mode"
+    done < "$PROJFILE"
+}
 
 : > "$CSV"
 
@@ -8110,6 +8125,11 @@ fi
 # somebody who reached the menu with the mouse.
 out "All applications  >,^checkout(apps)"
 out "Terminal,$TERM_EMU"
+# THE CAMERA, at the top rather than as a row in a section, because a machine
+# built around an HQ Camera has one application that is the point of it.
+# copal-camera decides which program that is (birdshot, or $CAMERA); with no
+# camera program on the machine there is no entry, rather than a dead one.
+have copal-camera && copal-camera --which >/dev/null 2>&1 && out "Camera,copal-camera" || true
 have copal-center && out "Copal Center,copal-center" || true
 have copal-config && out "System Settings,copal-config" || true
 out '^sep()'
@@ -8117,6 +8137,8 @@ for s in $(sections); do
     [ "$(count "$s" installed)" -gt 0 ] && out "$(pretty "$s"),^checkout(have_$s)" || true
 done
 out "Development,^checkout(devel)"
+# What copal-build made from ~/code -- only once it has made something.
+[ -n "$(projects)" ] && out "Projects,^checkout(projects)" || true
 # Only worth a top-level entry once an emulator is actually built.
 if [ -n "$(ls "$HOME"/minivmac/run-*.sh /root/minivmac/run-*.sh 2>/dev/null || true)" ] \
    || have BasiliskII || have x64sc || have x64; then
@@ -8159,6 +8181,10 @@ out '^sep(Applications)'
         rows "$s" installed | while IFS='|' read -r label pkgs bin mode; do
             printf '%s,%s\n' "$label" "$(cmd_for "$bin" "$mode")"
         done
+    done
+    # The built checkouts, which have neither a .desktop file nor a row.
+    projects | while IFS='|' read -r label cmd mode; do
+        printf '%s,%s\n' "$label" "$(cmd_for "$cmd" "$mode")"
     done
     # The .desktop half, in one awk over every file rather than one awk per
     # file: on a board where the menu takes a second to appear, a hundred
@@ -8255,6 +8281,21 @@ have claude && out "Claude Code,$TERM_EMU -e claude" || true
 have lazygit && out "Lazygit,$TERM_EMU -e lazygit" || true
 have bvi    && out "Hex editor (bvi),$TERM_EMU -e bvi" || true
 have radare2 && out "radare2,$TERM_EMU -e r2" || true
+
+# ----- Projects: what copal-build made from ~/code -----
+# Driven by copal-build's record rather than by a list here, so a checkout
+# added with 'copal-code add' and built appears without this file changing.
+if [ -n "$(projects)" ]; then
+    out '^tag(projects)'
+    out "Back,^back()"
+    out '^sep(Projects -- built from ~/code)'
+    projects | while IFS='|' read -r label cmd mode; do
+        out "$label,$(cmd_for "$cmd" "$mode")"
+    done
+    out '^sep()'
+    out "Pull and rebuild them all,$TERM_EMU -e sh -c 'copal-code; echo; echo Press Enter to close; read x'"
+    out "What each one made,$TERM_EMU -e sh -c 'copal-build list; echo; echo Press Enter to close; read x'"
+fi
 
 # ----- Emulators: profiles are files on disk, not packages -----
 # Only emitted when the top level offered a way in, so the tag is never left
@@ -8582,6 +8623,11 @@ role_cmd() {  # <role> -> a command line, or nothing if this machine cannot
         music)
             _m=$(first_of cmus mocp 2>/dev/null || true)
             [ -n "${_m:-}" ] && printf '%s -e %s\n' "$TERM_EMU" "$_m" || return 1 ;;
+        # The camera, whichever program copal-camera says that is on this
+        # machine -- birdshot once stage 7 has built it. A layout for a
+        # capture session is '2 camera' and '3 terminal' in a file of its own.
+        camera)
+            have copal-camera && copal-camera --which 2>/dev/null || return 1 ;;
         *) return 1 ;;
     esac
 }
@@ -8663,6 +8709,94 @@ done < "$FILE"
 exit 0
 COPALDESK
     chmod 0755 /usr/local/bin/copal-desk
+
+    # copal-camera: which program "the camera" means on this machine.
+    #
+    # THE DEFAULT CAMERA APPLICATION IS BIRDSHOT -- the IMX477 capture
+    # pipeline that is one of the checkouts stage 1 proposes, cloned and
+    # compiled by stage 7 (copal-build). Three things want to open "the
+    # camera" -- the Camera entry at the top of copal-menu, Super+Shift+B on
+    # both desktops, the 'camera' role in a copal-desk layout -- and the
+    # decision of which program that is lives here, once, the way $BROWSER
+    # settles the browser. $CAMERA overrides it.
+    say "Installing /usr/local/bin/copal-camera"
+    cat > /usr/local/bin/copal-camera <<'COPALCAMERA'
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# copal-camera -- the camera application, whichever one this machine has.
+#
+#   copal-camera            open it
+#   copal-camera --which    print the command it would run, and nothing else;
+#                           exit 1 if there is no camera program here
+#
+# ONE ANSWER TO "THE CAMERA", asked from three places -- the Camera entry at
+# the top of copal-menu, Super+Shift+B on both desktops, and the 'camera'
+# role in a copal-desk layout -- so that changing which program that is means
+# changing it here and nowhere else. $CAMERA overrides the search, the way
+# $BROWSER does for the browser: set it in ~/.profile and every consumer
+# follows.
+#
+# THE DEFAULT IS BIRDSHOT. It is one of the checkouts stage 1 proposes and
+# stage 7 clones and builds, which is why ~/.local/bin is put on PATH here
+# before looking: that is where copal-build installs, and a compositor that
+# started without reading ~/.profile would not have it.
+#
+#   birdshot-gui     the Qt front end, built when Qt 6 was present. A window.
+#   birdshot gui     the loopback viewfinder, served to the browser, for a
+#                    build without Qt. It is a server, so it gets a terminal,
+#                    and the browser is opened from here rather than by
+#                    birdshot's own xdg-open, which this system does not
+#                    install. The port is passed rather than trusted to a
+#                    default so that the two sides cannot disagree.
+#
+# After those, the packaged webcam programs, for a machine that has one.
+set -u
+have()    { command -v "$1" >/dev/null 2>&1; }
+wayland() { [ -n "${WAYLAND_DISPLAY:-}" ]; }
+case ":$PATH:" in *":$HOME/.local/bin:"*) ;; *) PATH="$HOME/.local/bin:$PATH" ;; esac
+export PATH
+# The terminal, chosen the way copal-menu chooses it: on Wayland the ones
+# that session has, and foot first because it comes up without GL.
+if wayland; then
+    TERM_EMU="${TERMINAL:-$(have foot && echo foot \
+                            || (have kitty && echo kitty) \
+                            || (have alacritty && echo alacritty) \
+                            || echo xterm)}"
+else
+    TERM_EMU="${TERMINAL:-$(have urxvt && echo urxvt || echo xterm)}"
+fi
+
+which_camera() {
+    if [ -n "${CAMERA:-}" ]; then
+        have "${CAMERA%% *}" && { printf '%s\n' "$CAMERA"; return 0; }
+    fi
+    if have birdshot-gui; then printf 'birdshot-gui\n'; return 0; fi
+    if have birdshot; then
+        printf "%s -e sh -c 'birdshot gui --port 8477 --no-open & sleep 2; \${BROWSER:-xdg-open} http://127.0.0.1:8477 >/dev/null 2>&1; wait'\n" "$TERM_EMU"
+        return 0
+    fi
+    for _c in guvcview cheese qv4l2; do
+        have "$_c" && { printf '%s\n' "$_c"; return 0; }
+    done
+    return 1
+}
+
+case "${1:-}" in
+    --which) which_camera ;;
+    '')
+        _cmd=$(which_camera) || {
+            echo "copal-camera: no camera program on this machine." >&2
+            echo "  birdshot is built from ~/code by 'copal-build' (stage 7 runs it);" >&2
+            echo "  or set CAMERA=<command> in ~/.profile." >&2
+            exit 1
+        }
+        exec sh -c "$_cmd" ;;
+    *) echo "usage: copal-camera [--which]" >&2; exit 2 ;;
+esac
+COPALCAMERA
+    chmod 0755 /usr/local/bin/copal-camera
+    note "copal-camera -- birdshot, or \$CAMERA; the menu, Super+Shift+B and copal-desk use it"
 
     # ----------------------------------------------------------------------
     # The Copal Center.
@@ -9725,6 +9859,9 @@ COPALGPU
                         moment for its own key menu.
    Super + Shift + M    music -- cmus, or mpv on ~/Music if cmus is not
                         installed
+   Super + Shift + B    the camera -- birdshot, which stage 7 built from
+                        ~/code, or whatever CAMERA= names in ~/.profile.
+                        Also the Camera entry at the top of the menu.
    Super + Shift + W    the wallpaper picker, with thumbnails. Also in the
                         menu under Style, along with a way to download
                         twenty more.
@@ -12200,6 +12337,9 @@ bind = $mainMod CTRL, V, exec, copal-clip history
 bind = $mainMod CTRL, A, exec, $terminal -e alsamixer
 bind = $mainMod CTRL, T, exec, $terminal -e sh -c 'command -v btop >/dev/null && exec btop; exec htop'
 bind = $mainMod SHIFT, M, exec, $terminal -e sh -c 'command -v cmus >/dev/null && exec cmus; exec mpv --no-video ~/Music'
+# The camera: birdshot, or $CAMERA. Same key as stage 4's i3 binding, and the
+# same resolver, so the two desktops cannot disagree about what it opens.
+bind = $mainMod SHIFT, B, exec, copal-camera
 bind = $mainMod SHIFT, N, exec, $terminal -e sh -c 'command -v nvim >/dev/null && exec nvim; exec vi'
 # The wallpaper picker, with thumbnails. Also in the menu under Style, and on
 # the same chord as stage 4's i3 config so the two desktops agree.
@@ -12343,6 +12483,7 @@ ANTIQHYPR
    Super + Z            the same menu, opened on the right-hand side
    Super + Shift + N    the editor (nvim)
    Super + Shift + M    music (cmus, or mpv on ~/Music)
+   Super + Shift + B    the camera (birdshot, built from ~/code; or $CAMERA)
    Super + Shift + W    the wallpaper picker, with thumbnails
    Super + Ctrl + A     volume (alsamixer)
    Super + Ctrl + T     what the machine is doing (btop, or htop)
@@ -13367,8 +13508,10 @@ configure_git_identity() {
 clone_user_repos() {
     say "Checkouts in ~/code"
     # Written first, and unconditionally: a machine that gets git next week
-    # should already have the command that uses it.
+    # should already have the command that uses it -- and the one that
+    # compiles what it fetched.
     install_copal_code
+    install_copal_build
     if ! command -v git >/dev/null 2>&1; then
         warn "git is not installed -- skipping ~/code"
         return 0
@@ -13398,7 +13541,8 @@ clone_user_repos() {
     # the first login, which is a worse outcome than cloning now but a much
     # better one than a ~/code full of root-owned trees.
     if su - "$PI_USER" -c '/usr/local/bin/copal-code' 2>&1; then
-        note "done -- 'copal-code' again at any time to pull them"
+        note "done -- 'copal-code' again at any time to pull and rebuild them;"
+        note "'copal-build list' says what each one made, in ~/.local/bin"
     else
         warn "some checkouts did not complete -- see git's output above"
         note "Run 'copal-code' as $PI_USER to retry; nothing already cloned is touched."
@@ -13927,7 +14071,8 @@ install_copal_code() {
 # copal-code -- the checkouts in ~/code.
 #
 #   copal-code              clone anything on the list that is not here yet,
-#                           and 'git pull' anything that is
+#                           'git pull' anything that is, then build them all
+#                           (copal-build; COPAL_NO_BUILD=1 to skip that)
 #   copal-code list         the list, and what is on disk
 #   copal-code add URL...   add to the list (needs doas: the list lives on the
 #                           boot partition, which only root can write)
@@ -14108,6 +14253,14 @@ sync)
             clone_one "$_url" "$_dir" || { warn "clone failed: $_url"; _fail=1; }
         fi
     done
+    # AND THEN BUILD. A checkout that is cloned and not compiled is a
+    # directory; copal-build is what turns it into a program on PATH. Its
+    # failures are its own -- reported, retried with 'copal-build NAME' --
+    # and do not make this a failed sync, because the clones are done.
+    if [ "${COPAL_NO_BUILD:-0}" != 1 ] && command -v copal-build >/dev/null 2>&1; then
+        say "building"
+        copal-build || warn "some checkouts did not build -- 'copal-build' again to retry"
+    fi
     exit "$_fail" ;;
 list)
     say "${LIST:-(no list found)}"
@@ -14167,7 +14320,7 @@ rm)
 path)
     printf '%s\n' "${LIST:-}" ;;
 *)
-    sed -n '4,19p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+    sed -n '4,20p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
 esac
 COPALCODE
     # One URL, defined once, in copal-init.sh. The heredoc above is quoted --
@@ -14176,6 +14329,333 @@ COPALCODE
     sed -i "s|@COPAL_SELF_URL@|$COPAL_SELF_URL|" /usr/local/bin/copal-code
     chmod 0755 /usr/local/bin/copal-code
     note "/usr/local/bin/copal-code -- the list, and cloning from it"
+}
+
+# The step after the clone: compile what came down and put it on PATH.
+#
+# WHY A SECOND SCRIPT AND NOT MORE OF copal-code. Cloning is one question --
+# is it here, and is it current -- and it is the same question for every
+# repository. Building is a different question with a different answer per
+# repository, and it is the part that fails: a missing compiler, a board too
+# small for a release build, a target that needs an emulator to run. Keeping
+# it separate means a failed build is 'copal-build NAME' to retry, not a
+# clone to redo, and a machine with no toolchain still gets its checkouts.
+# copal-code runs this at the end of every sync, so the two are one command
+# in practice and two in the failure case, which is the case that matters.
+#
+# The four repositories CFG_GIT_REPOS proposes are the worked examples, and
+# one of them is why this exists at all: birdshot is the camera application,
+# and a camera application that is cloned and not compiled is a directory.
+install_copal_build() {
+    [ -d /usr/local/bin ] || mkdir -p /usr/local/bin 2>/dev/null || return 0
+    cat > /usr/local/bin/copal-build <<'COPALBUILD'
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# copal-build -- compile the checkouts in ~/code and put what they make on PATH.
+#
+#   copal-build              build every checkout whose shape it recognises,
+#                            and install what comes out into ~/.local/bin
+#   copal-build NAME...      only these -- directory names under ~/code
+#   copal-build list         each checkout: its shape, and what it has made
+#   copal-build clean NAME.. delete the build directories, keep the checkout
+#
+# ~/.local/bin is on PATH -- stage 4 writes that into ~/.profile -- and that
+# is what makes "built" mean "installed": the launcher lists it, the menu's
+# have() finds it, a terminal can type it. copal-code clones and pulls; this
+# is the step after it, and copal-code runs it itself at the end of a sync.
+#
+# BY SHAPE, NOT BY NAME. A checkout with a CMakeLists.txt gets cmake, one
+# with a Cargo.toml gets cargo, one with a package.json gets npm, and a
+# Makefile that calls cl65 is a Commodore program, whose committed .prg and
+# .d64 are what runs. So a fork, a rename, or a repository this file has
+# never heard of builds the same way, provided it is one of those shapes.
+# The four repositories stage 1 proposes by default are each one of them:
+#
+#   birdshot          cmake, under native/ -- the C++17 camera pipeline, and
+#                     birdshot-gui when Qt 6 is installed. THE CAMERA
+#                     APPLICATION: copal-camera looks for it first.
+#   ascitty           cargo -- the terminal renderer
+#   urfinkel          cc65 -- a Plus/4 game, run under VICE
+#   codexofconquest   npm -- a web game over a local node server
+#
+# NOTHING HERE MAY DIRTY A CHECKOUT. copal-code keeps these current with
+# 'git pull --ff-only', and a pull refuses to run over a modified tracked
+# file -- so a build step that rewrites one breaks every pull after it,
+# silently, for a repository that then never updates again. That rule
+# decides two things below: npm runs 'ci' rather than 'install' where there
+# is a lockfile, and the Plus/4 targets are NOT cross-compiled in place even
+# when cc65 is installed, because their build/ output is committed and
+# date-stamped, and a rebuild is a modified tracked file by design. Anyone
+# who wants that anyway sets COPAL_BUILD_PLUS4=1 and owns the result.
+#
+# Two of those make nothing that can be put on PATH as it stands -- a .d64
+# needs an emulator and a web page needs its server -- so each gets a
+# one-file wrapper under the checkout's own name. That part IS keyed by name,
+# because there is no shape to read a launcher off; see write_launcher.
+#
+# Copal itself is never built. It is a shell script, and 'make redeploy' in
+# ~/code/copal is how that one runs.
+#
+# Rewritten by copal-init.sh every time stage 7 runs.
+set -u
+
+CODE="${COPAL_CODE:-$HOME/code}"
+PREFIX="${COPAL_PREFIX:-$HOME/.local}"
+BIN="$PREFIX/bin"
+# What was built, for the menu: one line per program, name|label|command|mode,
+# in the catalogue's own vocabulary so copal-menu can treat it as one more
+# section. Written by this script and read by nothing else that edits it.
+PROJECTS="${XDG_DATA_HOME:-$HOME/.local/share}/copal/projects"
+
+say()  { printf '\033[36m==>\033[0m %s\n' "$*"; }
+note() { printf '    %s\n' "$*"; }
+warn() { printf '\033[33mwarning:\033[0m %s\n' "$*" >&2; }
+have() { command -v "$1" >/dev/null 2>&1; }
+run_in() { ( cd "$1" || exit 1; shift; "$@" ); }  # <dir> <command...>
+
+# How many compilers at once. nproc is the ceiling and memory is the real
+# limit: a Pi 4 with 1 GB and four cores running four g++ at once is a machine
+# swapping to zram for an hour, which is slower than one core would be. Half
+# a gigabyte a job is g++'s appetite on the larger files in these trees.
+jobs() {
+    _n=$(nproc 2>/dev/null || echo 1)
+    _kb=$(awk '/^MemTotal:/ { print $2 }' /proc/meminfo 2>/dev/null || true)
+    if [ -n "${_kb:-}" ] && [ "$_kb" -gt 0 ] 2>/dev/null; then
+        _m=$(( _kb / 524288 )); [ "$_m" -lt 1 ] && _m=1
+        [ "$_m" -lt "$_n" ] && _n=$_m
+    fi
+    printf '%s\n' "$_n"
+}
+JOBS=$(jobs)
+
+# ---- the shapes ------------------------------------------------------------
+shape_of() {  # <dir> -> cmake | cargo | npm | cc65 | none
+    if   [ -f "$1/CMakeLists.txt" ] || [ -f "$1/native/CMakeLists.txt" ]; then echo cmake
+    elif [ -f "$1/Cargo.toml" ]; then echo cargo
+    elif [ -f "$1/package.json" ] || [ -f "$1/src/package.json" ]; then echo npm
+    elif [ -f "$1/Makefile" ] && grep -q 'cl65' "$1/Makefile" 2>/dev/null; then echo cc65
+    else echo none
+    fi
+}
+
+# Each recipe appends the programs it put in $BIN to $MADE, one name a line.
+# Compiler output goes to the terminal, not into a captured string: on a slow
+# board the build IS the progress bar, and it must be watchable.
+build_cmake() {  # <dir>
+    _s="$1"; [ -f "$_s/CMakeLists.txt" ] || _s="$1/native"
+    have cmake || { warn "cmake is not installed (doas apk add cmake) -- skipped"; return 1; }
+    run_in "$_s" cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+                       -DCMAKE_INSTALL_PREFIX="$PREFIX" || return 1
+    run_in "$_s" cmake --build build -j "$JOBS" || return 1
+    run_in "$_s" cmake --install build || return 1
+    # What landed in bin/, from cmake's own record of the install.
+    grep "^$BIN/" "$_s/build/install_manifest.txt" 2>/dev/null \
+        | while read -r _f; do basename "$_f"; done >> "$MADE"
+}
+
+build_cargo() {  # <dir>
+    have cargo || { warn "cargo is not installed (doas apk add cargo rust) -- skipped"; return 1; }
+    run_in "$1" cargo build --release || return 1
+    # Every executable cargo leaves at the top of target/release is a [[bin]]:
+    # dependencies go under deps/ and build scripts under build/, so depth 1
+    # is exactly the list. Linked, not copied -- a rebuild replaces the file
+    # in place and the link stays true.
+    find "$1/target/release" -maxdepth 1 -type f -perm -100 \
+         ! -name '*.d' ! -name '*.so' ! -name '*.rlib' 2>/dev/null \
+    | while read -r _f; do
+        ln -sf "$_f" "$BIN/$(basename "$_f")" && basename "$_f"
+    done >> "$MADE"
+}
+
+build_npm() {  # <dir>
+    _p="$1"; [ -f "$_p/package.json" ] || _p="$1/src"
+    have npm || { warn "npm is not installed (doas apk add nodejs npm) -- skipped"; return 1; }
+    # 'ci' installs exactly what the lockfile says and does not rewrite it;
+    # 'install' would, and a rewritten package-lock.json is a tracked file
+    # the next 'git pull' refuses to cross.
+    if [ -f "$_p/package-lock.json" ]; then
+        run_in "$_p" npm ci --no-audit --no-fund || return 1
+    else
+        run_in "$_p" npm install --no-audit --no-fund || return 1
+    fi
+}
+
+# The Commodore Plus/4 target: a Makefile that calls cl65. The committed
+# build/ is what runs -- these repositories commit their .prg and .d64 and
+# stamp the build date into them, so compiling here would modify a tracked
+# file and break the next pull (see the top of this file). Opt in with
+# COPAL_BUILD_PLUS4=1 and cc65 on PATH (Alpine has it in edge/testing:
+# doas copal-install cc65@testing), and it compiles in place regardless.
+build_cc65() {  # <dir>
+    [ -f "$1/Makefile" ] && grep -q 'cl65' "$1/Makefile" 2>/dev/null || return 0
+    if [ "${COPAL_BUILD_PLUS4:-0}" != 1 ]; then
+        # _c, not _n: the caller's _n is the checkout's name, and a shell
+        # function has no locals to hide a reuse of it behind.
+        _c=$(ls "$1"/build/*.prg "$1"/build/*.d64 2>/dev/null | wc -l | tr -d ' ')
+        if [ "$_c" -gt 0 ]; then
+            note "Plus/4 program: using the committed build/ ($_c file(s)) -- not recompiled,"
+            note "  a rebuild would modify tracked files. COPAL_BUILD_PLUS4=1 to do it anyway."
+        else
+            warn "Plus/4 program with nothing committed under build/ -- COPAL_BUILD_PLUS4=1 with cc65 installed compiles it"
+        fi
+        return 0
+    fi
+    have cl65 || { warn "COPAL_BUILD_PLUS4=1 but no cl65 on PATH (doas copal-install cc65@testing)"; return 1; }
+    # A repository with both a host build and a Plus/4 build names the second
+    # one 'prg'; one that is only a Plus/4 program builds it as 'all'.
+    if grep -q '^prg:' "$1/Makefile"; then _t=prg; else _t=all; fi
+    run_in "$1" make "$_t" || return 1
+    if have c1541 && grep -q '^disk:' "$1/Makefile"; then
+        run_in "$1" make disk || return 1
+    fi
+    return 0
+}
+
+# ---- launchers, for what cannot simply be put on PATH ----------------------
+write_launcher() {  # <name> <dir>
+    case "$1" in
+    urfinkel)
+        cat > "$BIN/urfinkel" <<LAUNCHER
+#!/bin/sh
+# Written by copal-build: UR FINKEL, from $2 -- a Commodore Plus/4 program.
+D="$2/build"
+[ -f "\$D/urfinkel.d64" ] || { echo "urfinkel: no \$D/urfinkel.d64 -- run copal-build" >&2; exit 1; }
+if command -v xplus4 >/dev/null 2>&1; then exec xplus4 -autostart "\$D/urfinkel.d64" "\$@"; fi
+echo "urfinkel: needs the VICE emulator (xplus4): doas copal-install vice@testing" >&2
+echo "  The disk image is \$D/urfinkel.d64, for any other Plus/4 emulator." >&2
+exit 1
+LAUNCHER
+        chmod 0755 "$BIN/urfinkel"; echo urfinkel >> "$MADE" ;;
+    codexofconquest)
+        cat > "$BIN/codexofconquest" <<LAUNCHER
+#!/bin/sh
+# Written by copal-build: Codex of Conquest, from $2 -- a web game over a
+# local node server. run.sh starts the server if it is not already up; the
+# page is opened from here, in \$BROWSER, because run.sh's own 'open' is a
+# Mac command.
+cd "$2" || exit 1
+command -v node >/dev/null 2>&1 || { echo "codexofconquest: needs node (doas apk add nodejs npm)" >&2; exit 1; }
+[ -d src/node_modules ] || { echo "codexofconquest: no src/node_modules -- run copal-build" >&2; exit 1; }
+./run.sh server
+exec "\${BROWSER:-xdg-open}" "\$PWD/play.html"
+LAUNCHER
+        chmod 0755 "$BIN/codexofconquest"; echo codexofconquest >> "$MADE" ;;
+    esac
+}
+
+# ---- what the menu is told --------------------------------------------------
+# Label and mode per program, in the catalogue's terms: x makes its own
+# window, t wants a terminal, h is a command-line tool whose --help is shown.
+# Unknown programs get a terminal, which is the answer that is never wrong --
+# a windowed program still opens from one, and a text one needs it.
+entry_for() {  # <checkout name> <program> -> label|command|mode, or nothing
+    case "$2" in
+        birdshot-gui)    echo "Birdshot (camera)|birdshot-gui|x" ;;
+        birdshot)        echo "Birdshot (camera - command line)|birdshot|h" ;;
+        ascitty)         echo "ASCITTY (a city; in the terminal)|ascitty|t" ;;
+        ascitty-bake)    return 0 ;;  # a build tool, not a program to open
+        urfinkel)        echo "UR FINKEL (Plus/4; in VICE)|urfinkel|x" ;;
+        codexofconquest) echo "Codex of Conquest (web game)|codexofconquest|x" ;;
+        *)               echo "$1: $2|$2|t" ;;
+    esac
+}
+
+# ---- one checkout -----------------------------------------------------------
+build_one() {  # <dir>
+    _d="$1"; _n=$(basename "$_d")
+    case "$_n" in
+        copal) note "copal -- a script, nothing to compile ('make redeploy' runs it)"; return 0 ;;
+    esac
+    _shape=$(shape_of "$_d")
+    say "$_n -- $_shape"
+    : > "$MADE"
+    _ok=0
+    case "$_shape" in
+        cmake) build_cmake "$_d" || _ok=1 ;;
+        cargo) build_cargo "$_d" || _ok=1
+               # A Plus/4 target beside the host build, if the tree has one.
+               [ "$_ok" = 0 ] && { build_cc65 "$_d" || _ok=1; } ;;
+        npm)   build_npm "$_d" || _ok=1 ;;
+        cc65)  build_cc65 "$_d" || _ok=1 ;;
+        none)  note "no CMakeLists.txt, Cargo.toml, package.json or cc65 Makefile -- left alone"
+               return 0 ;;
+    esac
+    [ "$_ok" = 0 ] || { warn "$_n did not build -- see above; 'copal-build $_n' retries"; return 1; }
+    write_launcher "$_n" "$_d"
+    # Record what it made, replacing the previous record for this checkout.
+    grep -v "^$_n|" "$PROJECTS" > "$PROJECTS.new" 2>/dev/null || true
+    while read -r _b; do
+        [ -n "$_b" ] || continue
+        _e=$(entry_for "$_n" "$_b") || true
+        [ -n "$_e" ] && printf '%s|%s\n' "$_n" "$_e" >> "$PROJECTS.new"
+    done < "$MADE"
+    mv "$PROJECTS.new" "$PROJECTS"
+    if [ -s "$MADE" ]; then
+        note "in $BIN: $(tr '\n' ' ' < "$MADE")"
+    else
+        note "built; nothing new for $BIN"
+    fi
+    return 0
+}
+
+checkouts() {  # every directory in ~/code, or the names given
+    if [ "$#" -gt 0 ]; then
+        for _n in "$@"; do
+            [ -d "$CODE/$_n" ] && printf '%s\n' "$CODE/$_n" \
+                || warn "no $CODE/$_n -- 'copal-code list' says what is here"
+        done
+    else
+        for _d in "$CODE"/*/; do [ -d "$_d" ] && printf '%s\n' "${_d%/}"; done
+    fi
+}
+
+mkdir -p "$BIN" "$(dirname "$PROJECTS")"
+MADE=$(mktemp "${TMPDIR:-/tmp}/copal-build.XXXXXX")
+trap 'rm -f "$MADE" "$PROJECTS.new"' EXIT INT TERM
+
+case "${1:-}" in
+list)
+    say "$CODE  (programs go to $BIN)"
+    for _d in $(checkouts); do
+        _n=$(basename "$_d")
+        _made=$(grep "^$_n|" "$PROJECTS" 2>/dev/null | cut -d'|' -f3 | while read -r _c; do
+                    have "${_c%% *}" && printf '%s ' "${_c%% *}" || printf '%s(missing) ' "${_c%% *}"
+                done)
+        printf '    %-20s %-6s %s\n' "$_n" "$(shape_of "$_d")" "${_made:-}"
+    done
+    case ":$PATH:" in
+        *":$BIN:"*) ;;
+        *) note "$BIN is not on PATH in this shell -- stage 4 writes that into ~/.profile" ;;
+    esac ;;
+clean)
+    shift
+    [ "$#" -gt 0 ] || { echo "usage: copal-build clean NAME..." >&2; exit 2; }
+    for _d in $(checkouts "$@"); do
+        for _b in "$_d/build" "$_d/native/build" "$_d/target"; do
+            [ -d "$_b" ] && rm -rf "$_b" && note "removed $_b"
+        done
+    done ;;
+-h|--help|help)
+    sed -n '4,10p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+*)
+    [ -d "$CODE" ] || { echo "no $CODE -- 'copal-code' clones into it first" >&2; exit 1; }
+    case ":$PATH:" in
+        *":$BIN:"*) ;;
+        *) note "$BIN is not on PATH in this shell -- stage 4 writes that into ~/.profile" ;;
+    esac
+    note "$JOBS job(s) at a time"
+    _fail=0
+    for _d in $(checkouts "$@"); do
+        build_one "$_d" || _fail=1
+    done
+    [ "$_fail" = 0 ] && say "done -- 'copal-build list' says what is where" \
+                     || warn "some checkouts did not build -- 'copal-build NAME' retries one"
+    exit "$_fail" ;;
+esac
+COPALBUILD
+    chmod 0755 /usr/local/bin/copal-build
+    note "/usr/local/bin/copal-build -- compiling the checkouts, into ~/.local/bin"
 }
 
 # Claude Code. INSTALLED BY DEFAULT, on the boards that can actually run it --
@@ -14606,6 +15086,54 @@ GUIDE
    there -- the same reason the git identity and the install's own state live
    on that partition.
 
+   AND BUILT
+
+   A checkout is a directory; copal-build is what makes it a program. It runs
+   at the end of every 'copal-code' sync and can be run on its own:
+
+      copal-build             build every checkout it recognises the shape
+                              of, and install the results into ~/.local/bin
+                              -- which is on PATH, so the launcher, the menu
+                              and a terminal all see them
+      copal-build NAME        one of them, by directory name
+      copal-build list        each checkout's shape, and what it has made
+      copal-build clean NAME  delete the build directories, keep the source
+
+   BY SHAPE, NOT BY NAME: a CMakeLists.txt gets cmake, a Cargo.toml gets
+   cargo, a package.json gets npm, and a Makefile that calls cl65 is a
+   Commodore program whose committed .prg and .d64 are what runs. Your own
+   repositories build the same way if they are one of those shapes. The
+   four that stage 1 proposes:
+
+      birdshot          cmake  -> birdshot, and birdshot-gui with Qt 6.
+                                 THE CAMERA: Super+Shift+B, or Camera at the
+                                 top of the menu, opens it (copal-camera
+                                 decides which; CAMERA= in ~/.profile
+                                 overrides). Without Qt the browser
+                                 viewfinder is what opens.
+      ascitty           cargo  -> ascitty, in a terminal
+      urfinkel          cc65   -> a wrapper that runs the committed
+                                 build/urfinkel.d64 in VICE (Retro -> VICE
+                                 in the Install menu)
+      codexofconquest   npm    -> a wrapper that starts its node server and
+                                 opens play.html in $BROWSER
+
+   The menu shows them under Projects, and in the applications pane like
+   anything else. A build that fails says why -- usually a compiler that is
+   not installed, and the message names the package -- and 'copal-build
+   NAME' retries that one without touching the rest.
+
+   NOTHING IT DOES DIRTIES A CHECKOUT. copal-code updates these with 'git
+   pull --ff-only', which refuses to cross a modified tracked file, so a
+   build that rewrote one would stop that repository updating for good.
+   That is why npm runs 'ci' where there is a lockfile, and why the Plus/4
+   programs are not recompiled in place: their build/ is committed and
+   date-stamped, and a rebuild changes it by design. To work on one of
+   those, install the cross-compiler and say so:
+
+      doas copal-install cc65@testing
+      COPAL_BUILD_PLUS4=1 copal-build urfinkel
+
    HTTPS AND SSH -- BOTH, IN THAT ORDER
 
    Every clone tries the SSH remote first and falls back to HTTPS. You do not
@@ -14643,6 +15171,7 @@ GUIDE
 
    See also:  copal-guide ide         building and debugging what you cloned
               copal-guide tmux        keeping a long build running
+              copal-build list        what the checkouts made, and where
 GUIDE
 
     cat > "$_g/nvim.txt" <<'GUIDE'
@@ -17195,6 +17724,34 @@ MSG
     add_optional nodejs npm
 }
 
+# What the default checkouts build with, beyond the toolchain stage 7 already
+# installs. Optional, and skipped without complaint where absent:
+#
+#   qt6-qtbase-dev   birdshot-gui, the camera's window. Without it birdshot
+#                    still builds -- the pipeline and the CLI are dependency-
+#                    free -- and copal-camera falls back to the browser
+#                    viewfinder. Qt is not small, which is a real decision on
+#                    a 512 MB board; it is made in favour of the window,
+#                    because the camera is what that machine is for.
+#
+# NOT cc65, deliberately. urfinkel and ascitty's Plus/4 target are 6502
+# programs whose compiled .prg and .d64 are committed, date-stamped, with a
+# push gate upstream that checks them against a clean build; copal-build runs
+# those as committed rather than recompiling a tracked file in place (which
+# would block every later 'git pull'). Somebody who wants to work ON them
+# installs the compiler by hand -- 'doas copal-install cc65@testing' -- and
+# sets COPAL_BUILD_PLUS4=1; see copal-build.
+#
+# Checked against the APKINDEX on 2026-09-01: qt6-qtbase-dev, cmake, cargo,
+# rust, nodejs and npm are in v3.24 for all five ports; cc65 is in
+# edge/testing for armhf, aarch64 and x86_64 and in neither v3.24 branch for
+# any port. VICE, to RUN the Plus/4 builds, is a catalogue row -- Retro,
+# 'vice@testing' -- and stage 9's business, not this stage's.
+dev_checkout_deps() {
+    say "What the checkouts build with"
+    add_optional qt6-qtbase-dev
+}
+
 stage_dev() {
     say "Stage 7: development environment"
 
@@ -17262,8 +17819,13 @@ MSG
     dev_languages_core
     dev_languages_optional
     configure_git_identity
-    clone_user_repos
+    # Claude Code BEFORE the checkouts, because saying yes to it is what
+    # installs node -- and npm is what one of the default checkouts builds
+    # with. The other way round, copal-build skipped codexofconquest on every
+    # machine that would have had npm a minute later.
     install_claude_code
+    dev_checkout_deps
+    clone_user_repos
 
     say "AVR toolchain (Arduino-class microcontrollers)"
     # The Arduino IDE itself is Electron/Java and will not run here. The
@@ -17542,13 +18104,19 @@ MAKEFILE
 
     Or from a shell:  make run    make debug    make clean
 
+    THE CHECKOUTS in ~/code were cloned and then built, and what they made
+    is in ~/.local/bin, which is on PATH: 'copal-build list' says what each
+    one produced. birdshot is the camera -- Super+Shift+B, or Camera at the
+    top of the menu. 'copal-code' pulls and rebuilds them all; 'copal-build
+    NAME' rebuilds one.
+
     THE GUIDES. These are the tutorials, on this machine, no network needed.
     Super+Shift+G opens the list; from a terminal:
 
         copal-guide ide           compiling, breakpoints, stepping, call traces
         copal-guide nvim          the editor itself, from nothing to useful
         copal-guide languages     what exists on THIS board, and why
-        copal-guide code          ~/code, and the copal-code that fills it
+        copal-guide code          ~/code: copal-code fills it, copal-build compiles it
         copal-guide tmux          tmux and screen
         copal-guide terminals     which terminal, and why the GPU ones are not
         copal-guide instruments   bases, matrices, inverse Laplace, FFT, scopes
