@@ -14245,6 +14245,14 @@ install_copal_code() {
 # Rewritten by copal-init.sh every time stage 7 runs.
 set -eu
 
+# /usr/local/bin on PATH, because this is not always run from a shell that has
+# it: stage 7 runs it through `su - user -c`, and busybox su hands a non-root
+# user "/sbin:/usr/sbin:/bin:/usr/bin" and nothing more. The first install on
+# the VM cloned everything and built nothing, because `command -v copal-build`
+# found nothing -- and said nothing, which is the part that was wrong.
+case ":$PATH:" in *:/usr/local/bin:*) ;; *) PATH="/usr/local/bin:$PATH" ;; esac
+export PATH
+
 CODE="$HOME/code"
 
 # Copal itself. Substituted from $COPAL_SELF_URL when this file is written, so
@@ -14424,9 +14432,13 @@ sync)
     # directory; copal-build is what turns it into a program on PATH. Its
     # failures are its own -- reported, retried with 'copal-build NAME' --
     # and do not make this a failed sync, because the clones are done.
-    if [ "${COPAL_NO_BUILD:-0}" != 1 ] && command -v copal-build >/dev/null 2>&1; then
+    if [ "${COPAL_NO_BUILD:-0}" = 1 ]; then
+        note "COPAL_NO_BUILD=1 -- not building; 'copal-build' does it later"
+    elif command -v copal-build >/dev/null 2>&1; then
         say "building"
         copal-build || warn "some checkouts did not build -- 'copal-build' again to retry"
+    else
+        warn "no copal-build on PATH -- cloned, not built. Stage 7 installs it."
     fi
     exit "$_fail" ;;
 list)
