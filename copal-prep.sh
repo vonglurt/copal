@@ -4156,12 +4156,48 @@ install_home_file() {  # <relative path> <source file>
     for _h in /root "$(user_home)"; do
         [ -n "$_h" ] && [ -d "$_h" ] || continue
         mkdir -p "$_h/$(dirname "$_rel")"
-        [ -f "$_h/$_rel" ] && cp "$_h/$_rel" "$_h/$_rel.bak"
+        # Said out loud when the file being replaced is not the one this
+        # wrote last time: somebody edited it, and their edit is now in the
+        # .bak. The place for that edit is the file's local companion -- see
+        # install_home_once -- and this is where they find that out.
+        _was=""
+        if [ -f "$_h/$_rel" ]; then
+            cp "$_h/$_rel" "$_h/$_rel.bak"
+            cmp -s "$_src" "$_h/$_rel" || _was=" -- replaced a copy that differed; it is in $_rel.bak"
+        fi
         cp "$_src" "$_h/$_rel"
         # Match whatever owns the home directory, so 'user' still owns its own
         # dotfiles after root wrote them.
         _own=$(stat -c '%u:%g' "$_h" 2>/dev/null) && chown -R "$_own" "$_h/$(dirname "$_rel")" 2>/dev/null || true
-        note "$_h/$_rel"
+        note "$_h/$_rel$_was"
+    done
+}
+
+# The other kind of home file: created ONCE, and never written again.
+#
+# Everything install_home_file writes is rewritten when its stage runs again,
+# which is what keeps the installer honest (the file is the stage's output,
+# not a thing that drifts) and is also a trap: a binding added by hand to
+# hyprland.conf is in hyprland.conf.bak after the next 'make redeploy'. The
+# checkout is the right place for a change to Copal and the wrong place for a
+# change to one machine, so each generated file ends by reading a companion
+# -- local.conf, local.lua, .bashrc.local -- that this creates empty and
+# then leaves alone. Read last, so it wins. The installer owns its file
+# outright and the person owns the other outright; there is no file both
+# edit, which is the whole of the arrangement.
+install_home_once() {  # <relative path> <source file, the header comment>
+    _rel="$1"; _src="$2"
+    ensure_user_home || true
+    for _h in /root "$(user_home)"; do
+        [ -n "$_h" ] && [ -d "$_h" ] || continue
+        if [ -e "$_h/$_rel" ]; then
+            note "$_h/$_rel -- yours; left alone"
+            continue
+        fi
+        mkdir -p "$_h/$(dirname "$_rel")"
+        cp "$_src" "$_h/$_rel"
+        _own=$(stat -c '%u:%g' "$_h" 2>/dev/null) && chown "$_own" "$_h/$_rel" 2>/dev/null || true
+        note "$_h/$_rel -- created once; yours from now on"
     done
 }
 
@@ -4423,6 +4459,9 @@ alias ll='ls -lh'
 alias la='ls -lha'
 alias grep='grep --color=auto'
 alias df='df -h'
+
+# Yours. This file is rewritten when stage 4 runs; ~/.bashrc.local is not.
+[ -f "$HOME/.bashrc.local" ] && . "$HOME/.bashrc.local"
 BASHRC
     install_home_file .bashrc /tmp/bashrc.$$; rm -f /tmp/bashrc.$$
 
@@ -4486,6 +4525,9 @@ for _d in "$HOME/.local/bin" "$HOME/bin" "$HOME/.cargo/bin" "$HOME/go/bin"; do
 done
 unset _d
 export PATH
+
+# Yours: environment that should survive this block being rewritten.
+[ -f "$HOME/.profile.local" ] && . "$HOME/.profile.local"
 
 # A console login, an ssh session and a terminal opened from i3 are all LOGIN
 # shells, and a login shell reads this file and not ~/.bashrc. Without this
@@ -7755,6 +7797,23 @@ I3B
         warn "some Ctrl+Alt twins collided and were skipped:"
         grep '^# SKIPPED' /tmp/i3cfg.$$ | sed 's/^/      /'
     fi
+    # AFTER the twins, deliberately. Each of these would collide with a twin
+    # the block above already generated (Super+Ctrl+Space's twin is
+    # Super+Shift+Space's; Super+Shift+T's is Super+Ctrl+T's) or produce a
+    # meaningless one (Ctrl+Alt+Alt). They are doors, not verbs: the one
+    # implementation behind each is bound elsewhere in this file already.
+    {
+        printf '\n# ---- more doors ---------------------------------------------------\n'
+        printf '# The theme picker; and the two chords Omarchy uses for its system menu\n'
+        printf '# and wallpaper picker, so hands that learned them there land somewhere.\n'
+        printf 'bindsym $mod+Shift+t     exec --no-startup-id copal-theme --pick\n'
+        printf 'bindsym $mod+Mod1+space  exec copal-menu --system\n'
+        printf 'bindsym $mod+Ctrl+space  exec --no-startup-id copal-wallpaper --pick\n'
+        printf '\n# ---- yours ---------------------------------------------------------\n'
+        printf '# Everything above is rewritten whenever stage 4 runs; local.conf is not.\n'
+        printf '# Included last, so it wins.\n'
+        printf 'include ~/.config/i3/local.conf\n'
+    } >> /tmp/i3cfg.$$
 
     # $helpcmd holds a command line, and it is built here rather than left as
     # "$term -title ..." for i3 to expand.
@@ -7772,6 +7831,18 @@ I3B
     # something we already know the value of, put the value in.
     sed -i "s|TERMEMU_PLACEHOLDER|$TERMEMU|" /tmp/i3cfg.$$
     install_home_file .config/i3/config /tmp/i3cfg.$$; rm -f /tmp/i3cfg.$$
+    cat > /tmp/i3local.$$ <<'I3LOCAL'
+# ~/.config/i3/local.conf -- yours.
+#
+# Copal created this file empty, once, and will not write to it again.
+# ~/.config/i3/config is rewritten every time stage 4 runs and includes this
+# file last, so anything here wins over anything there. Super+Shift+R
+# reloads. A binding of your own looks like:
+#
+#   bindsym $mod+Shift+F8 exec foo
+I3LOCAL
+    install_home_once .config/i3/local.conf /tmp/i3local.$$
+    rm -f /tmp/i3local.$$
 
     # The cheat sheet. i3 has no menus, no icons and no discoverable UI at
     # all, so without this the desktop is a grey rectangle that ignores you.
@@ -8335,7 +8406,7 @@ have copal-desk && out "Lay the desk out (workspaces 1-5),copal-desk" || true
 have copal-desk && out "Which desk layouts exist,$TERM_EMU -e sh -c 'copal-desk --list; echo; echo Press Enter to close; read x'" || true
 have copal-wallpaper && out "Wallpaper...,copal-wallpaper --pick" || true
 have copal-wallpaper && out "Get more wallpapers,$TERM_EMU -e sh -c 'copal-wallpaper --fetch; echo; echo Press Enter to close; read x'" || true
-have copal-theme && out "Theme (tokyo-night / antiquity),$TERM_EMU -e sh -c 'copal-theme list; echo; echo \"copal-theme NAME to switch\"; echo Press Enter to close; read x'" || true
+have copal-theme && out "Theme...,copal-theme --pick" || true
 # The desktop widgets, shown as whichever of the two things it would do next:
 # a menu entry called "toggle" makes somebody guess which way it is pointing.
 if have copal-widgets && [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/waybar/desktop.json" ]; then
@@ -9876,6 +9947,11 @@ COPALGPU
    Super + Shift + W    the wallpaper picker, with thumbnails. Also in the
                         menu under Style, along with a way to download
                         twenty more.
+   Super + Shift + T    the theme picker (tokyo-night, antiquity)
+   Super + Alt + Space  the app menu, opened on its System side; and
+   Super + Ctrl + Space the wallpaper picker. These are Omarchy's chords for
+                        the same two things, kept so hands that learned
+                        them there land somewhere.
    Super + Ctrl + A     volume (alsamixer)
    Super + Ctrl + T     what the machine is doing (btop, or htop)
    Super + Shift + D    lay the desk out: the editor and a terminal on
@@ -12351,6 +12427,14 @@ bind = $mainMod SHIFT, M, exec, $terminal -e sh -c 'command -v cmus >/dev/null &
 # The camera: birdshot, or $CAMERA. Same key as stage 4's i3 binding, and the
 # same resolver, so the two desktops cannot disagree about what it opens.
 bind = $mainMod SHIFT, B, exec, copal-camera
+# The theme picker. Two themes today, and a picker over two is still the
+# door that does not need a terminal.
+bind = $mainMod SHIFT, T, exec, copal-theme --pick
+# Doors from Omarchy, for hands that learned them there: its system menu is
+# Super+Alt+Space and its wallpaper picker Super+Ctrl+Space. The same one
+# implementation behind each; one more way in, which is what a door is.
+bind = $mainMod ALT, SPACE, exec, copal-menu --system
+bind = $mainMod CTRL, SPACE, exec, copal-wallpaper --pick
 bind = $mainMod SHIFT, N, exec, $terminal -e sh -c 'command -v nvim >/dev/null && exec nvim; exec vi'
 # The wallpaper picker, with thumbnails. Also in the menu under Style, and on
 # the same chord as stage 4's i3 config so the two desktops agree.
@@ -12451,6 +12535,14 @@ layerrule = blur on, ignore_alpha 0.19, match:namespace diinki_celestialantiquit
 # work, and where it is present this one simply matches nothing. Both are
 # listed so the file does not have to know which shell started.
 layerrule = blur on, ignore_alpha 0.19, match:namespace waybar
+
+# ---- yours --------------------------------------------------------------
+# Everything above this line is rewritten whenever stage 16 runs, and the
+# copy it replaces goes to hyprland.conf.bak. local.conf is not: the
+# installer creates it empty once and never opens it again. A binding, a
+# monitor line, a display scale -- anything you would otherwise edit above
+# -- goes there and survives every re-run. Sourced last, so it wins.
+source = ~/.config/hypr/local.conf
 ANTIQHYPR
     # ----------------------------------------------------------------------
     # THE KEY LIST FOR THIS DESKTOP, which did not exist.
@@ -12496,6 +12588,9 @@ ANTIQHYPR
    Super + Shift + M    music (cmus, or mpv on ~/Music)
    Super + Shift + B    the camera (birdshot, built from ~/code; or $CAMERA)
    Super + Shift + W    the wallpaper picker, with thumbnails
+   Super + Shift + T    the theme picker
+   Super + Alt + Space  the menu's System side; Super + Ctrl + Space the
+                        wallpaper picker -- Omarchy's chords, kept as doors
    Super + Ctrl + A     volume (alsamixer)
    Super + Ctrl + T     what the machine is doing (btop, or htop)
    Super + Shift + D    LAY THE DESK OUT. Editor and terminal on 2, a
@@ -12649,6 +12744,20 @@ GUIDE
     fi
 
     install_home_file .config/hypr/hyprland.conf /tmp/hyprconf.$$
+    cat > /tmp/hyprlocal.$$ <<'HYPRLOCAL'
+# ~/.config/hypr/local.conf -- yours.
+#
+# Copal created this file empty, once, and will not write to it again.
+# ~/.config/hypr/hyprland.conf is rewritten every time stage 16 runs and
+# sources this file last, so anything here wins over anything there.
+# Hyprland reloads on save. Some starting points:
+#
+#   monitor = , preferred, auto, 1.5          a display scale
+#   bind = $mainMod SHIFT, F8, exec, foo      a binding of your own
+#   exec-once = copal-desk                    the desk, laid out at login
+HYPRLOCAL
+    install_home_once .config/hypr/local.conf /tmp/hyprlocal.$$
+    rm -f /tmp/hyprlocal.$$
     rm -f /tmp/hyprconf.$$
 
     # hyprpaper.conf named the author's two monitors. An empty monitor field
@@ -16790,7 +16899,7 @@ THANTIQ
 #!/bin/sh
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
-# copal-theme [NAME]  -- show, list or set the system theme.
+# copal-theme [NAME]  -- show, list, pick or set the system theme.
 #
 # The theme is a directory under /usr/local/share/copal/themes and the
 # "current" one is a symlink at ~/.config/copal/current/theme pointing at it.
@@ -16822,8 +16931,19 @@ case "${1:-}" in
         echo "  Set one with:  copal-theme <name>"
         echo
         exit 0 ;;
+    # The picker: the same wofi-or-dmenu list copal-wallpaper falls back
+    # to, and what Super+Shift+T and the Style menu run. Cancelling is not
+    # an error.
+    -p|--pick)
+        _sel=$(for d in "$THEMES"/*/; do [ -d "$d" ] && basename "$d"; done \
+               | { if [ -n "${WAYLAND_DISPLAY:-}" ] && command -v wofi >/dev/null 2>&1; then
+                       wofi --dmenu --prompt theme --lines 6
+                   elif command -v dmenu >/dev/null 2>&1; then dmenu -i -l 6 -p theme
+                   else cat; fi; }) || exit 0
+        [ -n "$_sel" ] || exit 0
+        set -- "$_sel" ;;
     -h|--help|help)
-        echo "usage: copal-theme [NAME|--list]"
+        echo "usage: copal-theme [NAME|--list|--pick]"
         exit 0 ;;
 esac
 
@@ -18036,6 +18156,10 @@ augroup copal_netrw_keys
   autocmd FileType netrw nnoremap <buffer> r R
   autocmd FileType netrw nnoremap <buffer> m R
 augroup END
+
+" Yours. ~/.vimrc is rewritten when stage 7 runs; ~/.vimrc.local is not, and
+" it is read last, so a setting there wins over the same setting above.
+silent! source ~/.vimrc.local
 VIMRC
     install_home_file .vimrc /tmp/vimrc.$$
 
@@ -18068,7 +18192,10 @@ set runtimepath^=~/.vim runtimepath+=~/.vim/after
 let &packpath = &runtimepath
 source ~/.vimrc
 
-for s:f in ['theme', 'keys', 'lsp']
+" 'local' is yours: ~/.config/nvim/local.lua is never written by Copal, and
+" it runs after everything else, so it wins. ~/.vimrc.local is the same
+" hatch in Vimscript, read through ~/.vimrc above.
+for s:f in ['theme', 'keys', 'lsp', 'local']
   let s:p = expand('~/.config/nvim/' . s:f . '.lua')
   if filereadable(s:p)
     execute 'luafile' fnameescape(s:p)

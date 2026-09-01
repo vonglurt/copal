@@ -253,6 +253,30 @@ entries, so the Wayland desktop is never offered "Reload i3".
 generated document that can go stale must either be generated from the same
 source as the thing it describes, or must not be offered.
 
+### F. Generated configuration with no escape hatch → a local file the installer never rewrites
+
+**Defect.** Every configuration file the installer writes — twenty-nine of
+them, through one function — is rewritten whenever its stage runs again. That
+is deliberate (§ VI-11: generate configuration, never edit the vendored tree),
+and it carried a cost the design did not state: a binding added by hand to
+`hyprland.conf` is in `hyprland.conf.bak` after the next `make redeploy`,
+silently. The escape hatch § VI-10 promises was the checkout itself, which is
+the right place for a change to Copal and the wrong place for a change to one
+machine.
+
+**Intervention.** Each generated file ends by reading a companion the installer
+creates empty, once, and never opens again: `local.conf` for Hyprland and i3,
+`local.lua` and `.vimrc.local` for the editors, `.bashrc.local` and
+`.profile.local` for the shell. Read last, so it wins. The installer also now
+says, at the moment of replacement, when the file it is replacing is not the
+one it wrote last time. Omarchy's `bindings.conf` convention is the prior art;
+the difference is that here the installer owns its file outright and the
+person owns the other outright, and there is no file that both edit.
+
+**Standing rule derived from it.** *A generated file needs a neighbour that is
+not generated.* Regeneration is what keeps the installer honest (§ VI-11), and
+it is only safe when a person's changes have somewhere else to live.
+
 ## V. Results
 
 No user study was conducted, and no timing data was collected. What follows is

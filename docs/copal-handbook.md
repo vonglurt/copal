@@ -1503,6 +1503,32 @@ because two windows opening on one workspace in the same instant race to be the
 first half of the split, which is the one thing the layout is supposed to
 decide. A Pi Zero starting a browser may want 2 or 3.
 
+### Your own settings survive a re-run
+
+Every configuration file the installer writes is rewritten when its stage runs
+again, and the copy it replaces is kept beside it as `.bak`. Each of them ends
+by reading a companion file that the installer creates once, empty, and never
+touches again:
+
+| Written by the installer, every run | Yours, never rewritten |
+|---|---|
+| `~/.config/hypr/hyprland.conf` | `~/.config/hypr/local.conf`, sourced last |
+| `~/.config/i3/config` | `~/.config/i3/local.conf`, included last |
+| `~/.vimrc` · `~/.config/nvim/init.vim` | `~/.vimrc.local` · `~/.config/nvim/local.lua` |
+| `~/.bashrc` · `~/.profile` | `~/.bashrc.local` · `~/.profile.local` |
+
+A binding, a monitor line, a display scale, an alias: put it in the right-hand
+file and `make redeploy` can run all day. The installer says so when it
+replaces a file that differed from the one it wrote last time, and names the
+`.bak`. The left-hand files remain the place to change what *Copal* does —
+edit the stage in `~/code/copal/copal-prep.sh` and redeploy, which is the loop
+`copal-guide code` describes.
+
+Three more keys, for hands arriving from Omarchy: Super + Shift + T opens the
+theme picker, and Super + Alt + Space and Super + Ctrl + Space open the menu's
+System side and the wallpaper picker, the chords Omarchy uses for the same
+two things.
+
 ### Scrolling goes the way the content goes
 
 Both desktops scroll *naturally*: roll the wheel away from you and the content
