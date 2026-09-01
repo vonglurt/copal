@@ -578,6 +578,15 @@ CFG_GIT_EMAIL=$(sanitise_conf_value "${CFG_GIT_EMAIL:-}")
 # exists to work on these, and arriving without them means doing by hand, at
 # the first login, the one job the install was already positioned to do.
 #
+# Every public repository under github.com/vonglurt (copal itself excepted,
+# see below), and Team Yodacon's under github.com/yodacon: yodacon, the
+# centre that ties the 1997 ConEx plugin to its descendants, and gonex, the
+# game. yodacon carries gonex and the konex fork as SUBMODULES, which is why
+# copal-code clones with --recurse-submodules -- konex arrives that way, and
+# is not listed on its own. gonex is listed on its own as well because it is
+# the one that builds into a program (copal-build, Go), and yodacon's Makefile
+# finds it either place.
+#
 # Still only a PROPOSAL. Stage 1 lists them and Enter accepts; answering the
 # prompt replaces the list outright, and an empty answer is recorded as an
 # empty answer. Nothing here is forced on a machine whose owner said no.
@@ -594,7 +603,9 @@ CFG_GIT_REPOS="${CFG_GIT_REPOS:-\
 https://github.com/vonglurt/urfinkel.git \
 https://github.com/vonglurt/ascitty.git \
 https://github.com/vonglurt/codexofconquest.git \
-https://github.com/vonglurt/birdshot.git}"
+https://github.com/vonglurt/birdshot.git \
+https://github.com/yodacon/yodacon.git \
+https://github.com/yodacon/gonex.git}"
 
 # Override it in answers.txt (COPAL_GIT_REPOS), or in the environment for one
 # build:
@@ -14205,13 +14216,16 @@ clone_one() {  # <url> <dir>
     if [ "$_first" != "$_u" ]; then
         note "trying ssh first: $_first"
     fi
-    if GIT_SSH_COMMAND="$GIT_SSH_BATCH" git clone "$_first" "$_d"; then
+    # --recurse-submodules: a repository that carries others inside it (the
+    # yodacon checkout carries gonex and the konex fork that way) is not
+    # complete without them, and 'make' in it fails on an empty directory.
+    if GIT_SSH_COMMAND="$GIT_SSH_BATCH" git clone --recurse-submodules "$_first" "$_d"; then
         return 0
     fi
     [ -n "$_second" ] || return 1
     warn "$_first did not clone -- falling back to $_second"
     note "(no key on this machine yet? 'copal-guide code' says how to add one)"
-    git clone "$_second" "$_d"
+    git clone --recurse-submodules "$_second" "$_d"
 }
 
 need_root() {
@@ -14242,7 +14256,15 @@ sync)
         _dir="$CODE/$(name_of "$_url")"
         if [ -d "$_dir/.git" ]; then
             say "$(basename "$_dir") -- already here, pulling"
-            git -C "$_dir" pull --ff-only || warn "pull failed in $_dir"
+            if git -C "$_dir" pull --ff-only; then
+                # A pull that moved a submodule pointer leaves the submodule
+                # where it was until this is run; a clone made before the
+                # submodule existed has an empty directory until it is.
+                git -C "$_dir" submodule update --init --recursive \
+                    || warn "submodules did not update in $_dir"
+            else
+                warn "pull failed in $_dir"
+            fi
         elif [ -e "$_dir" ]; then
             warn "$_dir exists and is not a checkout -- left alone"
         else
@@ -14366,11 +14388,11 @@ install_copal_build() {
 # is the step after it, and copal-code runs it itself at the end of a sync.
 #
 # BY SHAPE, NOT BY NAME. A checkout with a CMakeLists.txt gets cmake, one
-# with a Cargo.toml gets cargo, one with a package.json gets npm, and a
-# Makefile that calls cl65 is a Commodore program, whose committed .prg and
-# .d64 are what runs. So a fork, a rename, or a repository this file has
-# never heard of builds the same way, provided it is one of those shapes.
-# The four repositories stage 1 proposes by default are each one of them:
+# with a Cargo.toml gets cargo, one with a go.mod gets go, one with a
+# package.json gets npm, and a Makefile that calls cl65 is a Commodore
+# program, whose committed .prg and .d64 are what runs. So a fork, a rename,
+# or a repository this file has never heard of builds the same way, provided
+# it is one of those shapes. The repositories stage 1 proposes by default:
 #
 #   birdshot          cmake, under native/ -- the C++17 camera pipeline, and
 #                     birdshot-gui when Qt 6 is installed. THE CAMERA
@@ -14378,6 +14400,11 @@ install_copal_build() {
 #   ascitty           cargo -- the terminal renderer
 #   urfinkel          cc65 -- a Plus/4 game, run under VICE
 #   codexofconquest   npm -- a web game over a local node server
+#   gonex             go -- Team Yodacon's game, Ebitengine over cgo
+#   yodacon           none -- the centre that ties the 1997 plugin, the
+#                     konex fork and gonex together; Python tools run in
+#                     place, and its own Makefile builds the gonex
+#                     submodule. Nothing to put on PATH, so left alone.
 #
 # NOTHING HERE MAY DIRTY A CHECKOUT. copal-code keeps these current with
 # 'git pull --ff-only', and a pull refuses to run over a modified tracked
@@ -14433,6 +14460,7 @@ JOBS=$(jobs)
 shape_of() {  # <dir> -> cmake | cargo | npm | cc65 | none
     if   [ -f "$1/CMakeLists.txt" ] || [ -f "$1/native/CMakeLists.txt" ]; then echo cmake
     elif [ -f "$1/Cargo.toml" ]; then echo cargo
+    elif [ -f "$1/go.mod" ]; then echo go
     elif [ -f "$1/package.json" ] || [ -f "$1/src/package.json" ]; then echo npm
     elif [ -f "$1/Makefile" ] && grep -q 'cl65' "$1/Makefile" 2>/dev/null; then echo cc65
     else echo none
@@ -14466,6 +14494,29 @@ build_cargo() {  # <dir>
     | while read -r _f; do
         ln -sf "$_f" "$BIN/$(basename "$_f")" && basename "$_f"
     done >> "$MADE"
+}
+
+# Go installs straight into $BIN: GOBIN is exactly the knob for that. A cmd/
+# directory holds one main package per subdirectory, which is the layout
+# every one of these uses; a module whose root is the program is the other
+# case. Two things happen over the network here and both are normal: the
+# module cache fills, and if go.mod asks for a newer Go than Alpine ships
+# (gonex says 1.27, v3.24 ships 1.26) the toolchain fetches that release
+# itself -- GOTOOLCHAIN=auto, the default -- and builds with it. The fetched
+# toolchain is static, so it does not care that this is musl.
+build_go() {  # <dir>
+    have go || { warn "go is not installed (doas apk add go) -- skipped"; return 1; }
+    if [ -d "$1/cmd" ]; then _pk=./cmd/...; else _pk=.; fi
+    run_in "$1" env GOBIN="$BIN" go install "$_pk" || return 1
+    if [ -d "$1/cmd" ]; then
+        for _c in "$1"/cmd/*/; do
+            [ -d "$_c" ] || continue
+            grep -q '^package main' "$_c"*.go 2>/dev/null && basename "$_c" >> "$MADE"
+        done
+    else
+        basename "$(awk '/^module /{ print $2; exit }' "$1/go.mod")" >> "$MADE"
+    fi
+    return 0
 }
 
 build_npm() {  # <dir>
@@ -14557,6 +14608,7 @@ entry_for() {  # <checkout name> <program> -> label|command|mode, or nothing
         ascitty-bake)    return 0 ;;  # a build tool, not a program to open
         urfinkel)        echo "UR FINKEL (Plus/4; in VICE)|urfinkel|x" ;;
         codexofconquest) echo "Codex of Conquest (web game)|codexofconquest|x" ;;
+        gonex)           echo "Gonex (Team Yodacon; reentry trader)|gonex|x" ;;
         *)               echo "$1: $2|$2|t" ;;
     esac
 }
@@ -14576,9 +14628,10 @@ build_one() {  # <dir>
         cargo) build_cargo "$_d" || _ok=1
                # A Plus/4 target beside the host build, if the tree has one.
                [ "$_ok" = 0 ] && { build_cc65 "$_d" || _ok=1; } ;;
+        go)    build_go "$_d" || _ok=1 ;;
         npm)   build_npm "$_d" || _ok=1 ;;
         cc65)  build_cc65 "$_d" || _ok=1 ;;
-        none)  note "no CMakeLists.txt, Cargo.toml, package.json or cc65 Makefile -- left alone"
+        none)  note "no CMakeLists.txt, Cargo.toml, go.mod, package.json or cc65 Makefile -- left alone"
                return 0 ;;
     esac
     [ "$_ok" = 0 ] || { warn "$_n did not build -- see above; 'copal-build $_n' retries"; return 1; }
@@ -15100,10 +15153,10 @@ GUIDE
       copal-build clean NAME  delete the build directories, keep the source
 
    BY SHAPE, NOT BY NAME: a CMakeLists.txt gets cmake, a Cargo.toml gets
-   cargo, a package.json gets npm, and a Makefile that calls cl65 is a
-   Commodore program whose committed .prg and .d64 are what runs. Your own
-   repositories build the same way if they are one of those shapes. The
-   four that stage 1 proposes:
+   cargo, a go.mod gets go, a package.json gets npm, and a Makefile that
+   calls cl65 is a Commodore program whose committed .prg and .d64 are what
+   runs. Your own repositories build the same way if they are one of those
+   shapes. The ones that stage 1 proposes:
 
       birdshot          cmake  -> birdshot, and birdshot-gui with Qt 6.
                                  THE CAMERA: Super+Shift+B, or Camera at the
@@ -15117,6 +15170,13 @@ GUIDE
                                  in the Install menu)
       codexofconquest   npm    -> a wrapper that starts its node server and
                                  opens play.html in $BROWSER
+      gonex             go     -> gonex, Team Yodacon's game (Ebitengine)
+      yodacon           none   -> nothing on PATH. Python tools that run in
+                                 place ('python3 -m yodaed'), and a Makefile
+                                 that builds its gonex submodule. Its
+                                 submodules -- gonex, the konex fork -- come
+                                 down with it: copal-code clones with
+                                 --recurse-submodules.
 
    The menu shows them under Projects, and in the applications pane like
    anything else. A build that fails says why -- usually a compiler that is
@@ -17743,13 +17803,19 @@ MSG
 # sets COPAL_BUILD_PLUS4=1; see copal-build.
 #
 # Checked against the APKINDEX on 2026-09-01: qt6-qtbase-dev, cmake, cargo,
-# rust, nodejs and npm are in v3.24 for all five ports; cc65 is in
+# rust, go (1.26.3), nodejs, npm and the header packages above are in v3.24
+# for all five ports; cc65 is in
 # edge/testing for armhf, aarch64 and x86_64 and in neither v3.24 branch for
 # any port. VICE, to RUN the Plus/4 builds, is a catalogue row -- Retro,
 # 'vice@testing' -- and stage 9's business, not this stage's.
+#   X11, GL and ALSA headers   gonex: Ebitengine draws and plays through
+#                    cgo, and cgo wants the headers. Small, and all of them
+#                    in v3.24 main/community for every port.
 dev_checkout_deps() {
     say "What the checkouts build with"
     add_optional qt6-qtbase-dev
+    add_optional libx11-dev libxcursor-dev libxinerama-dev libxi-dev libxrandr-dev \
+                 libxxf86vm-dev mesa-dev alsa-lib-dev pkgconf
 }
 
 stage_dev() {
