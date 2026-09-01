@@ -14603,6 +14603,17 @@ BIN="$PREFIX/bin"
 # section. Written by this script and read by nothing else that edits it.
 PROJECTS="${XDG_DATA_HOME:-$HOME/.local/share}/copal/projects"
 
+# SCRATCH SPACE ON THE DISK, NOT IN /tmp. Stage 3 mounts /tmp as a 64 MB
+# tmpfs, sized for the boards, and a compiler's working files do not fit in
+# it: gonex's cgo build of Ebitengine died with "No space left on device"
+# writing /tmp/cc*.s. Everything that honours TMPDIR -- gcc's assembler
+# output, Go's work directory, cargo and npm -- goes under the home instead,
+# where the ext4 root has room. Cleared at the end; this is scratch.
+TMPDIR="${XDG_CACHE_HOME:-$HOME/.cache}/copal-build/tmp"
+mkdir -p "$TMPDIR"
+export TMPDIR
+export GOTMPDIR="$TMPDIR"
+
 say()  { printf '\033[36m==>\033[0m %s\n' "$*"; }
 note() { printf '    %s\n' "$*"; }
 warn() { printf '\033[33mwarning:\033[0m %s\n' "$*" >&2; }
@@ -14846,8 +14857,8 @@ checkouts() {  # every directory in ~/code, or the names given
 }
 
 mkdir -p "$BIN" "$(dirname "$PROJECTS")"
-MADE=$(mktemp "${TMPDIR:-/tmp}/copal-build.XXXXXX")
-trap 'rm -f "$MADE" "$PROJECTS.new"' EXIT INT TERM
+MADE=$(mktemp "$TMPDIR/copal-build.XXXXXX")
+trap 'rm -f "$MADE" "$PROJECTS.new"; rm -rf "$TMPDIR"/* 2>/dev/null' EXIT INT TERM
 
 case "${1:-}" in
 list)
