@@ -22338,9 +22338,19 @@ fi
 # There is no signature check. The transport is TLS to raw.githubusercontent.com
 # and that is the whole of the trust model; say so plainly rather than implying
 # more. Anyone who wants better can point COPAL_REPO at their own fork.
+# WRITTEN TO A TEMPORARY NAME AND RENAMED, never `cat >` over the path.
+# Stage 3 leaves a copy of THIS WHOLE SCRIPT at /usr/local/bin/copal, and the
+# next `copal` on that machine runs it from there. A `cat >` onto the file
+# being run truncates it under the parser, and the shell reaches end-of-file
+# in the middle of an `if` twenty thousand lines down:
+#
+#     /usr/local/bin/copal: line 21043: syntax error: unexpected end of file
+#
+# which is what `make redeploy` produced on the first VM it was tried on. A
+# rename replaces the directory entry and leaves the running inode alone.
 install_frontdoor() {
     [ -d /usr/local/bin ] || mkdir -p /usr/local/bin 2>/dev/null || return 0
-    cat > /usr/local/bin/copal <<'COPALCMD'
+    cat > /usr/local/bin/copal.new <<'COPALCMD'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
@@ -22604,7 +22614,8 @@ case "${1:-}" in
     *)            printf 'copal: unknown option "%s"\n\n' "$1" >&2; usage >&2; exit 2 ;;
 esac
 COPALCMD
-    chmod 0755 /usr/local/bin/copal
+    chmod 0755 /usr/local/bin/copal.new
+    mv -f /usr/local/bin/copal.new /usr/local/bin/copal
 }
 
 # The log tools, written beside the front door and for the same reason: they
