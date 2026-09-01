@@ -152,9 +152,10 @@ stage menu, where you pick each stage yourself — that is [Step
 
 Full automatic answers every question except these:
 
-1. **Who you are** — a name and email for git commits. The Mac that wrote the
-   image offers its own git identity as the default, so this is usually just
-   Enter.
+1. **Who you are** — a name and email for git commits. If `make answers`
+   wrote them into answers.txt they are offered here, and this is just Enter;
+   otherwise the prompt is empty. The installer never reads the Mac's own git
+   config.
 2. **What you came here to work on** — the repositories to check out into
    `~/code`. One URL per prompt, Enter on an empty one to finish, Enter on the
    first one to skip. Stage 7 clones them while the install still has a
@@ -924,8 +925,9 @@ resume block in the new root's `/root/.profile`, so logging back in as root
 picks the install up where it stopped. The run ends with a second reboot, asked
 for with a ten-second window to refuse it. It stops exactly once, in the first
 minute, for the things `setup-alpine` has no answer-file variable for: the
-**root password**, the **git identity** (offered from this Mac's config, so
-Enter accepts) and the **repositories to check out into `~/code`**, which
+**root password**, the **git identity** (offered from answers.txt if `make
+answers` set it, otherwise asked with no default) and the **repositories to
+check out into `~/code`**, which
 stage 7 clones. `make answers` settles all but the password in advance. After
 that you can walk away. It takes hours.
 
@@ -1649,11 +1651,11 @@ target.
   Makefile's unattended targets and any scripted caller should use.
 - Non-interactive runs never block; the prompt is guarded on a tty.
 
-The git identity is offered the same way. It is read from *this Mac's* git
-config and proposed as the default the target will suggest in stage 1 — but it
-is now shown and confirmed rather than baked in silently, and declining leaves
-it empty so the target asks instead. Whoever writes the card is usually, but
-not always, whoever will commit from the machine it boots.
+The git identity is offered the same way, from answers.txt: shown and
+confirmed before it goes onto the card, and declining leaves it empty so the
+target asks instead. The installer no longer reads *this Mac's* git config as
+a fallback. Whoever writes the card is usually, but not always, whoever will
+commit from the machine it boots, and `make answers` is where that is settled.
 
 ## Consoles
 

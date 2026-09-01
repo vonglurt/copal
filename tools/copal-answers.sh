@@ -142,8 +142,9 @@ note "and rivers -- a fixed name stops being unique at the second machine."
 note "Once answers.txt exists its own hostname is the default, not a new one."
 printf '\n'
 
-# Identity. The git config on this Mac is the best guess available, and is
-# what copal-prep.sh already falls back to when there is no answers file.
+# Identity. The git config on this Mac is the best guess available, offered
+# HERE, at a prompt, where it is seen and confirmed. copal-prep.sh itself no
+# longer reads it: with no answers file, stage 1 asks on the target instead.
 _def_name="${COPAL_GIT_NAME:-$(git config --global --get user.name 2>/dev/null || true)}"
 _def_email="${COPAL_GIT_EMAIL:-$(git config --global --get user.email 2>/dev/null || true)}"
 ask "Name for git commits"   "$_def_name"                 COPAL_GIT_NAME

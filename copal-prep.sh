@@ -536,22 +536,23 @@ CFG_SSHKEY="${CFG_SSHKEY:-}"
 
 # Git identity for ${CFG_USER} on the Pi -- the name and email that end up on
 # the "author" line of every commit made there. Nothing here is a credential
-# and nothing verifies it; GitHub matches commits to an account by the address,
-# which is why the sensible default is the one this Mac already commits under.
+# and nothing verifies it; GitHub matches commits to an account by the address.
 #
-# Taken from this Mac's git config because the person writing the card is the
-# person who will be committing on the machine it boots. It is only a PROPOSAL:
-# it goes onto the card as a default, the Pi offers it at the prompt in stage 1,
-# and whatever is answered there wins from then on (see copal-git, below).
-#
-# Set CFG_GIT_NAME / CFG_GIT_EMAIL to override, or either to "" to leave the
-# prompt on the Pi empty.
-if [ -z "${CFG_GIT_NAME+set}" ]; then
-    CFG_GIT_NAME=$(git config --global --get user.name 2>/dev/null || true)
-fi
-if [ -z "${CFG_GIT_EMAIL+set}" ]; then
-    CFG_GIT_EMAIL=$(git config --global --get user.email 2>/dev/null || true)
-fi
+# FROM THE ANSWERS FILE, AND FROM NOWHERE ELSE. This used to fall back to the
+# Mac's own `git config --global` when answers.txt did not name one, on the
+# reasoning that whoever writes the card usually commits from the machine it
+# boots. Usually is the problem: a card written on somebody else's Mac, or on
+# this one for somebody else, arrived proposing a name that was never asked
+# for, and a proposal that is merely accepted with Enter is a default in
+# everything but name. Now: COPAL_GIT_NAME / COPAL_GIT_EMAIL in answers.txt
+# (`make answers` writes them, and does offer this Mac's config at ITS prompt,
+# where it is seen and confirmed), or CFG_GIT_NAME / CFG_GIT_EMAIL in the
+# environment for one build. Nothing named anywhere means stage 1 asks on the
+# target with an empty prompt. It is still only a PROPOSAL there: Enter accepts
+# it, anything typed replaces it, and the answer is what stage 7 applies (see
+# copal-git, below).
+CFG_GIT_NAME="${CFG_GIT_NAME-}"
+CFG_GIT_EMAIL="${CFG_GIT_EMAIL-}"
 # copal.conf is sourced by copal-init.sh, so these two strings become shell
 # words on the Pi. A double quote, a backslash, a backtick or a '$' in a name
 # would end the string early or expand to something else entirely -- at best a
@@ -1320,12 +1321,12 @@ WHO
     done
     info "Admin account: $CFG_USER"
 
-    # The git identity is a PROPOSAL taken from this Mac's own git config, and
-    # it is offered rather than assumed for the same reason: whoever writes the
-    # card is usually but not always whoever will commit from the machine.
-    # Declining leaves the field empty and stage 1 asks on the target instead.
+    # The git identity is a PROPOSAL from the answers file (or the
+    # environment), shown here so that a card written for somebody else is
+    # not written under this file's name by habit. Declining leaves the field
+    # empty and stage 1 asks on the target instead.
     if [ -n "${CFG_GIT_NAME}${CFG_GIT_EMAIL}" ]; then
-        printf '\n    Git identity for commits made on the machine, taken from this Mac:\n' >&2
+        printf '\n    Git identity for commits made on the machine, from the answers file:\n' >&2
         printf '        %s <%s>\n' "${CFG_GIT_NAME:-(no name)}" "${CFG_GIT_EMAIL:-no email}" >&2
         printf '    Offer that as the default on the target? [Y/n]: ' >&2
         read -r _reply < /dev/tty || _reply=""
@@ -2250,7 +2251,7 @@ fi
 if [ -n "${CFG_GIT_NAME}${CFG_GIT_EMAIL}" ]; then
     info "Git identity offered: ${CFG_GIT_NAME:-(no name)} <${CFG_GIT_EMAIL:-no email}> -- stage 1 asks, Enter accepts"
 else
-    warn "no git identity on this Mac -- stage 1 will ask for one with no default"
+    warn "no git identity in the answers file -- stage 1 will ask for one with no default"
 fi
 
 if [ -n "$CFG_GIT_REPOS" ]; then
