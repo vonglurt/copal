@@ -11804,16 +11804,35 @@ stage_hyprland() {
             fi
             mkdir -p "$_h/.config"
             cp -r "$_d" "$_tgt"
-            # THE ONE FILE THAT COMES BACK. local.conf is the person's, not
-            # the theme's -- created once by this stage and never rewritten,
-            # see install_home_once -- and moving it aside with the rest of
-            # the directory would be exactly the "your edit is in a backup
-            # you did not ask for" this file exists to end. The second VM run
-            # of this stage reported it "created once" a second time, which
-            # is how this was found.
-            if [ -d "${_b:-}" ] && [ -f "$_b/local.conf" ]; then
-                cp -p "$_b/local.conf" "$_tgt/local.conf"
-                note "kept: $_tgt/local.conf (yours)"
+            # WHAT COMES BACK ACROSS THE MOVE. Two kinds of file in the
+            # directory just moved aside are not the theme's to replace:
+            #
+            #   local.conf     the person's -- created once by this stage
+            #                  and never rewritten, see install_home_once.
+            #                  The second VM run reported it "created once"
+            #                  a second time, which is how this was found.
+            #   what THIS wrote the last time, by the record install_home_file
+            #                  keeps. hyprland.conf and hyprpaper.conf are
+            #                  about to be written again by this stage; if the
+            #                  theme's copy is left in their place first, the
+            #                  record no longer matches and the "you had
+            #                  changed this" note speaks about a change nobody
+            #                  made. Bringing the installer's own last copy
+            #                  back keeps that note honest.
+            #
+            # Both copied with -p, so the person's own edits and their dates
+            # travel intact.
+            if [ -d "${_b:-}" ]; then
+                if [ -f "$_b/local.conf" ]; then
+                    cp -p "$_b/local.conf" "$_tgt/local.conf"
+                    note "kept: $_tgt/local.conf (yours)"
+                fi
+                awk -v d="$_tgt/" 'index($2, d) == 1 { print substr($2, length(d) + 1) }' \
+                    "$WRITTEN_RECORD" 2>/dev/null | while read -r _rf; do
+                    [ -n "$_rf" ] && [ -f "$_b/$_rf" ] || continue
+                    mkdir -p "$(dirname "$_tgt/$_rf")"
+                    cp -p "$_b/$_rf" "$_tgt/$_rf"
+                done
             fi
         done
         # The licence travels with what it licenses.
