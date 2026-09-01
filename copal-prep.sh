@@ -4147,6 +4147,12 @@ write_catalogue() {
 # Install a config file into every real home on the box -- root's and
 # $PI_USER's. copal-init.sh runs as root, so writing only to $HOME would leave
 # 'user' with no desktop or editor configuration at all.
+# What this has written, by checksum, so the next run can tell "the file I
+# wrote last time" from "a file somebody edited since". Root-owned and off
+# the home directories on purpose: it is the installer's memory, not the
+# user's configuration.
+WRITTEN_RECORD=/var/lib/copal/written
+
 install_home_file() {  # <relative path> <source file>
     _rel="$1"; _src="$2"
     # Before the loop, because the loop's own guard is `is it a directory` --
@@ -4156,16 +4162,34 @@ install_home_file() {  # <relative path> <source file>
     for _h in /root "$(user_home)"; do
         [ -n "$_h" ] && [ -d "$_h" ] || continue
         mkdir -p "$_h/$(dirname "$_rel")"
-        # Said out loud when the file being replaced is not the one this
-        # wrote last time: somebody edited it, and their edit is now in the
-        # .bak. The place for that edit is the file's local companion -- see
+        # Said out loud when the file being replaced is NOT THE ONE THIS WROTE
+        # LAST TIME: somebody edited it, and their edit is now in the .bak.
+        # The place for that edit is the file's local companion -- see
         # install_home_once -- and this is where they find that out.
+        #
+        # Against the record, not against the new content: a file that
+        # differs from the new one is the normal case on every run that
+        # changed the stage, and a vendored copy that stage 16 lays down
+        # before writing its own over it differs too. Only a file that was
+        # written here and then changed by somebody else is worth a word. No
+        # record yet means nothing is said, which is the honest first run.
         _was=""
         if [ -f "$_h/$_rel" ]; then
             cp "$_h/$_rel" "$_h/$_rel.bak"
-            cmp -s "$_src" "$_h/$_rel" || _was=" -- replaced a copy that differed; it is in $_rel.bak"
+            _rec=$(awk -v f="$_h/$_rel" '$2 == f { print $1; exit }' "$WRITTEN_RECORD" 2>/dev/null)
+            if [ -n "$_rec" ]; then
+                _now=$(sha256sum "$_h/$_rel" 2>/dev/null | cut -d' ' -f1)
+                [ "$_now" = "$_rec" ] || _was=" -- replaced a copy you had changed; it is in $_rel.bak"
+            fi
         fi
         cp "$_src" "$_h/$_rel"
+        # Remember what was written. One line per path, the newest winning.
+        mkdir -p "$(dirname "$WRITTEN_RECORD")" 2>/dev/null
+        _sum=$(sha256sum "$_h/$_rel" 2>/dev/null | cut -d' ' -f1)
+        if [ -n "$_sum" ]; then
+            { grep -v " $_h/$_rel\$" "$WRITTEN_RECORD" 2>/dev/null; printf '%s %s\n' "$_sum" "$_h/$_rel"; } \
+                > "$WRITTEN_RECORD.new" && mv "$WRITTEN_RECORD.new" "$WRITTEN_RECORD"
+        fi
         # Match whatever owns the home directory, so 'user' still owns its own
         # dotfiles after root wrote them.
         _own=$(stat -c '%u:%g' "$_h" 2>/dev/null) && chown -R "$_own" "$_h/$(dirname "$_rel")" 2>/dev/null || true
@@ -12427,14 +12451,6 @@ bind = $mainMod SHIFT, M, exec, $terminal -e sh -c 'command -v cmus >/dev/null &
 # The camera: birdshot, or $CAMERA. Same key as stage 4's i3 binding, and the
 # same resolver, so the two desktops cannot disagree about what it opens.
 bind = $mainMod SHIFT, B, exec, copal-camera
-# The theme picker. Two themes today, and a picker over two is still the
-# door that does not need a terminal.
-bind = $mainMod SHIFT, T, exec, copal-theme --pick
-# Doors from Omarchy, for hands that learned them there: its system menu is
-# Super+Alt+Space and its wallpaper picker Super+Ctrl+Space. The same one
-# implementation behind each; one more way in, which is what a door is.
-bind = $mainMod ALT, SPACE, exec, copal-menu --system
-bind = $mainMod CTRL, SPACE, exec, copal-wallpaper --pick
 bind = $mainMod SHIFT, N, exec, $terminal -e sh -c 'command -v nvim >/dev/null && exec nvim; exec vi'
 # The wallpaper picker, with thumbnails. Also in the menu under Style, and on
 # the same chord as stage 4's i3 config so the two desktops agree.
@@ -12535,14 +12551,6 @@ layerrule = blur on, ignore_alpha 0.19, match:namespace diinki_celestialantiquit
 # work, and where it is present this one simply matches nothing. Both are
 # listed so the file does not have to know which shell started.
 layerrule = blur on, ignore_alpha 0.19, match:namespace waybar
-
-# ---- yours --------------------------------------------------------------
-# Everything above this line is rewritten whenever stage 16 runs, and the
-# copy it replaces goes to hyprland.conf.bak. local.conf is not: the
-# installer creates it empty once and never opens it again. A binding, a
-# monitor line, a display scale -- anything you would otherwise edit above
-# -- goes there and survives every re-run. Sourced last, so it wins.
-source = ~/.config/hypr/local.conf
 ANTIQHYPR
     # ----------------------------------------------------------------------
     # THE KEY LIST FOR THIS DESKTOP, which did not exist.
@@ -12742,6 +12750,34 @@ GUIDE
         warn "some Ctrl+Alt twins collided and were skipped:"
         grep '^# SKIPPED' /tmp/hyprconf.$$ | sed 's/^/      /'
     fi
+    # AFTER the twins, deliberately, and for the same reason stage 4 does it:
+    # Super+Shift+T's twin is Super+Ctrl+T's, and Super+Ctrl+Space's is
+    # Super+Shift+Space's. The generator would skip them with a warning on
+    # every install. They are doors, not verbs -- each runs something the
+    # file already binds elsewhere -- so they do not need twins of their own.
+    # And local.conf LAST of all, after the twins, so that "sourced last, so
+    # it wins" stays true of the whole file rather than of the part above the
+    # generated block.
+    cat >> /tmp/hyprconf.$$ <<'ANTIQDOORS'
+
+# ---- more doors ---------------------------------------------------------
+# The theme picker. Two themes today, and a picker over two is still the
+# door that does not need a terminal.
+bind = $mainMod SHIFT, T, exec, copal-theme --pick
+# Doors from Omarchy, for hands that learned them there: its system menu is
+# Super+Alt+Space and its wallpaper picker Super+Ctrl+Space. The same one
+# implementation behind each; one more way in, which is what a door is.
+bind = $mainMod ALT, SPACE, exec, copal-menu --system
+bind = $mainMod CTRL, SPACE, exec, copal-wallpaper --pick
+
+# ---- yours --------------------------------------------------------------
+# Everything above this line is rewritten whenever stage 16 runs, and the
+# copy it replaces goes to hyprland.conf.bak. local.conf is not: the
+# installer creates it empty once and never opens it again. A binding, a
+# monitor line, a display scale -- anything you would otherwise edit above
+# -- goes there and survives every re-run. Sourced last, so it wins.
+source = ~/.config/hypr/local.conf
+ANTIQDOORS
 
     install_home_file .config/hypr/hyprland.conf /tmp/hyprconf.$$
     cat > /tmp/hyprlocal.$$ <<'HYPRLOCAL'

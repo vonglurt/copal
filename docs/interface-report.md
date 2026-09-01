@@ -269,7 +269,9 @@ creates empty, once, and never opens again: `local.conf` for Hyprland and i3,
 `local.lua` and `.vimrc.local` for the editors, `.bashrc.local` and
 `.profile.local` for the shell. Read last, so it wins. The installer also now
 says, at the moment of replacement, when the file it is replacing is not the
-one it wrote last time. Omarchy's `bindings.conf` convention is the prior art;
+one it wrote last time -- judged against a record of what it wrote, not
+against the new content, so a changed stage or a vendored copy laid down
+first says nothing and only a person's edit does. Omarchy's `bindings.conf` convention is the prior art;
 the difference is that here the installer owns its file outright and the
 person owns the other outright, and there is no file that both edit.
 

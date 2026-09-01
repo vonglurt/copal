@@ -1519,7 +1519,7 @@ touches again:
 
 A binding, a monitor line, a display scale, an alias: put it in the right-hand
 file and `make redeploy` can run all day. The installer says so when it
-replaces a file that differed from the one it wrote last time, and names the
+replaces a file you had changed since it last wrote it, and names the
 `.bak`. The left-hand files remain the place to change what *Copal* does —
 edit the stage in `~/code/copal/copal-prep.sh` and redeploy, which is the loop
 `copal-guide code` describes.
