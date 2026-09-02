@@ -9,6 +9,9 @@
 #   copal-app-probe.sh --wait 40 NAME ...           seconds to allow for a window
 #   copal-app-probe.sh --workspace 2 NAME ...       run it on that workspace (default 2)
 #   copal-app-probe.sh --doc DIR NAME ...           also save a half-size PNG in DIR
+#   copal-app-probe.sh --gallery DIR NAME ...       quarter-size, hard-compressed JPEG
+#                                                   in DIR, every window moved to the
+#                                                   probe workspace first (the gallery)
 #
 # WORKSPACE 2. The program is launched on its own workspace and the session
 # doing the testing stays on workspace 1, so the screenshot holds the program
@@ -33,13 +36,14 @@
 # "Account", "First", "Wizard", "Assistant"), because a wizard on first launch
 # is precisely the thing this exercise exists to find and then design away.
 set -u
-KEEP=0; WAIT=30; WS="${COPAL_PROBE_WORKSPACE:-2}"; DOC=""
+KEEP=0; WAIT=30; WS="${COPAL_PROBE_WORKSPACE:-2}"; DOC=""; GAL=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --keep) KEEP=1; shift ;;
         --wait) WAIT="${2:?--wait needs seconds}"; shift 2 ;;
         --workspace) WS="${2:?--workspace needs a number}"; shift 2 ;;
         --doc) DOC="${2:?--doc needs a directory}"; shift 2 ;;
+        --gallery) GAL="${2:?--gallery needs a directory}"; shift 2 ;;
         --) shift; break ;;
         -*) echo "copal-app-probe: unknown option $1" >&2; exit 2 ;;
         *) break ;;
@@ -67,11 +71,11 @@ import json, sys
 pids = sys.argv[1].split()
 for c in json.load(sys.stdin):
     if str(c.get("pid")) in pids:
-        print("%s|%s|%s" % (c.get("pid"), c.get("class",""), c.get("title","")))' "$_pids"
+        print("%s|%s|%s|%s" % (c.get("pid"), c.get("class",""), c.get("title",""), c.get("address","")))' "$_pids"
     elif command -v xdotool >/dev/null 2>&1; then
         for _w in $(xdotool search --onlyvisible --name '' 2>/dev/null); do
             _wp=$(xdotool getwindowpid "$_w" 2>/dev/null) || continue
-            case "$_pids" in *" $_wp "*) echo "$_wp|$(xdotool getwindowclassname "$_w" 2>/dev/null)|$(xdotool getwindowname "$_w" 2>/dev/null)" ;; esac
+            case "$_pids" in *" $_wp "*) echo "$_wp|$(xdotool getwindowclassname "$_w" 2>/dev/null)|$(xdotool getwindowname "$_w" 2>/dev/null)|" ;; esac
         done
     fi
 }
@@ -100,7 +104,7 @@ PID=$!
 n=0; WIN=""; DETACHED=0
 new_windows() {
     all_windows | while IFS='|' read -r _p _c _t _a; do
-        case "$BEFORE" in *"$_a"*) ;; *) echo "$_p|$_c|$_t" ;; esac
+        case "$BEFORE" in *"$_a"*) ;; *) echo "$_p|$_c|$_t|$_a" ;; esac
     done
 }
 while [ "$n" -lt "$WAIT" ]; do
@@ -128,15 +132,35 @@ TWIN=$(( $(date +%s) - T0 ))
 if [ -n "$WIN" ]; then
     sleep 5
     if [ "$DETACHED" -eq 1 ]; then WIN=$(new_windows); else WIN=$(my_windows); fi
+    # Every window the program opened goes to the probe workspace -- a dialog
+    # or a second window that landed elsewhere would otherwise be out of frame.
+    if [ "$HYPR" -eq 1 ] && [ -n "$WS" ]; then
+        for _a in $(printf '%s' "$WIN" | cut -d'|' -f4); do
+            [ -n "$_a" ] && hyprctl dispatch movetoworkspacesilent "$WS,address:$_a" >/dev/null 2>&1
+        done
+        sleep 1
+    fi
 fi
 
 if command -v grim >/dev/null 2>&1 && [ -n "${WAYLAND_DISPLAY:-}" ]; then
     grim "$PNG" 2>/dev/null
     [ -n "$DOC" ] && mkdir -p "$DOC" && grim -s 0.5 "$DOC/$NAME.png" 2>/dev/null
+    # The gallery picture: a quarter of the screen's pixels, JPEG at a
+    # quality that keeps the shape of a window and not much else -- about
+    # 10-15 KB, so a hundred and fifty of them fit in a document.
+    if [ -n "$GAL" ]; then
+        mkdir -p "$GAL"
+        if command -v magick >/dev/null 2>&1; then
+            magick "$PNG" -resize 25% -strip -interlace Plane -sampling-factor 4:2:0 -quality 70 "$GAL/$NAME.jpg" 2>/dev/null
+        else
+            grim -s 0.25 "$GAL/$NAME.png" 2>/dev/null
+        fi
+    fi
 elif command -v scrot >/dev/null 2>&1; then scrot -o "$PNG" 2>/dev/null
 elif command -v import >/dev/null 2>&1; then import -window root "$PNG" 2>/dev/null; fi
 
 NWIN=$(printf '%s' "$WIN" | grep -c '|')
+WIN=$(printf '%s' "$WIN" | cut -d'|' -f1-3)   # the address has done its job
 TITLES=$(printf '%s' "$WIN" | cut -d'|' -f3 | tr '\n' ';' | cut -c1-90)
 WIZ=$(printf '%s' "$WIN" | cut -d'|' -f3 | grep -i -c 'welcome\|setup\|wizard\|assistant\|getting started\|first run\|legal notice' || true)
 # wait must run in this shell, not a subshell: only the parent can collect
