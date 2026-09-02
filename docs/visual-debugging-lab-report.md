@@ -405,7 +405,34 @@ changed before it. Newest last.
 | 2026-09-02 10:08 | `render { cm_enabled = false }` in local.conf; `custom/menu` made static; bar restarted | renderer=llvmpipe virgl=1 cm=0 hypr≈55% waybar=0% bar=609col fails=0 | *to be confirmed by the user* |
 | 2026-09-02 10:14 | probe fixed (driver name, bar geometry); foot `alpha=1.0` | `20260902-101441 renderer=llvmpipe virgl=1 cm=0 blur=1 dmg=2 hypr=66% waybar=0% bar=632col fails=0` | *to be confirmed by the user* |
 
-## IX. Files touched in this session
+## IX. Clipboard with the host
+
+Copy on the Mac, paste in the guest, and back. Copal already binds Super+C,
+Super+X and Super+V (and Ctrl+Alt+C/X/V as the fallback when the host keeps
+the Cmd key) to `copal-clip`, which sends the right chord to the focused
+window. What was missing was the host half. UTM shares the clipboard over
+SPICE, and the guest needs two programs for that: `spice-vdagentd`, the root
+daemon on the virtio port (running, OpenRC), and `spice-vdagent`, the
+per-session client — which was not running, and which is X11-only.
+
+Measured: with the client running against Xwayland, neither selection crossed
+between X and Wayland on its own. Xwayland bridges them only while an X window
+has keyboard focus, which on this desktop is never (`xclip -o` after `wl-copy`
+gave `target STRING not available`; `wl-paste` after `xclip -i` was
+unchanged).
+
+`tools/copal-vmclip.sh` — installed as `~/.local/bin/copal-vmclip`, started
+from `local.conf` by `exec-once` — starts `spice-vdagent -x` against `:0` and
+relays text between the Wayland and X clipboards every 0.3 s, in both
+directions, remembering what it last placed on each side so a change never
+echoes back. On a machine with no SPICE port it exits at once. Verified in
+the guest: `wl-copy` → `xclip -o` in under a second, and `xclip -i` →
+`wl-paste` likewise. The host leg is confirmed by pasting on the Mac.
+
+To check it after a restart: `pgrep -a spice-vdagent copal-vmclip`, then
+`wl-copy hello` and paste on the Mac.
+
+## X. Files touched in this session
 
 | file | change |
 |---|---|
@@ -413,6 +440,7 @@ changed before it. Newest last.
 | `~/.config/waybar/config` | `custom/menu`: static `"format": "≡"`, `exec` and `interval` removed |
 | `~/.config/foot/foot.ini` | `alpha=0.2` → `alpha=1.0`; new terminals are solid `#eaeaea` |
 | `tools/copal-gfx-probe.sh` | new |
+| `tools/copal-vmclip.sh`, `~/.local/bin/copal-vmclip` | new: host clipboard over SPICE, started by `exec-once` in local.conf |
 | `docs/img/gfx-*.png` | before/after evidence for §IV.B |
 | `docs/visual-debugging-lab-report.md` | this report |
 
