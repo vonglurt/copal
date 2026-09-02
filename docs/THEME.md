@@ -654,16 +654,24 @@ wrapper). Stage 16 follows the same grain, which should keep future
 
 ## IX. Forking and vendoring: controlling both sides
 
-The current state is a plain unzipped snapshot (`vendor/linux-antiquity-main`,
-no git history). The intended end state is **a GitHub fork we own, vendored
-as a git subtree**, giving one place to change the theme and two directions
-of flow (pull upstream in, push our changes out — even as PRs back to
-diinki). Submodules were rejected: `copal-prep.sh` must tar the vendor tree
-onto every card, and a submodule that someone forgot to `--init` would
-silently produce theme-less cards; a subtree is always materialized.
+**Done, 2 September 2026.** The fork is
+[`vonglurt/linux-antiquity`](https://github.com/vonglurt/linux-antiquity),
+its branch `copal-alpine` is upstream `c0e3eac` plus one commit dropping the
+non-MIT icon set and the screenshots, and `vendor/linux-antiquity` in this
+repository is a `git subtree --squash` of that branch. The unzipped snapshot
+is gone. The design that got here, kept for the record:
 
-Procedure (one-time, run when ready — creating the public fork is the
-user's action):
+The first state was a plain unzipped snapshot (`vendor/linux-antiquity-main`,
+no git history). The intended end state was **a GitHub fork we own, vendored
+as a git subtree**, giving one place to change the theme and two directions
+of flow (pull upstream in; and our changes visible where diinki can take
+them, on the terms in `upstream-policy.md`). Submodules were rejected:
+`copal-prep.sh` must tar the vendor tree onto every card, and a submodule
+that someone forgot to `--init` would silently produce theme-less cards; a
+subtree is always materialized.
+
+Procedure (as run; `git subtree` on Alpine is the separate `git-subtree`
+package, or git's own `contrib/subtree/git-subtree.sh` on `PATH`):
 
 ```sh
 # 1. Fork on GitHub (creates github.com/<you>/linux-antiquity):
