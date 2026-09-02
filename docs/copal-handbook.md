@@ -1562,20 +1562,38 @@ them:
   is what drun showed, *plus* every installed row of the catalogue — the
   terminal programs, which have no `.desktop` file and are most of what is on
   a machine this size. Deduplicated by name and sorted. Type to filter.
-- **Right — everything else.** The key list, the categories (each a submenu of
-  what is installed under it), Development, Emulators, Style, **Install
-  software** for the rest of the catalogue, the guides, System, and Session —
-  lock, log out, reboot, shut down.
+- **Right — everything else,** under headings: the key list, the terminal,
+  the Center and System Settings; **Session** — lock, log out, reboot, shut
+  down — at the top level rather than two clicks in; **Categories**, each a
+  submenu of what is installed under it, plus Development, Projects and
+  Emulators; and **Setup** — Style, **Install software** for the rest of the
+  catalogue, the guides, System.
 
 Super+Space and Super+D open it on the applications; **Super+Z** opens it on
 the system side (`copal-menu --system`), which is where that key always led.
 The first entry of each pane crosses to the other, because the mouse and the
 X11/dmenu fallback have no arrow keys to bind.
 
+**The list is cached.** Building it — 300 catalogue rows asked of PATH, every
+`.desktop` file parsed — took four seconds on the UTM guest, every time the
+key was pressed. It is now built once into `~/.cache/copal/` and the menu
+opens from the file in the time wofi takes to draw; it rebuilds itself in the
+background when anything it was built from is newer (a directory on PATH, the
+`.desktop` directories, the catalogue), and `copal-install` rebuilds it after
+every install. `copal-menu --rebuild` forces it; so does *System > Rebuild
+this menu now*.
+
+**How the arrows work,** because wofi cannot do it alone: wofi 1.5's user-bound
+keys only arm an exit status for when Enter or Escape is eventually pressed —
+the picker stays up. So while the picker is on screen `copal-menu` enters a
+Hyprland submap (`submap = menu` in `hyprland.conf`) in which Left and Right
+are Hyprland's: each ends the picker with a signal the menu reads as "the other
+pane". Every other key passes through, so typing still filters. The bar's
+submap indicator reads `menu` while it is open.
+
 The cost, stated plainly: **Left and Right no longer move the cursor inside the
-search box.** wofi gives a key to one binding only, and navigating the menu is
-the better use of an arrow key. Typing, backspace and Ctrl-W still edit the
-query. On X11 the pane entries do the same job and the arrows are untouched.
+search box.** Typing, backspace and Ctrl-W still edit the query. On X11 the
+pane entries do the same job and the arrows are untouched.
 
 ### The bar, the menu button, and the widgets
 

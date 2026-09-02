@@ -7912,6 +7912,13 @@ case " $* " in
 esac
 if apk add "$@"; then
     printf '\n\nDone. The menu will show it next time you open it.\n'
+    # The menu opens from a cached list; rebuild it now, as the person who
+    # asked (doas hands their name over in DOAS_USER), so the new program is
+    # there the next time the menu opens rather than the time after. Both
+    # sessions' lists, because root cannot tell which desktop asked.
+    if [ -n "${DOAS_USER:-}" ] && command -v copal-menu >/dev/null 2>&1; then
+        su "$DOAS_USER" -s /bin/sh -c 'copal-menu --rebuild-all' >/dev/null 2>&1 &
+    fi
     # Packages live on the ext4 root once stage 3 has run, but a diskless
     # system loses them at reboot unless the overlay is committed.
     if [ "$(awk '$2 == "/" { print $3 }' /proc/mounts)" = tmpfs ]; then
@@ -8004,8 +8011,17 @@ esac
 # REFUSES rather than assuming yes. "It could not ask, so it went ahead and
 # powered the machine off" is the wrong way round for the one command here
 # that cannot be undone.
+# ON WAYLAND THE QUESTION IS A WOFI LIST, No above Yes, and it is asked
+# BEFORE the i3 branch is considered: Hyprland sets DISPLAY for Xwayland, so
+# the i3 test alone would pick i3-nagbar, which comes up through Xwayland
+# unable to find an output and hangs -- which is what "Shut down does
+# nothing" was on the Antiquity desktop.
 if [ "$ASK" = 1 ]; then
-    if [ -n "${DISPLAY:-}" ] && have i3-nagbar; then
+    if [ -n "${WAYLAND_DISPLAY:-}" ] && have wofi; then
+        reply=$(printf 'No\nYes\n' | wofi --dmenu --prompt "$QUESTION" \
+                    --height 130 --width 380 2>/dev/null || true)
+        [ "$reply" = Yes ] || { echo "Cancelled."; exit 0; }
+    elif [ -n "${DISPLAY:-}" ] && have i3-nagbar; then
         exec i3-nagbar -t warning -m "$QUESTION" \
              -B 'Yes' "copal-halt -y $ACTION" -B 'No' 'true'
     elif [ -t 0 ]; then
@@ -8032,13 +8048,24 @@ priv() {
 # Ending an i3 session before the machine goes down is not required -- OpenRC
 # will stop X either way -- but it is the difference between applications being
 # asked to quit and applications being killed.
+# Asked of the session, like everything else here: Hyprland's exit is
+# 'hyprctl dispatch exit', and it is checked first for the Xwayland reason
+# above.
 end_session() {
-    [ -n "${DISPLAY:-}" ] && have i3-msg || return 0
-    i3-msg exit >/dev/null 2>&1 || true
+    if [ -n "${WAYLAND_DISPLAY:-}" ] && have hyprctl; then
+        hyprctl dispatch exit >/dev/null 2>&1 || true
+    elif [ -n "${DISPLAY:-}" ] && have i3-msg; then
+        i3-msg exit >/dev/null 2>&1 || true
+    else
+        return 0
+    fi
     sleep 1
 }
 
 if [ "$ACTION" = logout ]; then
+    if [ -n "${WAYLAND_DISPLAY:-}" ] && have hyprctl; then
+        exec hyprctl dispatch exit
+    fi
     [ -n "${DISPLAY:-}" ] || { echo "copal-halt: not in a desktop session." >&2; exit 1; }
     have i3-msg || { echo "copal-halt: no i3-msg." >&2; exit 1; }
     exec i3-msg exit
@@ -8066,7 +8093,7 @@ do_halt() {
 # race with its own death: if X takes its children down, the power-off never
 # happens and you are left at a console wondering why. setsid re-runs this in a
 # session of its own; COPAL_HALT_INNER is what stops the copy doing it again.
-if [ -z "${COPAL_HALT_INNER:-}" ] && [ -n "${DISPLAY:-}" ] && have setsid; then
+if [ -z "${COPAL_HALT_INNER:-}" ] && [ -n "${DISPLAY:-}${WAYLAND_DISPLAY:-}" ] && have setsid; then
     COPAL_HALT_INNER=1 setsid "$0" -y "$ACTION" >/dev/null 2>&1 &
     exit 0
 fi
@@ -8105,440 +8132,606 @@ COPALHALT
 #!/bin/sh
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
-# copal-menu -- a clickable menu, rebuilt from what is installed each time it runs.
+# copal-menu -- the desktop's menu: applications on the left, everything else
+# on the right, and Left/Right to cross between them.
 #
-# The keyboard launcher (Super+space, dmenu) already covers everything on
-# PATH. This exists for the things whose names you would have to know first --
-# the emulator profiles, the snapshot tool, the disk-image helpers -- and for
-# the one thing a flat launcher can never do: show you what you could install
-# but have not. Software you do not have is not discoverable by definition, so
-# the menu carries an Install branch listing the rest of the catalogue.
+# The keyboard launcher a desktop like this usually ships (dmenu, wofi's drun)
+# covers what is on PATH and nothing else. This exists for the things whose
+# names you would have to know first -- the emulator profiles, the snapshot
+# tool, the disk-image helpers -- and for the one thing a flat launcher can
+# never do: show you what you could install but have not. Software you do not
+# have is not discoverable by definition, so the menu carries an Install
+# branch listing the rest of the catalogue.
 #
-# Structure is borrowed from Omarchy: a short top level of categories, each a
-# submenu with a Back entry, and Install/System/Session as siblings of the
-# applications rather than entries mixed in among them. Nothing here is more
-# than two levels deep -- on a 720p framebuffer a third level is a scroll bar.
+# TWO PANES, ONE MENU. Super+Space, Super+D and the bar's menu button open on
+# the LEFT pane: every application on the machine, flat, sorted, type to
+# search -- what drun would show, plus the terminal programs drun cannot see.
+# Super+Z opens on the RIGHT pane: the same programs by category, the
+# settings, Style and Install, and the session -- lock, log out, reboot,
+# shut down -- under their own heading. Left and Right move between the two
+# panes; inside a category, Left is Back and Right goes to the applications.
+# Structure is borrowed from Omarchy, then tightened: nothing here is more
+# than two levels deep, because on a 720p framebuffer a third level is a
+# scroll bar.
+#
+# CACHED, AND WHY. Building the list means reading the catalogue (300 rows),
+# asking PATH about every one of them, and parsing every .desktop file on the
+# machine. Done from scratch on every keypress, that was four seconds on the
+# UTM guest -- long enough to press the key again, at which point two copies
+# raced to truncate one file and the second pane came up empty. So the list
+# is built once, into ~/.cache/copal/, and every open reads the file: the
+# menu appears in the time wofi takes to draw, a sixth of a second here.
+#
+# The file is rebuilt in the background when something it was built from is
+# newer than it -- a directory on PATH, the .desktop directories, the
+# catalogue, this script -- so what you see is at worst one open behind what
+# is installed, and never a blank. 'copal-menu --rebuild' forces it, and
+# copal-install runs that for you after every install.
 set -eu
-CSV="${XDG_RUNTIME_DIR:-/tmp}/copal-menu.csv"
+CACHE_DIR="${XDG_CACHE_HOME:-$HOME/.cache}/copal"
 CATFILE=/usr/local/share/copal/catalogue
+GUIDES=/usr/local/share/copal/guides
+CONFDIR="${XDG_CONFIG_HOME:-$HOME/.config}"
+# The programs copal-build made from ~/code, in the same label|command|mode
+# shape as a catalogue row. The file is copal-build's; it is read here and
+# edited nowhere.
+PROJFILE="${XDG_DATA_HOME:-$HOME/.local/share}/copal/projects"
+
+usage() {
+    echo "usage: copal-menu [--at-pointer|--system|--rebuild|--rebuild-all]" >&2
+    exit 2
+}
 
 # --at-pointer: open where the mouse is, which is what the right-click-on-the-
-# desktop binding wants. Only jgmenu can honour it; the dmenu fallback is a
-# full-width bar with nowhere to put it, so there the flag is simply dropped
-# rather than made into an error.
+# desktop binding wants. Only jgmenu can honour it; the list pickers are a
+# fixed panel with nowhere to put it, so there the flag is simply dropped.
 #
 # --system: open on the right-hand pane rather than the applications. Super+Z
-# used to open a menu that WAS the structure, so it still arrives there;
-# Super+Space and Super+D arrive on the applications. Same menu, two doors,
-# and Left/Right crosses between them either way.
+# used to open a menu that WAS the structure, so it still arrives there.
+#
+# --rebuild: build the cached list for this session and exit. --rebuild-all
+# builds both the Wayland and the X11 list, for a caller -- copal-install --
+# that runs as root and cannot tell which desktop asked.
 AT_POINTER=""
 START_PANE="apps"
+MODE="open"
 case "${1:-}" in
-    --at-pointer) AT_POINTER="--at-pointer" ;;
-    --system)     START_PANE="" ;;
+    --at-pointer)  AT_POINTER="--at-pointer" ;;
+    --system)      START_PANE="" ;;
+    --rebuild)     MODE="rebuild" ;;
+    --rebuild-all) MODE="rebuild-all" ;;
     "") ;;
-    *) echo "usage: copal-menu [--at-pointer|--system]" >&2; exit 2 ;;
+    *) usage ;;
 esac
+[ "$#" -le 1 ] || usage
 
 have() { command -v "$1" >/dev/null 2>&1; }
-# Which session this is, which decides the picker at the bottom of the file.
-# WAYLAND_DISPLAY is set by the compositor for its own clients and by nothing
-# else, so it answers the question without asking what is installed.
-wayland() { [ -n "${WAYLAND_DISPLAY:-}" ]; }
-out()  { printf '%s\n' "$*" >> "$CSV"; }
-# The terminal, and on Wayland it cannot be an X one. xterm and urxvt would
-# come up through Xwayland if it happens to be installed and not at all if it
-# is not, so the Wayland session asks for the terminals that session has.
-if wayland; then
-    # foot first, for the reason stage 16 installs it first: it is the one
-    # that comes up on a compositor drawing in software, which is the case
-    # this picker most needs to survive. kitty and alacritty both want GL.
-    TERM_EMU="${TERMINAL:-$(have foot && echo foot \
-                            || (have kitty && echo kitty) \
-                            || (have alacritty && echo alacritty) \
-                            || echo xterm)}"
-else
-    TERM_EMU="${TERMINAL:-$(have urxvt && echo urxvt || echo xterm)}"
-fi
+# Which session this is. WAYLAND_DISPLAY is set by the compositor for its own
+# clients and by nothing else, so it answers the question without asking what
+# is installed. The list differs by session -- the terminal, the lock and
+# log-out entries -- so each session has its own cache file.
+if [ -n "${WAYLAND_DISPLAY:-}" ]; then SESSION=wayland; else SESSION=x11; fi
+wayland() { [ "$SESSION" = wayland ]; }
+csv_for() { echo "$CACHE_DIR/menu-$1.csv"; }
+CSV=$(csv_for "$SESSION")
 
-# One entry: run it directly, wrap a terminal around it, or -- for the tools
-# that would exit before you could read anything -- show the help and hand
-# over a shell in the same window.
-cmd_for() {  # <binary> <mode>
-    case "$2" in
-        t) printf '%s -e %s' "$TERM_EMU" "$1" ;;
-        h) printf "%s -e sh -c '%s --help 2>&1 | head -40; echo; echo \"-- shell in this directory; Ctrl-D to close --\"; exec sh'" \
-                  "$TERM_EMU" "$1" ;;
-        *) printf '%s' "$1" ;;
-    esac
-}
-
-# Walk the catalogue, emitting only the rows in <section> that are (or are
-# not) actually installed. Everything downstream is driven by these two.
-rows() {  # <section> <installed|missing>
-    [ -f "$CATFILE" ] || return 0
-    while IFS='|' read -r _sec _label _pkgs _bin _mode; do
-        [ "${_sec:-}" = "$1" ] || continue
-        case "${_sec}" in '#'*) continue ;; esac
-        if have "$_bin"; then [ "$2" = installed ] || continue
-        else                  [ "$2" = missing   ] || continue
-        fi
-        # jgmenu's CSV splits on commas, so a comma in a label silently eats
-        # the command and leaves a dead entry. Strip them here rather than
-        # trusting every future edit of the catalogue to remember.
-        printf '%s|%s|%s|%s\n' "$(echo "$_label" | tr ',' ';')" "$_pkgs" "$_bin" "$_mode"
-    done < "$CATFILE"
-}
-sections() { [ -f "$CATFILE" ] && cut -d'|' -f1 "$CATFILE" | awk '!s[$0]++' || true; }
 # Section names are one word so they can be pasted into jgmenu tag names;
 # this is where they get a readable form for the part people see.
 pretty() { case "$1" in Smallweb) echo "Small Web" ;; *) echo "$1" ;; esac; }
-count()    { rows "$1" "$2" | grep -c . || true; }
-# The programs copal-build made from ~/code, in the same label|command|mode
-# shape as a catalogue row, and filtered the same way: only what is actually
-# on PATH now. The file is copal-build's; it is read here and edited nowhere.
-PROJFILE="${XDG_DATA_HOME:-$HOME/.local/share}/copal/projects"
-projects() {
-    [ -f "$PROJFILE" ] || return 0
-    while IFS='|' read -r _name _label _cmd _mode; do
-        case "${_name:-}" in ''|'#'*) continue ;; esac
-        have "${_cmd%% *}" || continue
-        printf '%s|%s|%s\n' "$(echo "$_label" | tr ',' ';')" "$_cmd" "$_mode"
-    done < "$PROJFILE"
-}
 
-: > "$CSV"
+# ===========================================================================
+# BUILDING THE LIST. Everything from here to the ruler writes one CSV in
+# jgmenu's dialect: 'label,command' rows, ^tag(x) opening a section,
+# ^checkout(x) entering one, ^back() leaving it, ^sep(title) a heading.
+# jgmenu reads it as-is on X11; walk() below turns the same markers into a
+# keyboard-driven picker everywhere else.
+#
+# Forks are the cost on a board this size, so the builder avoids them: the
+# catalogue is walked once, in shell built-ins, into a table that carries the
+# installed/missing answer, and every later question is one awk over that
+# table rather than a loop that forks twice per row. Half a second where the
+# first version took four.
+# ===========================================================================
+out() { printf '%s\n' "$*" >> "$OUT"; }
 
-# ----- top level -----
-# THE KEY LIST FIRST, and at the TOP LEVEL rather than three entries down
-# inside System, where it used to be. This is a desktop with no menus and no
-# icons; the list of what the keys do is the single most useful thing in here
-# and it was the hardest to find. Omarchy puts its keybindings under Learn,
-# near the top, for the same reason.
-#
-# WHICH LIST, asked of the session. Stage 4 writes the i3 one and stage 16
-# writes the Antiquity one, and offering the wrong one is worse than offering
-# none -- somebody who gets a list they believe and that does not match their
-# desktop is further from working than somebody who got nothing.
-if wayland && [ -f /usr/local/share/copal/guides/antiquity-keys.txt ]; then
-    out "Key bindings,$TERM_EMU -e copal-guide antiquity-keys"
-elif [ -f "$HOME/.config/i3/keys.txt" ]; then
-    out "Key bindings,$TERM_EMU -e less $HOME/.config/i3/keys.txt"
-elif [ -f /usr/local/share/copal/guides/i3-keys.txt ]; then
-    out "Key bindings,$TERM_EMU -e copal-guide i3-keys"
-fi
-# The other pane, named as a direction because that is how you get there:
-# Left/Right walk between the two sides, and this entry is the same move for
-# somebody who reached the menu with the mouse.
-out "All applications  >,^checkout(apps)"
-out "Terminal,$TERM_EMU"
-# THE CAMERA, at the top rather than as a row in a section, because a machine
-# built around an HQ Camera has one application that is the point of it.
-# copal-camera decides which program that is (birdshot, or $CAMERA); with no
-# camera program on the machine there is no entry, rather than a dead one.
-have copal-camera && copal-camera --which >/dev/null 2>&1 && out "Camera,copal-camera" || true
-have copal-center && out "Copal Center,copal-center" || true
-have copal-config && out "System Settings,copal-config" || true
-out '^sep()'
-for s in $(sections); do
-    [ "$(count "$s" installed)" -gt 0 ] && out "$(pretty "$s"),^checkout(have_$s)" || true
-done
-out "Development,^checkout(devel)"
-# What copal-build made from ~/code -- only once it has made something.
-[ -n "$(projects)" ] && out "Projects,^checkout(projects)" || true
-# Only worth a top-level entry once an emulator is actually built.
-if [ -n "$(ls "$HOME"/minivmac/run-*.sh /root/minivmac/run-*.sh 2>/dev/null || true)" ] \
-   || have BasiliskII || have x64sc || have x64; then
-    out "Emulators,^checkout(emu)"
-fi
-out '^sep()'
-# STYLE, which is Omarchy's own top-level entry and the one Copal did not
-# have. Everything here changes how the machine LOOKS rather than what is on
-# it, which is why it is a sibling of Install rather than an entry inside it.
-out "Style,^checkout(style)"
-out "Install software,^checkout(install)"
-[ -n "$(ls /usr/local/share/copal/guides/*.txt 2>/dev/null || true)" ] \
-    && out "Guides,^checkout(guides)" || true
-out "System,^checkout(system)"
-out "Session,^checkout(session)"
+build_csv() {  # <wayland|x11>
+    _sess="$1"
+    _csv=$(csv_for "$_sess")
+    mkdir -p "$CACHE_DIR"
+    OUT="$_csv.$$.tmp"
+    TABLE="$CACHE_DIR/.table.$$"
+    trap 'rm -f "$OUT" "$TABLE"' EXIT
+    : > "$OUT"
 
-# ----- the applications pane: everything runnable, flat and searchable -----
-#
-# THE LEFT-HAND SIDE OF ONE MENU, and the reason there is no longer a separate
-# launcher. This desktop used to answer Super+Space with 'wofi --show drun' --
-# a flat list of .desktop files, searchable, with no structure and no way to
-# reach the settings or the session -- and Super+Z with this menu, which has
-# the structure and not the search. Two menus, each missing the other's half,
-# and no way across. Omarchy has the same split and lives with it; here they
-# are one menu with two panes, and Left/Right moves between them.
-#
-# What is in this pane: every .desktop file the system advertises, which is
-# what drun would have shown, PLUS every installed row of the catalogue, which
-# is what drun cannot show -- the terminal programs, which have no .desktop
-# file and are most of what is on a machine this size. Deduplicated by label,
-# sorted, case-insensitively, so it reads as one list rather than two.
-out '^tag(apps)'
-out "System and settings  <,^back()"
-out '^sep(Applications)'
-{
-    # The catalogue half. Every section, installed rows only, through the same
-    # cmd_for() the submenus use -- so a terminal program still gets a
-    # terminal wrapped around it here.
-    for s in $(sections); do
-        rows "$s" installed | while IFS='|' read -r label pkgs bin mode; do
+    # The terminal, and on Wayland it cannot be an X one. xterm and urxvt
+    # would come up through Xwayland if it happens to be installed and not at
+    # all if it is not, so the Wayland session asks for the terminals that
+    # session has. foot first, for the reason stage 16 installs it first: it
+    # is the one that comes up on a compositor drawing in software. kitty and
+    # alacritty both want GL.
+    if [ "$_sess" = wayland ]; then
+        TERM_EMU="${TERMINAL:-$(have foot && echo foot \
+                                || (have kitty && echo kitty) \
+                                || (have alacritty && echo alacritty) \
+                                || echo xterm)}"
+    else
+        TERM_EMU="${TERMINAL:-$(have urxvt && echo urxvt || echo xterm)}"
+    fi
+
+    # One entry: run it directly, wrap a terminal around it, or -- for the
+    # tools that would exit before you could read anything -- show the help
+    # and hand over a shell in the same window.
+    cmd_for() {  # <binary> <mode>
+        case "$2" in
+            t) printf '%s -e %s' "$TERM_EMU" "$1" ;;
+            h) printf "%s -e sh -c '%s --help 2>&1 | head -40; echo; echo \"-- shell in this directory; Ctrl-D to close --\"; exec sh'" \
+                      "$TERM_EMU" "$1" ;;
+            *) printf '%s' "$1" ;;
+        esac
+    }
+
+    # The catalogue, annotated: section|label|packages|binary|mode|installed.
+    # 'command -v' is a built-in, so the whole pass is fork-free; the one tr
+    # at the end strips commas from every label at once, because jgmenu's
+    # CSV splits on commas and a comma in a label silently eats the command.
+    : > "$TABLE"
+    if [ -f "$CATFILE" ]; then
+        while IFS='|' read -r _sec _label _pkgs _bin _mode; do
+            case "${_sec:-}" in ''|'#'*) continue ;; esac
+            if have "$_bin"; then _i=1; else _i=0; fi
+            printf '%s|%s|%s|%s|%s|%s\n' "$_sec" "$_label" "$_pkgs" "$_bin" "$_mode" "$_i"
+        done < "$CATFILE" | tr ',' ';' > "$TABLE"
+    fi
+    # The rows of one section that are (1) or are not (0) installed.
+    rows() {  # <section> <1|0>
+        awk -F'|' -v s="$1" -v w="$2" '$1 == s && $6 == w { print $2 "|" $3 "|" $4 "|" $5 }' "$TABLE"
+    }
+    # The sections, in catalogue order, that have at least one such row.
+    HAVE_SECS=$(awk -F'|' '$6 == 1 && !s[$1]++ { print $1 }' "$TABLE")
+    MISS_SECS=$(awk -F'|' '$6 == 0 && !s[$1]++ { print $1 }' "$TABLE")
+
+    # copal-build's projects, filtered the same way: only what is on PATH.
+    PROJECTS=""
+    if [ -f "$PROJFILE" ]; then
+        PROJECTS=$(while IFS='|' read -r _name _label _cmd _mode; do
+            case "${_name:-}" in ''|'#'*) continue ;; esac
+            have "${_cmd%% *}" || continue
+            printf '%s|%s|%s\n' "$_label" "$_cmd" "$_mode"
+        done < "$PROJFILE" | tr ',' ';')
+    fi
+
+    # Is an emulator actually built? Only then is there a top-level entry.
+    HAVE_EMU=0
+    if [ -n "$(ls "$HOME"/minivmac/run-*.sh /root/minivmac/run-*.sh 2>/dev/null || true)" ] \
+       || have BasiliskII || have x64sc || have x64; then
+        HAVE_EMU=1
+    fi
+    HAVE_GUIDES=0
+    [ -n "$(ls "$GUIDES"/*.txt 2>/dev/null || true)" ] && HAVE_GUIDES=1
+
+    # ----- the right pane: the structure -----
+    #
+    # THE KEY LIST FIRST. This is a desktop with no menus and no icons; the
+    # list of what the keys do is the single most useful thing in here and
+    # it used to be three levels down inside System. Omarchy puts its
+    # keybindings under Learn, near the top, for the same reason.
+    #
+    # WHICH LIST, asked of the session. Stage 4 writes the i3 one and stage
+    # 16 writes the Antiquity one, and offering the wrong one is worse than
+    # offering none.
+    if [ "$_sess" = wayland ] && [ -f "$GUIDES/antiquity-keys.txt" ]; then
+        out "Key bindings,$TERM_EMU -e copal-guide antiquity-keys"
+    elif [ -f "$HOME/.config/i3/keys.txt" ]; then
+        out "Key bindings,$TERM_EMU -e less $HOME/.config/i3/keys.txt"
+    elif [ -f "$GUIDES/i3-keys.txt" ]; then
+        out "Key bindings,$TERM_EMU -e copal-guide i3-keys"
+    fi
+    # The other pane, for somebody who reached the menu with the mouse and
+    # has no arrow keys to cross with.
+    out "All applications  <,^checkout(apps)"
+    out "Terminal,$TERM_EMU"
+    # THE CAMERA, at the top rather than as a row in a section, because a
+    # machine built around an HQ Camera has one application that is the point
+    # of it. With no camera program there is no entry, rather than a dead one.
+    have copal-camera && copal-camera --which >/dev/null 2>&1 && out "Camera,copal-camera" || true
+    have copal-center && out "Copal Center,copal-center" || true
+    have copal-config && out "System Settings,copal-config" || true
+
+    # THE SESSION, under its own heading and at the top level rather than in
+    # a submenu: shutting down and logging out are the two things people
+    # hunt for in a menu, and they were two levels in. Asked of the session,
+    # not written once for i3: "Reload i3" cannot work on Hyprland and
+    # i3lock is an X program with no Wayland session to lock.
+    out '^sep(Session)'
+    if [ "$_sess" = wayland ]; then
+        out "Reload Hyprland,hyprctl reload"
+        have hyprlock && out "Lock screen,hyprlock" || true
+        out "Log out,hyprctl dispatch exit"
+    else
+        out "Reload i3,i3-msg restart"
+        have i3lock && out "Lock screen,i3lock -c 1a1b26" || true
+        out "Log out,i3-msg exit"
+    fi
+    # copal-halt rather than a bare poweroff: as $PI_USER the bare one cannot
+    # signal init at all, and from a menu there is no terminal for doas to ask
+    # in. It asks before it acts.
+    out "Reboot,copal-halt reboot"
+    out "Shut down,copal-halt"
+
+    # The applications by category: one submenu per catalogue section that
+    # has something installed, then the sections the catalogue does not know.
+    out '^sep(Categories)'
+    for s in $HAVE_SECS; do
+        out "$(pretty "$s")  >,^checkout(have_$s)"
+    done
+    out "Development  >,^checkout(devel)"
+    [ -n "$PROJECTS" ] && out "Projects  >,^checkout(projects)" || true
+    [ "$HAVE_EMU" = 1 ] && out "Emulators  >,^checkout(emu)" || true
+
+    # STYLE is Omarchy's own top-level entry and the one Copal did not have.
+    # Everything under it changes how the machine LOOKS rather than what is on
+    # it, which is why it is a sibling of Install rather than an entry inside.
+    out '^sep(Setup)'
+    out "Style  >,^checkout(style)"
+    out "Install software  >,^checkout(install)"
+    [ "$HAVE_GUIDES" = 1 ] && out "Guides  >,^checkout(guides)" || true
+    out "System  >,^checkout(system)"
+
+    # ----- the left pane: everything runnable, flat and searchable -----
+    #
+    # Every .desktop file the system advertises, which is what drun would
+    # have shown, PLUS every installed row of the catalogue, which is what
+    # drun cannot show -- the terminal programs, which have no .desktop file
+    # and are most of what is on a machine this size. Deduplicated by label,
+    # sorted case-insensitively, so it reads as one list rather than two.
+    out '^tag(apps)'
+    out "System menu  >,^back()"
+    out '^sep(Applications)'
+    {
+        # The catalogue half, through the same cmd_for() the submenus use --
+        # so a terminal program still gets a terminal wrapped around it here.
+        awk -F'|' '$6 == 1 { print $2 "|" $4 "|" $5 }' "$TABLE" \
+        | while IFS='|' read -r label bin mode; do
             printf '%s,%s\n' "$label" "$(cmd_for "$bin" "$mode")"
         done
-    done
-    # The built checkouts, which have neither a .desktop file nor a row.
-    projects | while IFS='|' read -r label cmd mode; do
-        printf '%s,%s\n' "$label" "$(cmd_for "$cmd" "$mode")"
-    done
-    # The .desktop half, in one awk over every file rather than one awk per
-    # file: on a board where the menu takes a second to appear, a hundred
-    # forks is most of that second.
-    #
-    # Only the [Desktop Entry] group is read (an Action group has its own Name
-    # and Exec and would otherwise overwrite the real ones), NoDisplay and
-    # Hidden entries are dropped the way every launcher drops them, and the
-    # field codes -- %U, %f and the rest -- are stripped, because they are
-    # meant to be replaced with a filename and a shell would take them
-    # literally.
-    for _d in /usr/share/applications /usr/local/share/applications \
-              "$HOME/.local/share/applications"; do
-        [ -d "$_d" ] || continue
-        find "$_d" -maxdepth 1 -name '*.desktop' -type f 2>/dev/null
-    done | tr '\n' '\0' | xargs -0 -r awk -v term="$TERM_EMU" '
-        function emit(   c) {
-            if (skip || name == "" || cmd == "" || (type != "" && type != "Application"))
-                return
-            gsub(/%[a-zA-Z]/, "", cmd)
-            sub(/[ \t]+$/, "", cmd)
-            gsub(/,/, ";", name)
-            c = isterm ? (term " -e " cmd) : cmd
-            print name "," c
-        }
-        FNR == 1 { emit(); name = ""; cmd = ""; type = ""; skip = 0; isterm = 0; grp = 0 }
-        /^\[/   { grp = ($0 ~ /^\[Desktop Entry\]/); next }
-        !grp    { next }
-        /^Name=/      && name == "" { name = substr($0, 6) }
-        /^Exec=/      && cmd  == "" { cmd  = substr($0, 6) }
-        /^Type=/      && type == "" { type = substr($0, 6) }
-        /^Terminal=[Tt]rue/         { isterm = 1 }
-        /^NoDisplay=[Tt]rue/        { skip = 1 }
-        /^Hidden=[Tt]rue/           { skip = 1 }
-        END { emit() }
-    ' 2>/dev/null
-} | awk -F, 'NF && !seen[tolower($1)]++' | sort -f -t, -k1,1 >> "$CSV"
+        # The built checkouts, which have neither a .desktop file nor a row.
+        [ -n "$PROJECTS" ] && printf '%s\n' "$PROJECTS" | while IFS='|' read -r label cmd mode; do
+            printf '%s,%s\n' "$label" "$(cmd_for "$cmd" "$mode")"
+        done
+        # The .desktop half, in one awk over every file rather than one awk
+        # per file. Only the [Desktop Entry] group is read (an Action group
+        # has its own Name and Exec and would otherwise overwrite the real
+        # ones), NoDisplay and Hidden entries are dropped the way every
+        # launcher drops them, and the field codes -- %U, %f and the rest --
+        # are stripped, because they are meant to be replaced with a filename
+        # and a shell would take them literally. Flatpak's export directory
+        # is in the list because that is where Brave's entry lives.
+        for _d in /usr/share/applications /usr/local/share/applications \
+                  /var/lib/flatpak/exports/share/applications \
+                  "$HOME/.local/share/flatpak/exports/share/applications" \
+                  "$HOME/.local/share/applications"; do
+            [ -d "$_d" ] || continue
+            find "$_d" -maxdepth 1 -name '*.desktop' 2>/dev/null
+        done | tr '\n' '\0' | xargs -0 -r awk -v term="$TERM_EMU" '
+            function emit(   c) {
+                if (skip || name == "" || cmd == "" || (type != "" && type != "Application"))
+                    return
+                gsub(/%[a-zA-Z]/, "", cmd)
+                sub(/[ \t]+$/, "", cmd)
+                gsub(/,/, ";", name)
+                c = isterm ? (term " -e " cmd) : cmd
+                print name "," c
+            }
+            FNR == 1 { emit(); name = ""; cmd = ""; type = ""; skip = 0; isterm = 0; grp = 0 }
+            /^\[/   { grp = ($0 ~ /^\[Desktop Entry\]/); next }
+            !grp    { next }
+            /^Name=/      && name == "" { name = substr($0, 6) }
+            /^Exec=/      && cmd  == "" { cmd  = substr($0, 6) }
+            /^Type=/      && type == "" { type = substr($0, 6) }
+            /^Terminal=[Tt]rue/         { isterm = 1 }
+            /^NoDisplay=[Tt]rue/        { skip = 1 }
+            /^Hidden=[Tt]rue/           { skip = 1 }
+            END { emit() }
+        ' 2>/dev/null
+    } | awk -F, 'NF && !seen[tolower($1)]++' | sort -f -t, -k1,1 >> "$OUT"
 
-# ----- one submenu per catalogue section, installed entries only -----
-for s in $(sections); do
-    [ "$(count "$s" installed)" -gt 0 ] || continue
-    out "^tag(have_$s)"
-    out "Back,^back()"
-    out "^sep($(pretty "$s"))"
-    rows "$s" installed | while IFS='|' read -r label pkgs bin mode; do
-        out "$label,$(cmd_for "$bin" "$mode")"
+    # ----- one submenu per catalogue section, installed entries only -----
+    for s in $HAVE_SECS; do
+        out "^tag(have_$s)"
+        out "<  Back,^back()"
+        out "^sep($(pretty "$s"))"
+        rows "$s" 1 | while IFS='|' read -r label pkgs bin mode; do
+            out "$label,$(cmd_for "$bin" "$mode")"
+        done
     done
-done
 
-# ----- Install: the same table, inverted -----
-out '^tag(install)'
-out "Back,^back()"
-out '^sep(Not installed yet)'
-for s in $(sections); do
-    [ "$(count "$s" missing)" -gt 0 ] && out "$(pretty "$s"),^checkout(get_$s)" || true
-done
-for s in $(sections); do
-    [ "$(count "$s" missing)" -gt 0 ] || continue
-    out "^tag(get_$s)"
-    out "Back,^checkout(install)"
-    out "^sep(Install: $(pretty "$s"))"
-    rows "$s" missing | while IFS='|' read -r label pkgs bin mode; do
-        out "$label,$TERM_EMU -e copal-install $pkgs"
+    # ----- Install: the same table, inverted -----
+    out '^tag(install)'
+    out "<  Back,^back()"
+    out '^sep(Not installed yet)'
+    for s in $MISS_SECS; do
+        out "$(pretty "$s")  >,^checkout(get_$s)"
     done
-done
-
-# ----- Guides: one entry per .txt, titled by its own first line -----
-# Built from the directory rather than a list, so dropping a new guide in
-# /usr/local/share/copal/guides is the whole of "adding it to the menu".
-if grep -q '^Guides,' "$CSV"; then
-    out '^tag(guides)'
-    out "Back,^back()"
-    out '^sep(Guides)'
-    for g in /usr/local/share/copal/guides/*.txt; do
-        [ -f "$g" ] || continue
-        gn=$(basename "$g" .txt)
-        # The first line with letters in it -- guides that open with a
-        # '=====' ruler would otherwise be titled with the ruler.
-        gt=$(awk 'NF && /[A-Za-z]/ {sub(/^ +/, ""); gsub(/,/, ";"); print; exit}' "$g")
-        [ -n "$gt" ] || gt="$gn"
-        out "$gt,$TERM_EMU -e copal-guide $gn"
+    for s in $MISS_SECS; do
+        out "^tag(get_$s)"
+        out "<  Back,^checkout(install)"
+        out "^sep(Install: $(pretty "$s"))"
+        rows "$s" 0 | while IFS='|' read -r label pkgs bin mode; do
+            out "$label,$TERM_EMU -e copal-install $pkgs"
+        done
     done
-fi
 
-# ----- Development: not in the catalogue, it arrives with stage 7 -----
-out '^tag(devel)'
-out "Back,^back()"
-out '^sep(Development)'
-have nvim   && out "Neovim,$TERM_EMU -e nvim" || true
-have vim    && out "Vim,$TERM_EMU -e vim" || true
-have geany  && out "Geany,geany" || true
-have python3 && out "Python,$TERM_EMU -e python3" || true
-have claude && out "Claude Code,$TERM_EMU -e claude" || true
-have lazygit && out "Lazygit,$TERM_EMU -e lazygit" || true
-have bvi    && out "Hex editor (bvi),$TERM_EMU -e bvi" || true
-have radare2 && out "radare2,$TERM_EMU -e r2" || true
-
-# ----- Projects: what copal-build made from ~/code -----
-# Driven by copal-build's record rather than by a list here, so a checkout
-# added with 'copal-code add' and built appears without this file changing.
-if [ -n "$(projects)" ]; then
-    out '^tag(projects)'
-    out "Back,^back()"
-    out '^sep(Projects -- built from ~/code)'
-    projects | while IFS='|' read -r label cmd mode; do
-        out "$label,$(cmd_for "$cmd" "$mode")"
-    done
-    out '^sep()'
-    out "Pull and rebuild them all,$TERM_EMU -e sh -c 'copal-code; echo; echo Press Enter to close; read x'"
-    out "What each one made,$TERM_EMU -e sh -c 'copal-build list; echo; echo Press Enter to close; read x'"
-fi
-
-# ----- Emulators: profiles are files on disk, not packages -----
-# Only emitted when the top level offered a way in, so the tag is never left
-# orphaned. VICE ships both x64sc (accurate) and x64 (fast); on this board the
-# fast one is the only one worth offering, but take whichever exists.
-if grep -q '^Emulators,' "$CSV"; then
-    out '^tag(emu)'
-    out "Back,^back()"
-    out '^sep(Emulators)'
-    for p in "$HOME"/minivmac/run-*.sh /root/minivmac/run-*.sh; do
-        [ -x "$p" ] || continue
-        n=$(basename "$p" .sh | sed 's/^run-//')
-        out "Mini vMac: $n,$p"
-    done
-    have BasiliskII && out "Basilisk II,BasiliskII" || true
-    if have x64sc;   then out "VICE (C64),x64sc"
-    elif have x64;   then out "VICE (C64),x64"
+    # ----- Guides: one entry per .txt, titled by its own first line -----
+    # Built from the directory rather than a list, so dropping a new guide in
+    # /usr/local/share/copal/guides is the whole of "adding it to the menu".
+    if [ "$HAVE_GUIDES" = 1 ]; then
+        out '^tag(guides)'
+        out "<  Back,^back()"
+        out '^sep(Guides)'
+        for g in "$GUIDES"/*.txt; do
+            [ -f "$g" ] || continue
+            gn=$(basename "$g" .txt)
+            # The first line with letters in it -- guides that open with a
+            # '=====' ruler would otherwise be titled with the ruler.
+            gt=$(awk 'NF && /[A-Za-z]/ {sub(/^ +/, ""); gsub(/,/, ";"); print; exit}' "$g")
+            [ -n "$gt" ] || gt="$gn"
+            out "$gt,$TERM_EMU -e copal-guide $gn"
+        done
     fi
-fi
 
-# ----- System -----
-out '^tag(style)'
-out "Back,^back()"
-out '^sep(Style)'
-have copal-desk && out "Lay the desk out (workspaces 1-5),copal-desk" || true
-have copal-desk && out "Which desk layouts exist,$TERM_EMU -e sh -c 'copal-desk --list; echo; echo Press Enter to close; read x'" || true
-have copal-wallpaper && out "Wallpaper...,copal-wallpaper --pick" || true
-have copal-wallpaper && out "Get more wallpapers,$TERM_EMU -e sh -c 'copal-wallpaper --fetch; echo; echo Press Enter to close; read x'" || true
-have copal-theme && out "Theme...,copal-theme --pick" || true
-# The desktop widgets, shown as whichever of the two things it would do next:
-# a menu entry called "toggle" makes somebody guess which way it is pointing.
-if have copal-widgets && [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/waybar/desktop.json" ]; then
-    if [ -e "${XDG_CONFIG_HOME:-$HOME/.config}/copal/no-desktop-widgets" ]; then
-        out "Show the desktop widgets,copal-widgets --on"
-    else
-        out "Hide the desktop widgets,copal-widgets --off"
+    # ----- Development: not in the catalogue, it arrives with stage 7 -----
+    out '^tag(devel)'
+    out "<  Back,^back()"
+    out '^sep(Development)'
+    have nvim    && out "Neovim,$TERM_EMU -e nvim" || true
+    have vim     && out "Vim,$TERM_EMU -e vim" || true
+    have geany   && out "Geany,geany" || true
+    have python3 && out "Python,$TERM_EMU -e python3" || true
+    have claude  && out "Claude Code,$TERM_EMU -e claude" || true
+    have lazygit && out "Lazygit,$TERM_EMU -e lazygit" || true
+    have bvi     && out "Hex editor (bvi),$TERM_EMU -e bvi" || true
+    have radare2 && out "radare2,$TERM_EMU -e r2" || true
+
+    # ----- Projects: what copal-build made from ~/code -----
+    if [ -n "$PROJECTS" ]; then
+        out '^tag(projects)'
+        out "<  Back,^back()"
+        out '^sep(Projects -- built from ~/code)'
+        printf '%s\n' "$PROJECTS" | while IFS='|' read -r label cmd mode; do
+            out "$label,$(cmd_for "$cmd" "$mode")"
+        done
+        out '^sep()'
+        out "Pull and rebuild them all,$TERM_EMU -e sh -c 'copal-code; echo; echo Press Enter to close; read x'"
+        out "What each one made,$TERM_EMU -e sh -c 'copal-build list; echo; echo Press Enter to close; read x'"
     fi
-fi
-[ -f /usr/local/share/copal/guides/widgets.txt ] \
-    && out "Configure the bar and widgets,$TERM_EMU -e copal-guide widgets" || true
 
-out '^tag(system)'
-out "Back,^back()"
-out '^sep(System)'
-have htop && out "Task manager,$TERM_EMU -e htop" || true
-have btop && out "System monitor,$TERM_EMU -e btop" || true
-have snapshot && out "Snapshots,$TERM_EMU -e sh -c 'snapshot list; read x'" || true
-have mountdsk && out "Mount disk image,$TERM_EMU -e sh -c 'mountdsk --help; read x'" || true
-have tcpdump  && out "Network capture,$TERM_EMU -e sh -c 'tcpdump -i eth0 -nn'" || true
-have bluetoothctl && out "Bluetooth,$TERM_EMU -e bluetoothctl" || true
-have iw && out "Wifi scan,$TERM_EMU -e sh -c 'iw dev wlan0 scan | grep SSID; read x'" || true
-have alsamixer && out "Volume,$TERM_EMU -e alsamixer" || true
-out "Logs,$TERM_EMU -e sh -c 'copal-logs; echo; echo Press Enter to close; read x'"
-out "Setup and stages,$TERM_EMU -e sh -c 'copal; echo; echo Press Enter to close; read x'"
-out "Update Copal,$TERM_EMU -e sh -c 'copal -U; echo; echo Press Enter to close; read x'"
-have copal-gpu && out "Display and acceleration,$TERM_EMU -e sh -c 'copal-gpu; echo; echo Press Enter to close; read x'" || true
-have copal-fonts && out "Fonts,$TERM_EMU -e sh -c 'copal-fonts; echo; echo Press Enter to close; read x'" || true
+    # ----- Emulators: profiles are files on disk, not packages -----
+    # VICE ships both x64sc (accurate) and x64 (fast); on this board the fast
+    # one is the only one worth offering, but take whichever exists.
+    if [ "$HAVE_EMU" = 1 ]; then
+        out '^tag(emu)'
+        out "<  Back,^back()"
+        out '^sep(Emulators)'
+        for p in "$HOME"/minivmac/run-*.sh /root/minivmac/run-*.sh; do
+            [ -x "$p" ] || continue
+            n=$(basename "$p" .sh | sed 's/^run-//')
+            out "Mini vMac: $n,$p"
+        done
+        have BasiliskII && out "Basilisk II,BasiliskII" || true
+        if have x64sc;   then out "VICE (C64),x64sc"
+        elif have x64;   then out "VICE (C64),x64"
+        fi
+    fi
 
-# ----- Session -----
-out '^tag(session)'
-out "Back,^back()"
-out '^sep(Session)'
-# ASKED OF THE SESSION, not written once for i3. This menu is installed by
-# stage 4 and is also the menu the Antiquity desktop uses, where "Reload i3"
-# is an entry that cannot work and i3lock is an X program with no Wayland
-# session to lock. Reloading and logging out are the two things a session
-# menu is FOR, so getting them wrong on one of the two desktops is worse
-# than not offering them.
-if wayland; then
-    out "Reload Hyprland,hyprctl reload"
-    have hyprlock && out "Lock screen,hyprlock" || true
-    out "Log out,hyprctl dispatch exit"
+    # ----- Style -----
+    out '^tag(style)'
+    out "<  Back,^back()"
+    out '^sep(Style)'
+    have copal-desk && out "Lay the desk out (workspaces 1-5),copal-desk" || true
+    have copal-desk && out "Which desk layouts exist,$TERM_EMU -e sh -c 'copal-desk --list; echo; echo Press Enter to close; read x'" || true
+    have copal-wallpaper && out "Wallpaper...,copal-wallpaper --pick" || true
+    have copal-wallpaper && out "Get more wallpapers,$TERM_EMU -e sh -c 'copal-wallpaper --fetch; echo; echo Press Enter to close; read x'" || true
+    have copal-theme && out "Theme...,copal-theme --pick" || true
+    # The desktop widgets, shown as whichever of the two things it would do
+    # next: an entry called "toggle" makes somebody guess which way it points.
+    if have copal-widgets && [ -f "$CONFDIR/waybar/desktop.json" ]; then
+        if [ -e "$CONFDIR/copal/no-desktop-widgets" ]; then
+            out "Show the desktop widgets,copal-widgets --on"
+        else
+            out "Hide the desktop widgets,copal-widgets --off"
+        fi
+    fi
+    [ -f "$GUIDES/widgets.txt" ] \
+        && out "Configure the bar and widgets,$TERM_EMU -e copal-guide widgets" || true
+
+    # ----- System -----
+    out '^tag(system)'
+    out "<  Back,^back()"
+    out '^sep(System)'
+    have htop && out "Task manager,$TERM_EMU -e htop" || true
+    have btop && out "System monitor,$TERM_EMU -e btop" || true
+    have snapshot && out "Snapshots,$TERM_EMU -e sh -c 'snapshot list; read x'" || true
+    have mountdsk && out "Mount disk image,$TERM_EMU -e sh -c 'mountdsk --help; read x'" || true
+    have tcpdump  && out "Network capture,$TERM_EMU -e sh -c 'tcpdump -i eth0 -nn'" || true
+    have bluetoothctl && out "Bluetooth,$TERM_EMU -e bluetoothctl" || true
+    have iw && out "Wifi scan,$TERM_EMU -e sh -c 'iw dev wlan0 scan | grep SSID; read x'" || true
+    have alsamixer && out "Volume,$TERM_EMU -e alsamixer" || true
+    out "Logs,$TERM_EMU -e sh -c 'copal-logs; echo; echo Press Enter to close; read x'"
+    out "Setup and stages,$TERM_EMU -e sh -c 'copal; echo; echo Press Enter to close; read x'"
+    out "Update Copal,$TERM_EMU -e sh -c 'copal -U; echo; echo Press Enter to close; read x'"
+    have copal-gpu && out "Display and acceleration,$TERM_EMU -e sh -c 'copal-gpu; echo; echo Press Enter to close; read x'" || true
+    have copal-fonts && out "Fonts,$TERM_EMU -e sh -c 'copal-fonts; echo; echo Press Enter to close; read x'" || true
+    # The cache, for the one case the freshness check cannot see.
+    out "Rebuild this menu now,copal-menu --rebuild"
+
+    # Into place in one step, so a menu opening mid-rebuild reads the old
+    # list whole rather than the new one half-written.
+    mv -f "$OUT" "$_csv"
+    rm -f "$TABLE"
+    trap - EXIT
+}
+
+# The list is stale when anything it was built from is newer than it. Every
+# test here is a stat, so the whole check costs less than one fork. A
+# directory's mtime moves when a file is added to or removed from it, which
+# is exactly what installing a program does to /usr/bin.
+stale() {
+    [ -s "$CSV" ] || return 0
+    for _p in "$0" "$CATFILE" "$PROJFILE" "$GUIDES" \
+              /usr/share/applications /usr/local/share/applications \
+              /var/lib/flatpak/exports/share/applications \
+              "$HOME/.local/share/flatpak/exports/share/applications" \
+              "$HOME/.local/share/applications" \
+              /usr/bin /usr/local/bin /usr/sbin "$HOME/.local/bin" "$HOME/bin" \
+              "$CONFDIR/copal" "$CONFDIR/waybar" "$HOME/minivmac"; do
+        [ -e "$_p" ] && [ "$_p" -nt "$CSV" ] && return 0
+    done
+    # Once a day regardless: cheap insurance for whatever the list misses.
+    [ -n "$(find "$CSV" -mmin +1440 2>/dev/null)" ]
+}
+
+# One rebuild at a time. mkdir is the atomic test-and-set; a lock older than
+# five minutes belongs to a rebuild that died, and is taken over.
+rebuild() {  # <session>...
+    mkdir -p "$CACHE_DIR"
+    _lock="$CACHE_DIR/menu.lock"
+    [ -n "$(find "$_lock" -maxdepth 0 -mmin +5 2>/dev/null)" ] && rmdir "$_lock" 2>/dev/null || true
+    mkdir "$_lock" 2>/dev/null || return 0
+    for _s in "$@"; do build_csv "$_s"; done
+    rmdir "$_lock"
+}
+# Detached, quiet, and polite about the CPU: it runs while the menu is on
+# screen, on a machine that may be drawing that menu in software.
+rebuild_in_background() {
+    ( nice -n 10 "$0" --rebuild >/dev/null 2>&1 </dev/null & )
+}
+
+case "$MODE" in
+    rebuild)     rebuild "$SESSION"; exit 0 ;;
+    rebuild-all) rebuild wayland x11; exit 0 ;;
+esac
+
+if [ -s "$CSV" ]; then
+    # The common case: show what is cached now, and if anything has changed
+    # since, have the next open be current. walk() re-reads the file on every
+    # pane change, so a rebuild that finishes while the menu is open is
+    # already visible on the next Left or Right.
+    ! stale || rebuild_in_background
 else
-    out "Reload i3,i3-msg restart"
-    have i3lock && out "Lock screen,i3lock -c 1a1b26" || true
-    out "Log out,i3-msg exit"
+    # The first open, or a cleared cache: nothing to show yet, so build it
+    # here and take the one slow open.
+    rebuild "$SESSION"
+    [ -s "$CSV" ] || { echo "copal-menu: could not build $CSV" >&2; exit 1; }
 fi
-# copal-halt rather than a bare poweroff: as $PI_USER the bare one cannot
-# signal init at all, and from a menu there is no terminal for doas to ask in.
-out "Reboot,copal-halt reboot"
-out "Shut down,copal-halt"
 
-# ---------------------------------------------------------------------------
-# PRESENTING IT. jgmenu is a pointer menu and an X11 program; on Wayland there
-# is no jgmenu and there never will be, so the same CSV has to be walkable
-# from a keyboard-driven list as well.
+# ===========================================================================
+# PRESENTING IT. jgmenu is a pointer menu and an X11 program; on Wayland
+# there is no jgmenu and there never will be, so the same CSV has to be
+# walkable from a keyboard-driven list as well.
 #
-# THE LIST WALKER IS THE OMARCHY SHAPE, and it is worth naming what that is,
-# because the first version of this fell short of it. Omarchy's menu is not a
-# tree drawn on screen: it is a flat picker shown ONE LEVEL AT A TIME, where
-# choosing a category redraws the same picker with that category's entries and
-# a Back at the top. Ten items on screen, arrow keys and Enter, type to filter.
-# The previous fallback flattened every level into one 300-line list instead,
-# which is a different thing wearing the same name -- everything visible at
-# once, no structure, and the Install branch's 300 packages drowning the eight
-# entries anybody wanted.
+# THE LIST WALKER IS THE OMARCHY SHAPE: a flat picker shown ONE LEVEL AT A
+# TIME, where choosing a category redraws the same picker with that
+# category's entries and a Back at the top. Arrow keys and Enter, type to
+# filter. ^tag(x) opens a section, ^checkout(x) enters one, ^back() leaves
+# it, and the loop below turns those three markers into the walk. The CSV is
+# unchanged and jgmenu still reads it the way it always did.
 #
-# So: navigate the tags rather than flattening them. ^tag(x) opens a section,
-# ^checkout(x) enters one, ^back() leaves it, and the loop below turns those
-# three markers into the walk. The CSV is unchanged and jgmenu still reads it
-# the way it always did.
-# LEFT AND RIGHT MOVE BETWEEN THE PANES. wofi has no side-by-side layout and
-# never will -- it draws one list -- so the two panes are one list shown twice
-# and the arrow keys swap which. That is the whole trick, and it is why a
-# pane's first entry also does the move: on X11 with dmenu, or with the mouse,
-# there are no custom keys and the entry is the only way across.
+# HEADINGS ARE ROWS. wofi and dmenu have no separators, so a ^sep(title)
+# becomes a '-- title --' row of its own; choosing one does nothing but
+# redraw. That is what makes the right pane read as categorised rather than
+# as forty entries in a heap, and typing still filters straight past them.
 #
-# The cost is real and worth stating: Left and Right no longer move the cursor
-# inside the search box, because wofi gives a key to one binding only. Typing,
-# backspace and Ctrl-W still edit the query; the arrows navigate the menu.
+# LEFT AND RIGHT MOVE BETWEEN THE PANES. wofi draws one list, so the two
+# panes are one list shown twice and the arrow keys swap which. Inside a
+# category, Left is Back and Right is the applications.
+#
+# HOW THE ARROWS REACH US, because wofi cannot deliver them. wofi 1.5's
+# user-bound keys (key_custom_n) do not end the picker: they only arm an exit
+# status for whenever Enter or Escape is eventually pressed, and the arrows
+# themselves go to the search box as cursor movement. So while the picker is
+# up this script enters a Hyprland submap (stage 16 writes it into
+# hyprland.conf) in which Left and Right are Hyprland's: each ends the picker
+# with a signal -- USR1 for Left, USR2 for Right -- and the shell reports
+# that as status 138 or 140, which is the pane switch. Every other key passes
+# through the submap to wofi, so typing still filters. The submap is left on
+# every way out of this script, and its own Escape binding closes the picker
+# and leaves it, so a menu that died cannot keep the arrows. Where there is
+# no submap (an older hyprland.conf, or X11) the arrows do nothing and the
+# first row of each pane -- 'System menu  >', 'All applications  <' -- is the
+# way across.
+#
+# The cost is real and worth stating: Left and Right no longer move the
+# cursor inside the search box. Typing, backspace and Ctrl-W still edit the
+# query; the arrows navigate the menu.
+# ===========================================================================
+RULE="$(printf '\342\224\200\342\224\200')"   # two box-drawing dashes
+
+# The rows of one section, headings turned into rows.
+items_for() {  # <tag>
+    awk -v want="$1" -v rule="$RULE" '
+        /^\^tag\(/  { cur = $0; sub(/^\^tag\(/, "", cur); sub(/\)$/, "", cur); next }
+        cur != want { next }
+        /^\^sep\(\)$/ { next }
+        /^\^sep\(/  { t = $0; sub(/^\^sep\(/, "", t); sub(/\)$/, "", t)
+                      print rule " " t " " rule ",^sep"; next }
+        NF
+    ' "$CSV"
+}
+
+# What the search box says before you type: which pane this is, and where
+# the arrows go. The pair reads as two tabs with the current one in brackets.
+prompt_for() {  # <tag> <items>
+    case "$1" in
+        apps) echo "[ Applications ]   System  >" ;;
+        "")   echo "<  Applications   [ System ]" ;;
+        *)    _t=$(printf '%s\n' "$2" | sed -n "s/^$RULE \(.*\) $RULE,^sep\$/\1/p" | head -n1)
+              echo "<  Back   [ ${_t:-$1} ]" ;;
+    esac
+}
+
+# The submap, entered while the picker is up and left on every way out. Both
+# are no-ops where there is no Hyprland to ask.
+keys_on()  { wayland && have hyprctl && hyprctl dispatch submap menu  >/dev/null 2>&1 || true; }
+keys_off() { wayland && have hyprctl && hyprctl dispatch submap reset >/dev/null 2>&1 || true; }
+
 walk() {
     _tag="$START_PANE"            # the applications pane unless --system
+    trap keys_off EXIT INT TERM HUP
     while :; do
-        # The entries belonging to $_tag: everything after its ^tag() line and
-        # before the next one. awk rather than sed, because the top level is
-        # the region BEFORE the first tag and that is an awkward sed address.
-        _items=$(awk -v want="$_tag" '
-            /^\^tag\(/ { cur = $0; sub(/^\^tag\(/, "", cur); sub(/\)$/, "", cur); next }
-            { if (cur == want || (want == "" && cur == "")) print }
-        ' "$CSV" | grep -v '^\^sep' | grep -v '^$')
+        _items=$(items_for "$_tag")
         [ -n "$_items" ] || return 0
 
         # Labels only for the picker; the command half is looked up after.
-        # The exit status matters as much as the selection here: wofi answers
-        # a custom key with a status in the tens and no output, which is the
-        # pane switch. Anything else empty is Escape, and Escape closes.
-        _sel=$(printf '%s\n' "$_items" | cut -d, -f1 | menu_cmd "$_tag") || _rc=$?
-        _rc=${_rc:-0}
-        if [ "$_rc" -ge 10 ] && [ "$_rc" -le 29 ]; then
-            # Two panes, so both arrows are the same move: toggle. Anywhere
-            # inside a submenu, either arrow surfaces to the applications side.
-            [ "$_tag" = "apps" ] && _tag="" || _tag="apps"
-            unset _rc
+        # The exit status matters as much as the selection here: 138 and 140
+        # are the picker ended by the submap's Left and Right (128 + USR1,
+        # 128 + USR2), and 10..29 is a wofi that exits on a custom key itself
+        # -- either is the pane switch. Anything else with no selection is
+        # Escape, and Escape closes.
+        _rc=0
+        keys_on
+        _sel=$(printf '%s\n' "$_items" | cut -d, -f1 | menu_cmd "$(prompt_for "$_tag" "$_items")") || _rc=$?
+        _dir=""
+        case "$_rc" in
+            138|10) _dir=left ;;
+            140|11) _dir=right ;;
+        esac
+        if [ -n "$_dir" ]; then
+            case "$_tag" in
+                apps) _tag="" ;;
+                "")   _tag="apps" ;;
+                *)    if [ "$_dir" = left ]; then
+                          # Left: what this section's Back row would do.
+                          _back=$(printf '%s\n' "$_items" | awk -F, '$2 ~ /^\^(back|checkout)\(/ { print $2; exit }')
+                          case "$_back" in
+                              '^checkout('*) _tag=$(printf '%s' "$_back" | sed 's/^\^checkout(//; s/)$//') ;;
+                              *)             _tag="" ;;
+                          esac
+                      else
+                          _tag="apps"
+                      fi ;;
+            esac
             continue
         fi
-        unset _rc
         [ -n "$_sel" ] || return 0
 
         # First match wins, and it is matched against the label field alone --
@@ -8546,10 +8739,13 @@ walk() {
         _line=$(printf '%s\n' "$_items" | awk -F, -v s="$_sel" '$1 == s { print; exit }')
         _act=$(printf '%s' "$_line" | cut -d, -f2-)
         case "$_act" in
+            '^sep')        continue ;;
             '^checkout('*) _tag=$(printf '%s' "$_act" | sed 's/^\^checkout(//; s/)$//') ;;
             '^back()')     _tag="" ;;
             '')            return 0 ;;
-            *)             exec sh -c "$_act" ;;
+            # exec replaces this process, so the trap will not run: leave the
+            # submap first, or the arrows would stay Hyprland's.
+            *)             keys_off; exec sh -c "$_act" ;;
         esac
     done
 }
@@ -8560,15 +8756,23 @@ walk() {
 # once on a machine that has had both desktops installed.
 menu_cmd() {  # <prompt>
     if wayland && have wofi; then
-        # key_custom_0/1 are wofi's user-bound keys; it exits with a status in
-        # the 10-29 range when one is pressed. Passed with --define rather
-        # than a config file so nothing has to be installed for it, and
-        # harmless on a wofi too old to know the keys -- an unknown define is
-        # ignored and the arrows simply keep editing the query.
-        wofi --dmenu --insensitive --prompt "${1:-menu}" --lines 15 --width 460 \
+        # key_custom_0/1 are wofi's user-bound keys; it exits with status 10
+        # and 11 when they are pressed. Passed with --define rather than a
+        # config file so nothing has to be installed for it, and harmless on
+        # a wofi too old to know the keys -- an unknown define is ignored and
+        # the arrows simply keep editing the query.
+        #
+        # --height IN PIXELS, NEVER --lines. With --lines, wofi 1.5 sizes the
+        # window from its rows and then re-sizes as the rows arrive; past
+        # about a hundred rows it never settles -- the surface stays a
+        # stretched, empty frame and no key is answered, Escape included.
+        # The applications pane is five hundred rows. That stall, after the
+        # four-second build, was the whole of "the menu is broken". A fixed
+        # height is laid out once; 540px is twenty rows at this font.
+        wofi --dmenu --insensitive --prompt "${1:-menu}" --height 540 --width 520 \
              --define key_custom_0=Left --define key_custom_1=Right
     elif have dmenu; then
-        dmenu -i -l 15 -p "${1:-menu}"
+        dmenu -i -l 18 -p "${1:-menu}"
     else
         echo "copal-menu: no menu program (jgmenu, wofi or dmenu)" >&2
         return 1
@@ -12399,6 +12603,22 @@ bind = $mainMod, SPACE, exec, $menu
 # some time while nothing here bound it at all. All three keys are now the
 # same menu, so which one somebody remembers no longer decides what they get.
 bind = $mainMod, Z, exec, copal-menu --system
+# THE MENU'S ARROW KEYS. copal-menu shows its two panes in wofi, one at a
+# time, and Left/Right swap them. wofi 1.5 cannot do that by itself: a
+# user-bound key only arms an exit status for whenever Enter or Escape is
+# eventually pressed, and the picker stays up. So while its picker is on
+# screen copal-menu enters this submap, and Hyprland answers the arrows:
+# each ends the picker with a signal the menu reads as "the other pane"
+# (inside a category, Left is Back). Every other key passes through, so
+# typing still filters. copal-menu leaves the submap on every way out, and
+# Escape here closes the picker and leaves it too, so a menu that died
+# cannot keep the arrows.
+submap = menu
+bind = , Left,   exec, pkill -USR1 -x wofi
+bind = , Right,  exec, pkill -USR2 -x wofi
+bind = , Escape, exec, pkill -x wofi
+bind = , Escape, submap, reset
+submap = reset
 # THE DESK, laid out the same way every time: copal-desk opens the editor and
 # a terminal on 2, an agent on 3, the browser on 5, and leaves you on an empty
 # 1. Muscle memory needs things to be in the same place; see the essay above

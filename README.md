@@ -1017,7 +1017,7 @@ and there are four ways in:
 | Keys | What it opens |
 |---|---|
 | `Super`+`space`, or `Super`+`d` | **dmenu** — everything on `PATH`. Type a few letters, Enter runs it |
-| `Super`+`z` | **copal-menu** — a clickable menu, rebuilt from what is actually installed each time it runs, with an *Install software* branch listing the rest of the catalogue |
+| `Super`+`z` | **copal-menu** — a clickable menu built from what is actually installed (cached, and rebuilt by itself when something is installed), with an *Install software* branch listing the rest of the catalogue |
 | `Super`+`Shift`+`c` | **copal-center** — one window listing the whole catalogue, installed or not, with a button that either runs it or fetches it |
 | `Super`+`,` | **copal-config** — users and groups, hostname, services, SSH, boot options. Asks `doas` for the root it needs |
 | `Super`+`/`, or `Super`+`F1` | the key list, floating. Shown once at login, because a tiling WM with no menus is unusable until you know the bindings |
