@@ -5323,11 +5323,70 @@ stage_base_config() {
 # OWNERSHIP. 9p2000.L passes the host's numeric uid straight through, and the
 # Mac's first user is 501 while this machine's is 1000, so files arrive owned by
 # a uid that does not exist here. They are readable; writing back is what
-# surprises people. There is no fix on the guest side worth having -- the
-# options that paper over it (dfltuid, access=) either do not apply to
-# 9p2000.L or silently break other things -- so it is documented instead.
+# surprises people. The mount options that paper over it (dfltuid, access=)
+# either do not apply to 9p2000.L or silently break other things. What does
+# work is a chown FROM THIS SIDE, when the host maps ownership instead of
+# passing it through: QEMU's mapped-xattr model keeps the guest's idea of the
+# owner in an extended attribute on the host file, so the folder stays the
+# Mac user's on the Mac and becomes this machine's user's here. That is tried
+# below, and at every boot; where the host refuses it, it is said, once.
+#
+# SETUP-DISK EATS THIS MOUNT. On a PC or VM stage 3 runs setup-disk with /mnt
+# as the new root, and setup-disk reads every mount under /mnt as a mount OF
+# THE NEW SYSTEM: /mnt/share came out of it as '/share', with the live options
+# (no nofail) and no /mnt/share directory in the new root, so ~/Shared pointed
+# at nothing. Stage 3 puts the line back; share_fstab_write() is the one
+# place the line is spelled so both stages write the same one.
+SHARE_OPT='trans=virtio,version=9p2000.L,msize=131072,rw'
+write_share_retry() {
+    mkdir -p /etc/local.d
+    cat > /etc/local.d/copal-share.start <<'SHARESTART'
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# The folder shared with the host, tried at every boot. Written by copal-init.sh.
+#
+# fstab mounts the share that was there when the card was written. This is
+# for the one that was not: a folder pointed at this VM in UTM afterwards, or
+# a card moved to a host that has one. It also does the one thing fstab
+# cannot, which is to make the folder this machine's user's where the host
+# allows it. Nothing here fails: a machine with no share exits quietly.
+modprobe 9pnet_virtio 2>/dev/null; modprobe 9p 2>/dev/null
+grep -qw 9p /proc/filesystems 2>/dev/null || exit 0
+if ! grep -q '^share /mnt/share ' /proc/mounts; then
+    mkdir -p /mnt/share
+    mount -t 9p -o SHARE_OPT_PLACEHOLDER share /mnt/share 2>/dev/null \
+        || { rmdir /mnt/share 2>/dev/null; exit 0; }
+fi
+_u=$(getent passwd COPAL_USER_PLACEHOLDER 2>/dev/null | cut -d: -f3)
+if [ -n "$_u" ] && [ "$(stat -c %u /mnt/share 2>/dev/null)" != "$_u" ]; then
+    chown "$_u" /mnt/share 2>/dev/null || true
+fi
+# setup-disk left an empty /share behind on cards written before stage 3
+# learned to put the line back. Only when it is empty and nothing is on it.
+if [ -d /share ] && ! grep -q ' /share ' /proc/mounts; then
+    rmdir /share 2>/dev/null || true
+fi
+exit 0
+SHARESTART
+    sed -i "s|SHARE_OPT_PLACEHOLDER|$SHARE_OPT|; s|COPAL_USER_PLACEHOLDER|$PI_USER|" \
+        /etc/local.d/copal-share.start
+    chmod +x /etc/local.d/copal-share.start
+}
+share_fstab_write() {  # <fstab> -- replace any share line with the canonical one
+    sed -i '/^share[[:space:]]/d' "$1"
+    printf 'share\t/mnt/share\t9p\t%s,nofail,_netdev\t0 0\n' "$SHARE_OPT" >> "$1"
+}
 configure_9p_share() {
     say "Shared folder with the host, if there is one"
+
+    # The boot-time attempt first, and unconditionally: it is for the other
+    # order of events, a folder pointed at this VM in UTM after the card was
+    # written, or a card moved to a host that has one. fstab covers the share
+    # that was there at install time; this covers the one that was not. It is
+    # quiet where there is nothing, every Raspberry Pi included, so it can be
+    # installed before the test below has a chance to return.
+    write_share_retry
 
     # 9p and 9pnet_virtio are separate modules and neither is loaded by default.
     modprobe 9pnet_virtio 2>/dev/null || true
@@ -5338,7 +5397,7 @@ configure_9p_share() {
     fi
 
     mkdir -p /mnt/share
-    _opt='trans=virtio,version=9p2000.L,msize=131072,rw'
+    _opt="$SHARE_OPT"
     if ! mount -t 9p -o "$_opt" share /mnt/share 2>/dev/null; then
         rmdir /mnt/share 2>/dev/null || true
         note "no folder is being shared with this machine"
@@ -5357,12 +5416,23 @@ configure_9p_share() {
         note "/etc/modules -- 9p, 9pnet_virtio"
     fi
 
-    if grep -q '^share[[:space:]]' /etc/fstab 2>/dev/null; then
-        note "/etc/fstab already has the share"
-    else
-        printf 'share\t/mnt/share\t9p\t%s,nofail,_netdev\t0 0\n' "$_opt" >> /etc/fstab
-        note "/etc/fstab -- /mnt/share, nofail so a host with no share still boots"
+    # Written outright rather than kept if present: a line that is there
+    # already may be setup-disk's reading of it (see above), or an older
+    # spelling without nofail, and either is worse than this one.
+    share_fstab_write /etc/fstab
+    note "/etc/fstab -- /mnt/share, nofail so a host with no share still boots"
+
+    # Ownership: try it, say what happened. See the note above the function.
+    _uid=$(id -u "$PI_USER" 2>/dev/null || echo 0)
+    if [ "$_uid" != 0 ] && [ "$(stat -c %u /mnt/share 2>/dev/null)" != "$_uid" ]; then
+        if chown "$_uid" /mnt/share 2>/dev/null; then
+            note "owned by '$PI_USER' here -- the host maps ownership, so writing works"
+        else
+            note "owned by the host's user (uid $(stat -c %u /mnt/share 2>/dev/null)) -- the host passes"
+            note "  ownership through, so '$PI_USER' can read this folder and not write it"
+        fi
     fi
+
 
     # Somewhere obvious, twice over. pcmanfm and the file manager open on
     # $HOME, and a mount point three directories away might as well not exist.
@@ -5856,6 +5926,18 @@ FSTAB
     # noatime avoids a write on every read; commit=600 batches journal
     # flushes. Match the mountpoint field -- the device field is a UUID now.
     sed -i -E 's|^([^#[:space:]]+[[:space:]]+/[[:space:]]+ext4[[:space:]]+)[^[:space:]]+|\1defaults,noatime,commit=600|' /mnt/etc/fstab
+
+    # setup-disk also swallowed the share. Stage 1 mounted it at /mnt/share,
+    # and with /mnt as the new root setup-disk read that as a mount at /share
+    # OF THE NEW SYSTEM: its line says /share, carries the live options and
+    # so no nofail, and the new root has no /mnt/share for ~/Shared to point
+    # at. Put the line back the way stage 1 wrote it, and the directory with
+    # it. See the note above configure_9p_share().
+    if grep -q '^share[[:space:]]' /mnt/etc/fstab 2>/dev/null; then
+        share_fstab_write /mnt/etc/fstab
+        mkdir -p /mnt/mnt/share
+        note "share: setup-disk read it as /share; back to /mnt/share, with nofail"
+    fi
 
     # The carried-over config points /etc/apk/cache at /media/mmcblk0p2/cache,
     # which was p2 -- and p2 is now the root filesystem itself. Left alone
