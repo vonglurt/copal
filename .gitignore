@@ -84,3 +84,4 @@ copal-timings
 copal-prep-auto*.log
 copal-vm-check.log
 run-log-*.txt
+__pycache__/

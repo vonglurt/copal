@@ -98,6 +98,10 @@ if [ -f "$ANSWERS" ]; then
     COPAL_KEYMAP=$(get_answer COPAL_KEYMAP)
     COPAL_ROOT_PW_HASH=$(get_answer COPAL_ROOT_PW_HASH)
     COPAL_SSH_KEY=$(get_answer COPAL_SSH_KEY)
+    COPAL_MAIL_ADDRESS=$(get_answer COPAL_MAIL_ADDRESS)
+    COPAL_MAIL_NAME=$(get_answer COPAL_MAIL_NAME)
+    COPAL_MAIL_IMAP=$(get_answer COPAL_MAIL_IMAP)
+    COPAL_MAIL_SMTP=$(get_answer COPAL_MAIL_SMTP)
     COPAL_AUTO=$(get_answer COPAL_AUTO)
 fi
 
@@ -148,6 +152,19 @@ _def_email="${COPAL_GIT_EMAIL:-$(git config --global --get user.email 2>/dev/nul
 ask "Name for git commits"   "$_def_name"                 COPAL_GIT_NAME
 ask "Email for git commits"  "$_def_email"                COPAL_GIT_EMAIL
 ask "Login name in the guest" "${COPAL_USER:-user}"       COPAL_USER
+# Mail, optional. With these four, stage 12 writes the account into
+# Thunderbird and Claws Mail before their first start, so neither opens its
+# account wizard. Enter on the address skips the lot; the password is never
+# asked here -- the client asks once, on first connection, and keeps it.
+ask "Mail address for Thunderbird/Claws (Enter: none)" "${COPAL_MAIL_ADDRESS:-}" COPAL_MAIL_ADDRESS
+if [ -n "$COPAL_MAIL_ADDRESS" ]; then
+    _dom="${COPAL_MAIL_ADDRESS#*@}"
+    ask "  Name shown on mail"  "${COPAL_MAIL_NAME:-$COPAL_GIT_NAME}"  COPAL_MAIL_NAME
+    ask "  IMAP server"         "${COPAL_MAIL_IMAP:-imap.$_dom}"       COPAL_MAIL_IMAP
+    ask "  SMTP server"         "${COPAL_MAIL_SMTP:-smtp.$_dom}"       COPAL_MAIL_SMTP
+else
+    COPAL_MAIL_NAME=""; COPAL_MAIL_IMAP=""; COPAL_MAIL_SMTP=""
+fi
 ask "Hostname"               "${COPAL_HOSTNAME:-$(random_hostname)}" COPAL_HOSTNAME
 ask "Timezone"               "${COPAL_TIMEZONE:-US/Pacific}" COPAL_TIMEZONE
 ask "Keymap"                 "${COPAL_KEYMAP:-us us}"     COPAL_KEYMAP
@@ -328,6 +345,14 @@ COPAL_TIMEZONE=$(sq "${COPAL_TIMEZONE}")
 COPAL_KEYMAP=$(sq "${COPAL_KEYMAP}")
 COPAL_ROOT_PW_HASH=$(sq "${COPAL_ROOT_PW_HASH}")
 
+# Mail, if given: stage 12 seeds Thunderbird and Claws Mail from these so the
+# first start opens on the Inbox, not the account wizard. IMAP over TLS on
+# 993, SMTP over TLS on 465, password asked by the client on first use.
+COPAL_MAIL_ADDRESS=$(sq "${COPAL_MAIL_ADDRESS}")
+COPAL_MAIL_NAME=$(sq "${COPAL_MAIL_NAME}")
+COPAL_MAIL_IMAP=$(sq "${COPAL_MAIL_IMAP}")
+COPAL_MAIL_SMTP=$(sq "${COPAL_MAIL_SMTP}")
+
 # The .pub half of a key on this Mac. copal-prep.sh copies it to the card as
 # authorized_keys; the private key never leaves this machine.
 COPAL_SSH_KEY=$(sq "${COPAL_SSH_KEY}")
@@ -342,6 +367,7 @@ chmod 600 "$ANSWERS"
 info "Wrote $ANSWERS (mode 600)"
 note ""
 note "  git identity   ${COPAL_GIT_NAME} <${COPAL_GIT_EMAIL}>"
+[ -n "$COPAL_MAIL_ADDRESS" ] && note "  mail           ${COPAL_MAIL_ADDRESS} via ${COPAL_MAIL_IMAP} / ${COPAL_MAIL_SMTP}"
 note "  user           ${COPAL_USER}"
 note "  hostname       ${COPAL_HOSTNAME}"
 note "  root password  stored as a SHA-512 hash, not recoverable"

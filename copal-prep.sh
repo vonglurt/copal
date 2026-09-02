@@ -398,6 +398,10 @@ if [ -f "$COPAL_ANSWERS" ]; then
     info "Read answers from $(basename "$COPAL_ANSWERS")${COPAL_ROOT_PW_HASH:+ (root password set)}"
     CFG_GIT_NAME="${CFG_GIT_NAME-${COPAL_GIT_NAME-}}"
     CFG_GIT_EMAIL="${CFG_GIT_EMAIL-${COPAL_GIT_EMAIL-}}"
+    CFG_MAIL_ADDRESS="${CFG_MAIL_ADDRESS-${COPAL_MAIL_ADDRESS-}}"
+    CFG_MAIL_NAME="${CFG_MAIL_NAME-${COPAL_MAIL_NAME-}}"
+    CFG_MAIL_IMAP="${CFG_MAIL_IMAP-${COPAL_MAIL_IMAP-}}"
+    CFG_MAIL_SMTP="${CFG_MAIL_SMTP-${COPAL_MAIL_SMTP-}}"
     CFG_USER="${CFG_USER:-${COPAL_USER:-}}"
     CFG_HOSTNAME="${CFG_HOSTNAME:-${COPAL_HOSTNAME:-}}"
     CFG_TIMEZONE="${CFG_TIMEZONE:-${COPAL_TIMEZONE:-}}"
@@ -541,6 +545,10 @@ fi
 sanitise_conf_value() { printf '%s' "$1" | tr -d '"\\`$' | tr -d '[:cntrl:]'; }
 CFG_GIT_NAME=$(sanitise_conf_value "${CFG_GIT_NAME:-}")
 CFG_GIT_EMAIL=$(sanitise_conf_value "${CFG_GIT_EMAIL:-}")
+CFG_MAIL_ADDRESS=$(sanitise_conf_value "${CFG_MAIL_ADDRESS:-}")
+CFG_MAIL_NAME=$(sanitise_conf_value "${CFG_MAIL_NAME:-}")
+CFG_MAIL_IMAP=$(sanitise_conf_value "${CFG_MAIL_IMAP:-}")
+CFG_MAIL_SMTP=$(sanitise_conf_value "${CFG_MAIL_SMTP:-}")
 
 # Why a second partition:
 #
@@ -2087,6 +2095,10 @@ cat > "$MNT/copal.conf" <<CONF
 PI_USER="${CFG_USER}"
 PI_GIT_NAME="${CFG_GIT_NAME}"
 PI_GIT_EMAIL="${CFG_GIT_EMAIL}"
+PI_MAIL_ADDRESS="${CFG_MAIL_ADDRESS}"
+PI_MAIL_NAME="${CFG_MAIL_NAME}"
+PI_MAIL_IMAP="${CFG_MAIL_IMAP}"
+PI_MAIL_SMTP="${CFG_MAIL_SMTP}"
 CONF
 
 # Build identity, its own file rather than a line in copal.conf: it is read by
@@ -3422,6 +3434,7 @@ Internet|Transmission (torrents)|transmission-gtk|transmission-gtk|x|*
 Internet|qBittorrent (torrents)|qbittorrent|qbittorrent|x|*
 Internet|lftp (FTP - terminal)|lftp|lftp|t|*
 Mail|Thunderbird (full mail client)|thunderbird|thunderbird|x|!v6,!x32
+Mail|KMail (KDE mail - heavy, pulls in Akonadi)|kmail kmail-account-wizard|kmail|x|64
 Mail|Claws Mail (GUI - Sylpheed lineage)|claws-mail|claws-mail|x|*
 Mail|Alpine (pine - terminal)|alpine|alpine|t|*
 Mail|Mutt (terminal)|mutt|mutt|t|*
@@ -3520,9 +3533,9 @@ Games|Widelands (settlers-like)|widelands|widelands|x|*
 Games|Wesnoth (heavy - turn-based strategy)|wesnoth|wesnoth|x|*
 Games|Luanti (Minetest - voxel sandbox)|luanti|luanti|x|*
 Games|SuperTux (platformer - needs a GPU)|supertux|supertux2|x|!v6
-Games|OpenMW (Morrowind engine)|openmw|openmw|x|64
-Games|GZDoom (Doom engine)|gzdoom|gzdoom|x|64
-Games|Chocolate Doom (faithful Doom)|chocolate-doom@testing|chocolate-doom|x|*
+Games|OpenMW (Morrowind engine - needs the game's data)|openmw|openmw-launcher|x|64
+Games|GZDoom (Doom engine, with Freedoom)|gzdoom freedoom|gzdoom|x|64
+Games|Chocolate Doom (faithful Doom, with Freedoom)|chocolate-doom@testing freedoom|chocolate-doom|x|*
 Games|Colossal Cave Adventure|bsd-games|adventure|t|*
 Games|Robots|bsd-games|robots|t|*
 Games|Hangman|bsd-games|hangman|t|*
@@ -3541,7 +3554,7 @@ Retro|ScummVM (point-and-click adventures)|scummvm|scummvm|x|*
 Retro|DOSBox Staging (DOS)|dosbox-staging|dosbox|x|!x32
 Retro|VICE (Commodore 64 - see stage 9)|vice@testing|x64sc|x|*
 Retro|FS-UAE (Amiga)|fs-uae|fs-uae|x|*
-Retro|mGBA (Game Boy Advance)|mgba|mgba|x|!v6
+Retro|mGBA (Game Boy Advance)|mgba-qt|mgba-qt|x|!v6
 Retro|RetroArch (many consoles)|retroarch|retroarch|x|*
 Retro|Mednafen (many consoles)|mednafen|mednafen|h|*
 Engineering|SolveSpace (parametric CAD, exports STL)|solvespace|solvespace|x|*
@@ -3595,7 +3608,7 @@ Tools|tmux (terminal multiplexer)|tmux|tmux|t|*
 Tools|Galculator|galculator|galculator|x|*
 Tools|SQLite browser|sqlitebrowser|sqlitebrowser|x|*
 Tools|Sticky notes|xpad|xpad|x|*
-Tools|Screenshot to file|scrot|scrot|x|*
+Tools|Screenshot to file|scrot|scrot|h|*
 Tools|Remmina (remote desktop)|remmina|remmina|x|*
 Tools|x11vnc (share this screen)|x11vnc|x11vnc|t|*
 Tools|Screen lock and savers|xscreensaver|xscreensaver|x|*
@@ -3752,7 +3765,7 @@ CATFILE=/usr/local/share/copal/catalogue
 # x86", which is what Chromium and Thunderbird actually need.
 #   64    the 64-bit ports only: aarch64 and x86_64. Blender, KiCad, OpenMW,
 #         GZDoom, Calibre, KOReader, Cataclysm DDA, Cura, Ghostwriter, GHC,
-#         Zig, Crystal, OpenJDK, Delve, KDevelop, Lapce, VSCodium.
+#         Zig, Crystal, OpenJDK, Delve, KDevelop, Lapce, VSCodium, KMail.
 #
 #         This gate was called 'a64' and documented as "aarch64 only" while
 #         the ARM ports were the only ones. Every package behind it was then
@@ -4746,6 +4759,7 @@ stage_base_config() {
     # Before the commit, so the fstab line and the module list are inside the
     # apkovl. On a diskless system a change made after it is a change lost.
     configure_9p_share
+    configure_vm_graphics_env
     configure_power_button
     configure_debug_flag
 
@@ -4792,7 +4806,8 @@ stage_base_config() {
 # UTM shares a host folder over 9p (its "VirtFS" mode), and the guest side of
 # that has been a line in a printed note that nobody runs twice: mount it by
 # hand, lose it at the next reboot, mount it again. This makes it a mount point
-# that is simply there.
+# that is simply there -- and, since the autofs rewrite, one that comes back by
+# itself.
 #
 #   HOST SIDE      utm/utm-vm.sh defaults to ~/Downloads/SharedVM, and takes
 #                  --share DIR to change it. UTM keeps the path in its own
@@ -4806,18 +4821,33 @@ stage_base_config() {
 # 'share' is the mount TAG, not a path -- QEMU's -virtfs is given that tag and
 # the guest asks for it by name. UTM always uses 'share'.
 #
+# WHY AUTOFS AND NOT FSTAB. An fstab line mounts once, at boot, and that is the
+# wrong moment three times over: the 9p modules may not be loaded yet, a VM
+# started with no folder shared fails the mount (nofail keeps it booting, but
+# the folder then stays absent until someone mounts it by hand), and a 9p
+# session that the host drops -- UTM restarted, the Mac asleep long enough --
+# leaves a dead mount point that only root can clear. autofs mounts the
+# directory the first time anything touches it, unmounts it after five idle
+# minutes, and mounts it again on the next touch. Every one of those failure
+# modes turns into "the next 'ls' brings it back". The kernel side is the
+# autofs4 module Alpine's virt kernel ships; the user side is the autofs
+# package and its OpenRC script, in a separate package the way Alpine does.
+#
+# A FOREIGN 'share' LINE. Alpine's own UTM images, and setup-alpine on some of
+# them, write 'share /share 9p ...' into fstab -- no nofail, no 9p2000.L, a
+# different mount point. An earlier version of this function saw that line,
+# said "fstab already has the share", and did nothing: /mnt/share was never
+# set up and ~/Shared pointed at nothing. Now the line is commented out, the
+# old mount point becomes a symlink to /mnt/share, and anything that learned
+# the old path keeps working.
+#
 # DETECTION IS THE MOUNT ITSELF. There is no reliable way to ask "is a 9p share
 # offered?" that is cheaper or more honest than trying it: aarch64 'virt' has no
 # DMI to read, the virtio device only appears once the module is loaded, and a
 # host that has not had a folder pointed at it yet looks exactly like one that
-# has. So this attempts the mount, keeps the configuration only if it worked,
-# and says nothing alarming on a Raspberry Pi, where it simply will not.
-#
-# nofail IS LOAD-BEARING in the fstab line. A VM started with no folder shared,
-# or moved to a host that has none, would otherwise fail the mount at boot and
-# drop to an emergency shell -- turning a convenience into a machine that will
-# not start. _netdev keeps it out of the early boot ordering for the same
-# reason.
+# has. So this attempts the mount, and configures autofs either way on a
+# machine that has 9p at all -- an automount for a share that is not there
+# costs nothing and is ready for the day it is.
 #
 # OWNERSHIP. 9p2000.L passes the host's numeric uid straight through, and the
 # Mac's first user is 501 while this machine's is 1000, so files arrive owned by
@@ -4835,32 +4865,59 @@ configure_9p_share() {
         note "no 9p support in this kernel -- nothing to share (normal on a Pi)"
         return 0
     fi
-
-    mkdir -p /mnt/share
     _opt='trans=virtio,version=9p2000.L,msize=131072,rw'
-    if ! mount -t 9p -o "$_opt" share /mnt/share 2>/dev/null; then
-        rmdir /mnt/share 2>/dev/null || true
-        note "no folder is being shared with this machine"
-        note "  UTM -> this VM -> Edit -> Sharing -> Directory Share Path"
-        note "  then re-run this stage and it will be mounted at /mnt/share"
-        return 0
-    fi
-    note "mounted: /mnt/share  ($(ls -1 /mnt/share 2>/dev/null | wc -l | tr -d ' ') entries)"
 
-    # Persist it. Both halves are needed: the modules, because the mount at
-    # boot happens before anything would autoload them, and the fstab line.
+    # The modules, for the boot-time path and for autofs alike.
     if [ -f /etc/modules ]; then
         for _m in 9pnet_virtio 9p; do
             grep -qx "$_m" /etc/modules 2>/dev/null || echo "$_m" >> /etc/modules
         done
-        note "/etc/modules -- 9p, 9pnet_virtio"
     fi
 
-    if grep -q '^share[[:space:]]' /etc/fstab 2>/dev/null; then
-        note "/etc/fstab already has the share"
+    # A 'share' line that is not ours: retire it, keep its path alive.
+    _foreign=$(awk '$1=="share" && $2!="/mnt/share" {print $2}' /etc/fstab 2>/dev/null | head -n1)
+    if [ -n "$_foreign" ]; then
+        sed -i "s#^share[[:space:]]\+$_foreign[[:space:]]#\# retired by copal (now autofs at /mnt/share): &#" /etc/fstab
+        umount "$_foreign" 2>/dev/null || true
+        if [ -d "$_foreign" ] && [ ! -L "$_foreign" ] && rmdir "$_foreign" 2>/dev/null; then
+            ln -s /mnt/share "$_foreign" && note "$_foreign -> /mnt/share (the old mount point, kept as a link)"
+        fi
+        note "/etc/fstab -- the '$_foreign' line is commented out"
+    fi
+    # Our own older fstab line, from before autofs: same treatment, no link.
+    if grep -q '^share[[:space:]]\+/mnt/share[[:space:]]' /etc/fstab 2>/dev/null; then
+        sed -i 's#^share[[:space:]]\+/mnt/share[[:space:]]#\# retired by copal (now autofs): &#' /etc/fstab
+        umount /mnt/share 2>/dev/null || true
+        note "/etc/fstab -- the older /mnt/share line is commented out"
+    fi
+
+    if try_add autofs autofs-openrc; then
+        # A direct map: one absolute mount point, mounted on first access,
+        # unmounted after the idle timeout, mounted again on the next access.
+        # Its own map file, so auto.master's +dir: include picks it up and
+        # nothing of the package's defaults is edited.
+        mkdir -p /etc/autofs/auto.master.d /mnt
+        [ -d /mnt/share ] && ! mountpoint -q /mnt/share && rmdir /mnt/share 2>/dev/null || true
+        printf '/-\t/etc/autofs/auto.share\t--timeout=300\n' > /etc/autofs/auto.master.d/share.autofs
+        printf '/mnt/share\t-fstype=9p,%s\tshare\n' "$_opt" > /etc/autofs/auto.share
+        rc-update -q add autofs default 2>/dev/null || true
+        rc-service autofs restart >/dev/null 2>&1 || rc-service autofs start >/dev/null 2>&1 || true
+        if ls /mnt/share >/dev/null 2>&1; then
+            note "mounted on access: /mnt/share  ($(ls -1 /mnt/share 2>/dev/null | wc -l | tr -d ' ') entries)"
+        else
+            note "autofs is waiting at /mnt/share; no folder is being shared yet"
+            note "  UTM -> this VM -> Edit -> Sharing -> Directory Share Path"
+            note "  restart the VM, then 'ls /mnt/share' mounts it -- nothing to re-run"
+        fi
     else
-        printf 'share\t/mnt/share\t9p\t%s,nofail,_netdev\t0 0\n' "$_opt" >> /etc/fstab
-        note "/etc/fstab -- /mnt/share, nofail so a host with no share still boots"
+        # No autofs package (an unusual repository set): the fstab line is
+        # the fallback, with nofail so a host with no share still boots.
+        warn "autofs is not installable here -- falling back to an fstab line"
+        mkdir -p /mnt/share
+        grep -q '^share[[:space:]]\+/mnt/share[[:space:]]' /etc/fstab 2>/dev/null \
+            || printf 'share\t/mnt/share\t9p\t%s,nofail,_netdev\t0 0\n' "$_opt" >> /etc/fstab
+        mount /mnt/share 2>/dev/null && note "mounted: /mnt/share" \
+            || note "no folder is being shared with this machine yet"
     fi
 
     # Somewhere obvious, twice over. pcmanfm and the file manager open on
@@ -4899,11 +4956,38 @@ configure_9p_share() {
     network protocol pretending to be a disk. Build in your home directory
     and copy the result here.
 
+    The folder mounts itself the first time anything looks at it and lets go
+    after five idle minutes; if the host drops the share, the next 'ls'
+    brings it back. Nothing to mount by hand.
+
     They arrive owned by the MAC's user id (501), which does not exist on
     this machine, so they may read as owned by a number. Reading works;
     if writing back is refused, write as root, or work on a copy in your
     home directory.
 SHAREMSG
+}
+
+# ---------------------------------------- Qt Quick on a software GPU ---
+#
+# Alpine's Mesa carries no virgl driver on any architecture (the graphics lab
+# report), so every virtio-gpu guest renders with llvmpipe. Most programs do
+# not mind. Qt Quick does: MuseScore 4 dies with SIGSEGV inside the QML
+# renderer at startup, and with QT_QUICK_BACKEND=software it starts and runs.
+# The setting is harmless for Qt programs that do not use Quick, and it is
+# only written on a machine whose DRM card is virtio_gpu -- a Pi's V3D and a
+# PC's GPU keep the OpenGL scene graph they can actually drive.
+configure_vm_graphics_env() {
+    # card0/device/driver is the PCI bus driver (virtio-pci); the GPU driver
+    # is bound on the virtio bus, so ask that: a device under virtio_gpu.
+    [ -n "$(ls /sys/bus/virtio/drivers/virtio_gpu 2>/dev/null | grep '^virtio')" ] || return 0
+    cat > /etc/profile.d/copal-vm-gfx.sh <<'GFX'
+# Written by copal: this guest's GPU is virtio-gpu without virgl, i.e. llvmpipe.
+# Qt Quick's OpenGL scene graph crashes on it (MuseScore); its software
+# rasteriser does not.
+export QT_QUICK_BACKEND=software
+GFX
+    chmod 0644 /etc/profile.d/copal-vm-gfx.sh
+    note "/etc/profile.d/copal-vm-gfx.sh -- QT_QUICK_BACKEND=software (virtio-gpu, no virgl)"
 }
 
 # ------------------------------------------------ the power button ---
@@ -6374,7 +6458,11 @@ client.urgent           #f7768e #f7768e #1a1b26 #f7768e   #f7768e
 bar {
         status_command i3status
         position top
-        tray_output none
+        # The tray, on the primary output. nm-applet and blueman-applet from
+        # the catalogue live there, and qBittorrent "minimises to the tray":
+        # with tray_output none those had nowhere to appear and a window
+        # closed to the tray was gone until the process was killed.
+        tray_output primary
         colors {
                 background #16161e
                 statusline #c0caf5
@@ -6794,6 +6882,24 @@ if grep -q '^Emulators,' "$CSV"; then
     if have x64sc;   then out "VICE (C64),x64sc"
     elif have x64;   then out "VICE (C64),x64"
     fi
+    # Wine boxes, one entry each; the env file's EXE says whether it runs.
+    if have winebox; then
+        for b in "$HOME"/.local/share/winebox/*/; do
+            [ -f "$b/env" ] || continue
+            n=$(basename "$b")
+            out "$n (Wine box),winebox run $n"
+        done
+        out "New Wine box: winebox,$TERM_EMU -e sh -c 'winebox list; echo; echo winebox install NAME; exec sh'"
+    fi
+fi
+
+# ----- Built from source, by stages 12 and 14 -----
+if have endless-sky || have wxmaxima || have streamripper || have ytq; then
+    out '^sep(Built here)'
+    have endless-sky  && out "Endless Sky,endless-sky" || true
+    have wxmaxima     && out "wxMaxima,wxmaxima" || true
+    have ytq          && out "ytq download queue,$TERM_EMU -e ytq" || true
+    have streamripper && out "streamripper (radio to files),$TERM_EMU -e sh -c 'streamripper; exec sh'" || true
 fi
 
 # ----- System -----
@@ -8672,20 +8778,30 @@ install_claude_code() {
 MSG
     confirm "Install Claude Code?" || { note "Skipping Claude Code."; return 0; }
 
-    say "Installing @anthropic-ai/claude-code"
-    # Global, so it lands on PATH for every account. That is not the same as
-    # running as root: the credentials and settings Claude Code writes go to
-    # ~/.claude, so signing in as the admin user keeps them in that user's
-    # home where they belong.
-    if npm install -g @anthropic-ai/claude-code; then
-        note "installed: $(command -v claude 2>/dev/null || echo 'claude (not yet on PATH -- log out and back in)')"
-    else
+    say "Installing @anthropic-ai/claude-code for $PI_USER"
+    # Into a prefix the USER owns, not root's /usr/local. `claude doctor` on a
+    # root-installed copy reports one warning and it is a real one: Claude
+    # Code updates itself, and it cannot write /usr/local/lib/node_modules as
+    # the account that runs it, so every update attempt fails. Its own three
+    # suggested fixes are the native installer (a glibc binary -- not on
+    # musl), nvm, or an npm prefix in the home directory; the last is the one
+    # that works here. ~/.npmrc records the prefix, /etc/profile.d puts the
+    # bin directory first on PATH for every login shell, and credentials go to
+    # ~/.claude as before. The install runs as the user for the same reason.
+    if ! su - "$PI_USER" -c 'npm config set prefix "$HOME/.npm-global" && npm install -g @anthropic-ai/claude-code'; then
         warn "npm install failed -- see the output above."
         note "The usual causes on this board are RAM during the install, and"
         note "native modules with no ARMv6 build. Retry under zram, or with:"
         note "  NODE_OPTIONS=--max-old-space-size=256 npm install -g @anthropic-ai/claude-code"
         return 0
     fi
+    cat > /etc/profile.d/npm-global.sh <<'NPMG'
+# Written by copal-init.sh. npm's global prefix is per user (~/.npm-global),
+# so Claude Code can update itself without root. See `claude doctor`.
+export PATH="$HOME/.npm-global/bin:$PATH"
+NPMG
+    chmod 0644 /etc/profile.d/npm-global.sh
+    note "installed: $(user_home)/.npm-global/bin/claude (on PATH at the next login)"
 
     # $BROWSER is the convention CLI tools follow to open a URL. Point it at
     # whatever stage 4 actually installed, in preference order, so the sign-in
@@ -8704,6 +8820,10 @@ BROWSERENV
     done
     command -v "$_b" >/dev/null 2>&1 || \
         note "no browser installed yet -- run stage 4, or paste the sign-in URL"
+    # The checkup Claude Code ships with. Non-interactive, prints its
+    # findings and exits; run as the user so it looks at the user's install.
+    say "claude doctor"
+    su - "$PI_USER" -c 'claude doctor' 2>&1 | sed 's/^/    /' || true
     note "Sign in by running:  claude      (as $PI_USER, not as root)"
     note "Credentials land in ~/.claude, so run it as the account you use."
     note "If it runs out of memory: NODE_OPTIONS=--max-old-space-size=256 claude"
@@ -10485,6 +10605,7 @@ kateprojectplugin=true
 [General]
 Show Menu Bar=true
 Show Status Bar=true
+Show welcome view for new window=false
 KATERC
     install_home_file .config/katerc /tmp/katerc.$$
     rm -f /tmp/katerc.$$
@@ -11546,6 +11667,20 @@ Brave: use yt-brave, not --cookies-from-browser brave
     Brave is Chromium underneath, so the keyring paragraph above applies to
     it too, and so does closing the browser first.
 
+The queue: ytq
+
+    ytq                 a window. While it is focused, every URL you copy is
+                        checked and queued; downloads run one at a time as
+                        MP4 into ~/Videos. Keys are on the bottom line.
+    ytq add URL...      queue from a shell; 'ytq clip' queues whatever URL is
+                        on the clipboard; 'ytq run' works the queue with no
+                        window, 'ytq list' shows it.
+
+    When a download fails on a login, age gate or bot check, ytq opens Brave
+    on the URL; sign in or pass the check there, press 'c' in ytq, and it
+    retries once with Brave's cookies. Settings, if you want any, go in
+    ~/.config/ytq/config: DIR, FORMAT, PROFILE, KEYRING.
+
 Method 2 -- a cookies.txt file
 
     Use when method 1 cannot reach the browser at all: a headless machine, a
@@ -11678,6 +11813,590 @@ YTBRAVE
     note "yt-brave -- yt-dlp with Brave's cookies. 'yt-brave --list' shows profiles."
 }
 
+# ytq: a queue in front of yt-dlp, fed by the clipboard.
+#
+# The habit it replaces is the terminal with twelve yt-dlp commands pasted into
+# it, each waiting on the last. Copy a link while the ytq window is focused and
+# it is checked (can yt-dlp get it as an MP4, and at what resolution?) and
+# queued; downloads run one at a time, best video plus best audio, merged to
+# MP4 by ffmpeg. A failure goes to the back of the queue for one more try; a
+# failure that reads as a login, an age gate or a bot check opens Brave on the
+# URL and, once you have signed in there and pressed 'c', retries with Brave's
+# cookies -- the same Flatpak profile path yt-brave supplies, and only once.
+#
+# The clipboard is read with wl-paste on Wayland and xclip on X11, so both are
+# installed; focus is asked of hyprctl or xdotool, and where neither answers
+# the watcher simply stays on. Python and curses only -- nothing beyond what
+# yt-dlp itself needs.
+install_ytq() {
+    command -v yt-dlp >/dev/null 2>&1 || return 0
+    add_optional wl-clipboard xclip xdotool
+    cat > /usr/local/bin/ytq <<'YTQ'
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+#
+# ytq -- a yt-dlp download queue that watches the clipboard.
+#
+#   ytq                the queue window. The URL on the clipboard right now is
+#                      queued at once; while the window has focus, every URL
+#                      copied afterwards is checked and queued too.
+#   ytq add URL...     queue from a shell instead
+#   ytq clip           queue the URL on the clipboard, no window
+#   ytq run            work the queue without the window (one at a time)
+#   ytq list           what is queued, done, waiting, failed
+#   ytq clear          forget finished, rejected and failed entries
+#
+# HOW IT WORKS. One file, ~/.local/share/ytq/queue.json, is the queue. Three
+# threads share it: the watcher reads the clipboard once a second and adds
+# anything that looks like a URL; the checker asks yt-dlp (--simulate) whether
+# it can fetch that URL as an MP4 and what resolution it would get, and either
+# queues or rejects it; the worker downloads one entry at a time, best video
+# plus best audio merged into MP4 by ffmpeg.
+#
+# WHEN IT FAILS. A failed download goes to the back of the queue for one more
+# try. If yt-dlp's complaint is about a login, an age gate, a "confirm you are
+# not a bot" page or cookies, the retry is the cookie retry, and there is only
+# ever one of those per entry: Brave is opened on the URL so you can sign in
+# or pass the check, and when you press 'c' the download runs again with
+# Brave's cookies (--cookies-from-browser, at the Flatpak profile path Copal's
+# yt-brave also uses). A second failure after that is final.
+#
+# WHY "WHILE IT HAS FOCUS". The clipboard is a shared thing, and a queue that
+# grabbed every link you copied for any reason would be a nuisance. So the
+# watcher only acts while this window is the focused one: copy a link, click
+# here, and it is queued; copy a link for a note and nothing happens. Focus is
+# asked of the compositor (hyprctl on Hyprland, xdotool on X11); where neither
+# answers, the watcher stays on.
+#
+# Settings, if you want them, in ~/.config/ytq/config as KEY=VALUE:
+#   DIR       where files go            (default ~/Videos, or XDG_VIDEOS_DIR)
+#   FORMAT    yt-dlp -f selector        (default: best MP4 video + M4A audio)
+#   PROFILE   Brave profile             (default: Default)
+#   KEYRING   yt-dlp keyring hint, e.g. basictext, for a desktop with no keyring
+#   POLL      clipboard poll, seconds   (default 1)
+import curses, json, os, re, shlex, signal, subprocess, sys, threading, time
+
+HOME = os.path.expanduser("~")
+CONF = os.path.join(os.environ.get("XDG_CONFIG_HOME") or os.path.join(HOME, ".config"), "ytq", "config")
+DATA = os.path.join(os.environ.get("XDG_DATA_HOME") or os.path.join(HOME, ".local", "share"), "ytq")
+QUEUE = os.path.join(DATA, "queue.json")
+LOG = os.path.join(DATA, "ytq.log")
+DEFAULT_FORMAT = ("bv*[ext=mp4][vcodec^=avc1]+ba[ext=m4a]/bv*[ext=mp4]+ba[ext=m4a]"
+                  "/b[ext=mp4]/bv*+ba/b")
+COOKIE_WORDS = ("sign in", "log in", "login", "cookies", "age", "bot", "private video",
+                "members", "premium", "confirm you", "403", "restricted", "subscriber")
+# A URL, strictly enough that a pasted sentence or a path never qualifies:
+# scheme, a host with at least one dot or a port, then anything without spaces.
+URL_RE = re.compile(r"^https?://(?:[A-Za-z0-9-]+\.)+[A-Za-z0-9-]+(?::\d+)?(?:/\S*)?$|^https?://localhost(?::\d+)?(?:/\S*)?$")
+ORDER = ["downloading", "cookies", "checking", "queued", "retry", "done", "failed", "rejected"]
+
+
+def videos_dir():
+    try:
+        for line in open(os.path.join(HOME, ".config", "user-dirs.dirs")):
+            if line.startswith("XDG_VIDEOS_DIR="):
+                return os.path.expandvars(line.split("=", 1)[1].strip().strip('"'))
+    except OSError:
+        pass
+    return os.path.join(HOME, "Videos")
+
+
+def settings():
+    s = {"DIR": videos_dir(), "FORMAT": DEFAULT_FORMAT, "PROFILE": "Default", "KEYRING": "", "POLL": "1"}
+    try:
+        for line in open(CONF):
+            line = line.strip()
+            if line and not line.startswith("#") and "=" in line:
+                k, v = line.split("=", 1)
+                s[k.strip().upper()] = os.path.expanduser(v.strip().strip('"'))
+    except OSError:
+        pass
+    return s
+
+
+S = settings()
+
+
+def log(msg):
+    os.makedirs(DATA, exist_ok=True)
+    with open(LOG, "a") as f:
+        f.write(time.strftime("%Y-%m-%d %H:%M:%S ") + msg + "\n")
+
+
+# --- the queue file ---------------------------------------------------------
+class Queue:
+    def __init__(self):
+        self.lock = threading.RLock()
+        self.items = []
+        self.load()
+
+    def load(self):
+        try:
+            with open(QUEUE) as f:
+                self.items = json.load(f)
+        except (OSError, ValueError):
+            self.items = []
+        # Whatever was mid-flight when the last run ended is simply queued again.
+        for it in self.items:
+            if it["status"] in ("downloading", "checking"):
+                it["status"] = "queued" if it.get("title") else "checking"
+            it.setdefault("progress", "")
+
+    def save(self):
+        os.makedirs(DATA, exist_ok=True)
+        tmp = QUEUE + ".tmp"
+        with self.lock, open(tmp, "w") as f:
+            json.dump(self.items, f, indent=1)
+        os.replace(tmp, QUEUE)
+
+    def has(self, url):
+        with self.lock:
+            return any(i["url"] == url for i in self.items)
+
+    def add(self, url):
+        with self.lock:
+            if self.has(url):
+                return None
+            it = {"url": url, "title": "", "status": "checking", "quality": "", "attempts": 0,
+                  "cookie_tried": False, "error": "", "added": int(time.time()), "file": "", "progress": ""}
+            self.items.append(it)
+            self.save()
+            log("added " + url)
+            return it
+
+    def first(self, *statuses):
+        with self.lock:
+            for st in statuses:
+                for it in self.items:
+                    if it["status"] == st:
+                        return it
+        return None
+
+    def set(self, it, **kw):
+        with self.lock:
+            it.update(kw)
+            self.save()
+
+
+Q = Queue()
+STOP = threading.Event()
+PAUSED = threading.Event()
+CURRENT = {"proc": None}
+
+
+# --- yt-dlp -------------------------------------------------------------------
+def cookie_problem(text):
+    t = text.lower()
+    return any(w in t for w in COOKIE_WORDS)
+
+
+def brave_profile():
+    for root in (os.path.join(HOME, ".var/app/com.brave.Browser/config/BraveSoftware/Brave-Browser"),
+                 os.path.join(HOME, ".config/BraveSoftware/Brave-Browser")):
+        p = os.path.join(root, S["PROFILE"])
+        if os.path.isdir(p):
+            return p
+    return None
+
+
+def cookie_args():
+    p = brave_profile()
+    if not p:
+        return []
+    spec = "brave" + ("+" + S["KEYRING"] if S["KEYRING"] else "") + ":" + p
+    return ["--cookies-from-browser", spec]
+
+
+def open_browser(url):
+    for cmd in (["brave", url], ["flatpak", "run", "com.brave.Browser", url], ["xdg-open", url]):
+        try:
+            subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True)
+            log("opened browser: " + " ".join(cmd[:2]))
+            return True
+        except OSError:
+            continue
+    return False
+
+
+def check(it):
+    """Can yt-dlp fetch this as an MP4, and at what height? --simulate costs one request."""
+    cmd = ["yt-dlp", "--simulate", "--no-playlist", "--no-warnings", "-f", S["FORMAT"],
+           "--print", "%(title)s\t%(height)s\t%(ext)s", it["url"]]
+    try:
+        r = subprocess.run(cmd, capture_output=True, text=True, timeout=180)
+    except subprocess.TimeoutExpired:
+        Q.set(it, status="rejected", error="timed out asking yt-dlp about it")
+        return
+    except OSError as e:
+        Q.set(it, status="rejected", error="yt-dlp: %s" % e)
+        return
+    if r.returncode == 0 and r.stdout.strip():
+        title, height, ext = (r.stdout.strip().splitlines()[0].split("\t") + ["", ""])[:3]
+        q = ("%sp" % height if height not in ("NA", "", "None") else "?") + " " + ext
+        Q.set(it, status="queued", title=title[:200], quality=q, error="")
+        log("queued %s [%s] %s" % (title, q, it["url"]))
+    else:
+        err = (r.stderr.strip().splitlines() or ["no output"])[-1][:300]
+        if cookie_problem(err):
+            # Not rejected: queue it anyway. The first real attempt is what
+            # opens Brave if the complaint holds -- the check is only a look.
+            Q.set(it, status="queued", title=it["url"], quality="?", error=err)
+            log("queued despite a cookie complaint at check: " + it["url"])
+        else:
+            Q.set(it, status="rejected", error=err)
+            log("rejected %s: %s" % (it["url"], err))
+
+
+def download(it, with_cookies):
+    os.makedirs(S["DIR"], exist_ok=True)
+    cmd = ["yt-dlp", "--no-playlist", "--newline", "--no-simulate", "-f", S["FORMAT"],
+           "--merge-output-format", "mp4",
+           "--progress-template", "download:PROGRESS %(progress._percent_str)s %(progress._speed_str)s %(progress._eta_str)s",
+           "--print", "after_move:FILE %(filepath)s",
+           "-o", os.path.join(S["DIR"], "%(title).120s [%(id)s].%(ext)s")]
+    if with_cookies:
+        cmd += cookie_args()
+    cmd.append(it["url"])
+    log("run: " + " ".join(shlex.quote(c) for c in cmd))
+    Q.set(it, status="downloading", attempts=it["attempts"] + 1, progress="starting",
+          cookie_tried=it["cookie_tried"] or with_cookies)
+    try:
+        p = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True,
+                             start_new_session=True)
+    except OSError as e:
+        Q.set(it, status="failed", error="cannot run yt-dlp: %s" % e)
+        return
+    CURRENT["proc"] = p
+    tail, fname = [], ""
+    for line in p.stdout:
+        line = line.rstrip()
+        if line.startswith("PROGRESS "):
+            it["progress"] = line[9:].strip()
+        elif line.startswith("FILE "):
+            fname = line[5:]
+        elif line:
+            tail = (tail + [line])[-6:]
+    p.wait()
+    CURRENT["proc"] = None
+    if STOP.is_set():
+        Q.set(it, status="queued", progress="")
+        return
+    if p.returncode == 0:
+        Q.set(it, status="done", file=fname, progress="", error="")
+        log("done: " + (fname or it["url"]))
+        return
+    err = (tail or ["yt-dlp exited %d" % p.returncode])[-1][:300]
+    if cookie_problem(err) and not it["cookie_tried"]:
+        Q.set(it, status="cookies", error=err, progress="")
+        open_browser(it["url"])
+        log("needs cookies: %s: %s" % (it["url"], err))
+    elif it["attempts"] < 2 and not it["cookie_tried"]:
+        Q.set(it, status="retry", error=err, progress="")
+        log("retry later: %s: %s" % (it["url"], err))
+    else:
+        Q.set(it, status="failed", error=err, progress="")
+        log("failed: %s: %s" % (it["url"], err))
+
+
+def worker():
+    while not STOP.is_set():
+        if PAUSED.is_set():
+            time.sleep(0.5)
+            continue
+        it = Q.first("queued", "retry-cookies", "retry")
+        if not it:
+            time.sleep(1)
+            continue
+        download(it, with_cookies=(it["status"] == "retry-cookies"))
+
+
+def checker():
+    while not STOP.is_set():
+        it = Q.first("checking")
+        if not it:
+            time.sleep(0.5)
+            continue
+        check(it)
+
+
+# --- the clipboard and focus ---------------------------------------------------
+def read_clipboard():
+    for cmd in (["wl-paste", "-n", "--type", "text/plain"], ["xclip", "-o", "-selection", "clipboard"]):
+        try:
+            r = subprocess.run(cmd, capture_output=True, text=True, timeout=3)
+            if r.returncode == 0:
+                return r.stdout.strip()
+        except (OSError, subprocess.SubprocessError):
+            continue
+    return ""
+
+
+def ancestors():
+    pids, p = set(), os.getpid()
+    while p > 1:
+        pids.add(p)
+        try:
+            with open("/proc/%d/stat" % p) as f:
+                p = int(f.read().rsplit(")", 1)[1].split()[1])
+        except (OSError, ValueError, IndexError):
+            break
+    return pids
+
+
+ANCESTORS = ancestors()
+
+
+def focused():
+    """Is the terminal this runs in the focused window? Unknown counts as yes."""
+    try:
+        if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+            r = subprocess.run(["hyprctl", "activewindow", "-j"], capture_output=True, text=True, timeout=2)
+            return json.loads(r.stdout).get("pid") in ANCESTORS
+        if os.environ.get("DISPLAY"):
+            r = subprocess.run(["xdotool", "getactivewindow", "getwindowpid"], capture_output=True, text=True, timeout=2)
+            if r.returncode == 0:
+                return int(r.stdout.strip()) in ANCESTORS
+    except (OSError, ValueError, subprocess.SubprocessError, AttributeError):
+        pass
+    return True
+
+
+WATCH = {"on": True, "focused": True, "last": None}
+
+
+def clipboard_url():
+    """The clipboard's current text, if it is a URL; else None."""
+    text = read_clipboard()
+    return text if URL_RE.match(text) else None
+
+
+def watcher():
+    # What is on the clipboard at start counts: launching ytq with a link
+    # already copied is the common case, so it is queued straight away.
+    WATCH["last"] = read_clipboard()
+    if URL_RE.match(WATCH["last"]) and not Q.has(WATCH["last"]):
+        Q.add(WATCH["last"])
+    while not STOP.is_set():
+        time.sleep(float(S["POLL"]))
+        WATCH["focused"] = focused()
+        if not WATCH["on"] or not WATCH["focused"]:
+            continue
+        text = read_clipboard()
+        if text == WATCH["last"]:
+            continue
+        WATCH["last"] = text
+        if URL_RE.match(text) and not Q.has(text):
+            Q.add(text)
+
+
+# --- the window ------------------------------------------------------------------
+MARK = {"downloading": ">", "queued": ".", "retry": "r", "retry-cookies": "c", "cookies": "C",
+        "checking": "?", "done": "+", "failed": "x", "rejected": "-"}
+
+
+def prompt(win, label):
+    h, w = win.getmaxyx()
+    curses.echo(); curses.curs_set(1)
+    win.addstr(h - 1, 0, (label + " ").ljust(w - 1)[:w - 1])
+    win.refresh()
+    try:
+        s = win.getstr(h - 1, len(label) + 1, w - len(label) - 3).decode("utf-8", "replace").strip()
+    except Exception:
+        s = ""
+    curses.noecho(); curses.curs_set(0)
+    return s
+
+
+def tui(win):
+    curses.curs_set(0)
+    win.nodelay(True)
+    win.timeout(500)
+    if curses.has_colors():
+        curses.start_color(); curses.use_default_colors()
+        curses.init_pair(1, curses.COLOR_GREEN, -1); curses.init_pair(2, curses.COLOR_RED, -1)
+        curses.init_pair(3, curses.COLOR_YELLOW, -1); curses.init_pair(4, curses.COLOR_CYAN, -1)
+    sel, message = 0, ""
+    for t in (watcher, checker, worker):
+        threading.Thread(target=t, daemon=True).start()
+    while True:
+        with Q.lock:
+            items = sorted(Q.items, key=lambda i: (ORDER.index(i["status"]) if i["status"] in ORDER else 2, i["added"]))
+        h, w = win.getmaxyx()
+        win.erase()
+        state = ("watching the clipboard" if WATCH["on"] and WATCH["focused"] else
+                 "clipboard: paused (window not focused)" if WATCH["on"] else "clipboard: off")
+        head = " ytq  %s   -> %s%s" % (state, S["DIR"].replace(HOME, "~"), "   [worker paused]" if PAUSED.is_set() else "")
+        win.addstr(0, 0, head[:w - 1], curses.A_REVERSE | curses.A_BOLD)
+        sel = max(0, min(sel, len(items) - 1))
+        top = max(0, sel - (h - 5))
+        for row, it in enumerate(items[top:top + h - 4]):
+            y = row + 1
+            st = it["status"]
+            col = {"done": 1, "failed": 2, "rejected": 2, "cookies": 3, "retry": 3, "downloading": 4}.get(st, 0)
+            extra = it["progress"] if st == "downloading" else it["quality"] if st in ("queued", "done") else it["error"][:40]
+            line = " %s %-11s %-9s %s" % (MARK.get(st, " "), st, extra[:9] if st not in ("downloading",) else "",
+                                          (it["title"] or it["url"]))
+            if st == "downloading":
+                line = " %s %-11s %s  %s" % (MARK[st], st, it["progress"][:28], it["title"] or it["url"])
+            attr = curses.color_pair(col) if col else 0
+            if top + row == sel:
+                attr |= curses.A_REVERSE
+            win.addstr(y, 0, line[:w - 1].ljust(w - 1), attr)
+        if not items:
+            win.addstr(2, 2, "Nothing queued. Copy a video URL while this window is focused, or press a.")
+        keys = " a add  d delete  r retry  c continue with Brave's cookies  o open in Brave  p pause  x clear  q quit"
+        win.addstr(h - 2, 0, keys[:w - 1], curses.A_DIM)
+        if items and 0 <= sel < len(items):
+            it = items[sel]
+            info = it["error"] if it["status"] in ("failed", "rejected", "cookies", "retry") else it.get("file") or it["url"]
+            if it["status"] == "cookies":
+                info = "Brave is open on it: sign in / pass the check, then press c.  " + it["error"]
+            win.addstr(h - 1, 0, (message or info)[:w - 1])
+        else:
+            win.addstr(h - 1, 0, message[:w - 1])
+        win.refresh()
+        try:
+            k = win.getch()
+        except KeyboardInterrupt:
+            k = ord("q")
+        if k == -1:
+            continue
+        message = ""
+        if k in (ord("q"), 27):
+            break
+        elif k in (curses.KEY_DOWN, ord("j")):
+            sel += 1
+        elif k in (curses.KEY_UP, ord("k")):
+            sel -= 1
+        elif k == ord("a"):
+            url = prompt(win, "URL:")
+            if URL_RE.match(url):
+                message = "queued" if Q.add(url) else "already in the queue"
+            elif url:
+                message = "that is not a URL"
+        elif k == ord("w"):
+            WATCH["on"] = not WATCH["on"]
+        elif k == ord("p"):
+            PAUSED.clear() if PAUSED.is_set() else PAUSED.set()
+        elif k == ord("x"):
+            with Q.lock:
+                Q.items = [i for i in Q.items if i["status"] not in ("done", "failed", "rejected")]
+                Q.save()
+        elif items and k in (ord("d"), curses.KEY_DC):
+            it = items[sel]
+            if it["status"] == "downloading" and CURRENT["proc"]:
+                os.killpg(CURRENT["proc"].pid, signal.SIGTERM)
+            with Q.lock:
+                Q.items = [i for i in Q.items if i is not it]
+                Q.save()
+        elif items and k == ord("r"):
+            it = items[sel]
+            if it["status"] != "downloading":
+                Q.set(it, status="checking" if not it["title"] else "queued", error="")
+        elif items and k == ord("c"):
+            it = items[sel]
+            if it["status"] == "cookies":
+                if cookie_args():
+                    Q.set(it, status="retry-cookies", title=it["title"] or it["url"])
+                    message = "retrying with Brave's cookies"
+                else:
+                    message = "no Brave profile found -- start Brave once, or set PROFILE in ~/.config/ytq/config"
+            else:
+                message = "c is for entries marked 'cookies'"
+        elif items and k == ord("o"):
+            open_browser(items[sel]["url"])
+    STOP.set()
+    if CURRENT["proc"]:
+        try:
+            os.killpg(CURRENT["proc"].pid, signal.SIGTERM)
+        except OSError:
+            pass
+
+
+# --- the command line ------------------------------------------------------------
+def cmd_run():
+    """Work the queue with no window. A cookie stop waits for Enter."""
+    threading.Thread(target=checker, daemon=True).start()
+    try:
+        while True:
+            it = Q.first("queued", "retry-cookies", "retry")
+            if it:
+                print("%s  %s" % (it["status"], it["title"] or it["url"]))
+                download(it, with_cookies=(it["status"] == "retry-cookies"))
+                print("  -> %s %s" % (it["status"], it.get("file") or it["error"]))
+                continue
+            it = Q.first("cookies")
+            if it:
+                print("needs cookies: %s\n  %s" % (it["url"], it["error"]))
+                print("  Brave has been opened on it. Sign in or pass the check there, then press Enter here.")
+                try:
+                    input()
+                except EOFError:
+                    break
+                Q.set(it, status="retry-cookies", title=it["title"] or it["url"])
+                continue
+            if Q.first("checking"):
+                time.sleep(1)
+                continue
+            break
+    except KeyboardInterrupt:
+        STOP.set()
+        if CURRENT["proc"]:
+            os.killpg(CURRENT["proc"].pid, signal.SIGTERM)
+        print()
+
+
+def main(argv):
+    cmd = argv[0] if argv else "tui"
+    if cmd == "add" and argv[1:]:
+        for u in argv[1:]:
+            if not URL_RE.match(u):
+                print("not a URL: " + u); continue
+            print(("queued: " if Q.add(u) else "already queued: ") + u)
+        # check them now, so 'ytq add' alone leaves a titled queue behind
+        while Q.first("checking"):
+            check(Q.first("checking"))
+        for it in Q.items:
+            if it["url"] in argv[1:]:
+                print("  %-9s %-10s %s" % (it["status"], it["quality"], it["title"] or it["error"]))
+    elif cmd == "list":
+        for it in Q.items:
+            print("%-12s %-10s %s" % (it["status"], it["quality"], it["title"] or it["url"]))
+            if it["error"]:
+                print("             %s" % it["error"][:100])
+        if not Q.items:
+            print("the queue is empty")
+    elif cmd == "run":
+        cmd_run()
+    elif cmd == "clear":
+        n = len(Q.items)
+        Q.items = [i for i in Q.items if i["status"] not in ("done", "failed", "rejected")]
+        Q.save()
+        print("removed %d" % (n - len(Q.items)))
+    elif cmd == "clip":
+        # Queue whatever URL is on the clipboard now, without the window.
+        u = clipboard_url()
+        if not u:
+            print("the clipboard does not hold a URL"); sys.exit(1)
+        print(("queued: " if Q.add(u) else "already queued: ") + u)
+        while Q.first("checking"):
+            check(Q.first("checking"))
+    elif cmd == "tui":
+        curses.wrapper(tui)
+    else:
+        print(open(__file__).read().split("\n\n")[0].replace("#!/usr/bin/env python3\n", ""))
+        print("usage: ytq | ytq add URL... | ytq clip | ytq run | ytq list | ytq clear")
+        sys.exit(2)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
+YTQ
+    chmod 0755 /usr/local/bin/ytq
+    note "ytq -- a download queue that watches the clipboard; 'ytq add URL' from a shell"
+}
+
 stage_extras() {
     say "Stage 10: wireless, bluetooth, audio, capture, hex, graphics, disks"
     is_diskless && { warn "run stage 3 first"; return 0; }
@@ -11719,6 +12438,23 @@ stage_extras() {
     say "Audio"
     add_optional alsa-utils alsa-lib
     rc-update add alsa default >/dev/null 2>&1 || true
+    # A VM with a sound card the kernel cannot drive. Alpine's linux-virt
+    # kernel ships one sound driver, virtio_snd, and UTM's default card is
+    # intel-hda: the controller sits on the PCI bus with no driver, ALSA says
+    # "cannot find card 0", and VICE refuses to start. Nothing to install on
+    # this side -- it is a host setting, and utm/utm-vm.sh now defaults to
+    # virtio-sound-pci for new machines. Say so here, where the person is.
+    if [ ! -e /proc/asound/cards ] || ! grep -q '^ *[0-9]' /proc/asound/cards 2>/dev/null; then
+        _hda=$(grep -l '^0x0403' /sys/bus/pci/devices/*/class 2>/dev/null | head -n1)
+        if [ -n "$_hda" ] && [ ! -e "$(dirname "$_hda")/driver" ] && [ -e "/lib/modules/$(uname -r)/kernel/sound/virtio" ]; then
+            warn "a sound card is offered by the host, but this kernel has no driver for it"
+            note "  This kernel drives virtio sound only. In UTM: this VM -> Edit -> Sound ->"
+            note "  Hardware: virtio-sound-pci, then restart the VM. New VMs from utm-vm.sh get it."
+            note "  Until then a program that insists on a card can be told not to:  x64sc -sounddev dummy"
+        else
+            note "no sound card detected (a Pi's HDMI audio appears once dtparam=audio=on is honoured)"
+        fi
+    fi
     cat <<'MSG'
     HDMI audio on a Pi needs two things: the audio device enabled in firmware,
     and ALSA told to route to HDMI rather than the headphone jack.
@@ -11747,6 +12483,7 @@ MSG
     say "Video and audio downloads"
     install_ytdlp || warn "yt-dlp not installed -- re-run stage 10 to try again"
     install_ytbrave
+    install_ytq
 
     say "Network capture"
     # Wireshark's GUI is out of the question here -- Qt plus a live capture
@@ -12465,6 +13202,251 @@ p2_free_sectors() {
 # at the end of a card is normal.
 p2_growable() { [ "$(p2_free_sectors)" -gt 131072 ]; }
 
+
+# ------------------------------------- first-run dialogs, designed away ---
+#
+# docs/app-integration-plan.md is the record: every graphical program in the
+# catalogue launched once with tools/copal-app-probe.sh, and each first-run
+# wizard or welcome page written down. The ones a file can spare people are
+# spared here. Each seed is written only when the program is installed AND
+# its configuration is absent, so a person's own settings are never touched
+# and running stage 12 again is free. Mail seeds need the address from
+# answers.txt (PI_MAIL_*); without it the mail clients keep their wizards,
+# which is the right outcome for an account nobody has named.
+
+# ---------------------------------------- not packaged: built from source ---
+#
+# Two programs people ask for that Alpine carries on no port. Both were built
+# on the aarch64 bench without root (dev packages unpacked under the home
+# directory), so the quirks below are observed, not guessed.
+#
+# Endless Sky: a 350 MB source release (the game data is most of it), CMake,
+# links against SDL2, OpenAL, GLEW, libmad, libavif, FLAC, minizip. Its
+# CMakeLists turns on link-time optimisation for Release builds and that
+# fails on Alpine -- GCC's LTO cannot inline the fortified vsnprintf -- so the
+# one line is patched to FALSE. The LTO link also filled a 64 MB /tmp, which
+# is why TMPDIR points at the build directory. Two minutes on four cores.
+#
+# streamripper 1.64.6: 2008-era C. Its config.guess predates aarch64 (the
+# automake copies replace it), its bundled libmad has the same problem (the
+# system one is used), it declares libc functions K&R-style (GCC 15 needs
+# -std=gnu89) and it uses glibc's __uint32_t (defined away). After that it
+# builds and runs.
+build_endless_sky() {
+    say "Endless Sky -- built from source"
+    have_space_mb 2500 "the Endless Sky build (350 MB source, ~1 GB during the build)" \
+        || { note "Skipping Endless Sky."; return 0; }
+    confirm "Build Endless Sky from source now (350 MB download, a few minutes)?" || { note "Not built."; return 0; }
+    add_optional build-base cmake ninja pkgconf sdl2-dev openal-soft-dev glew-dev libmad-dev \
+        libavif-dev flac-dev minizip-dev libpng-dev libjpeg-turbo-dev zlib-dev util-linux-dev mesa-dev
+    apk info -e sdl2-dev >/dev/null 2>&1 || { warn "development files missing -- cannot build Endless Sky"; return 1; }
+    SRCDIR=/usr/local/src; mkdir -p "$SRCDIR"
+    _es_ver=$(curl -fsSL --max-time 30 https://api.github.com/repos/endless-sky/endless-sky/releases/latest 2>/dev/null \
+        | sed -n 's/.*"tag_name": *"v\([0-9.]*\)".*/\1/p' | head -n1); _es_ver="${_es_ver:-0.11.2}"
+    _es_tar="$SRCDIR/endless-sky-$_es_ver.tar.gz"
+    [ -f "$_es_tar" ] || curl -fsSL --retry 3 -o "$_es_tar" "https://github.com/endless-sky/endless-sky/archive/refs/tags/v$_es_ver.tar.gz" \
+        || { rm -f "$_es_tar"; warn "could not download Endless Sky $_es_ver"; return 1; }
+    rm -rf "$SRCDIR/endless-sky-build"; mkdir -p "$SRCDIR/endless-sky-build/tmp"
+    tar -xzf "$_es_tar" -C "$SRCDIR/endless-sky-build" || { warn "the archive did not unpack"; return 1; }
+    _es_src="$SRCDIR/endless-sky-build/endless-sky-$_es_ver"
+    sed -i 's/^set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)/set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE FALSE)  # copal: LTO fails on Alpine/' "$_es_src/CMakeLists.txt"
+    say "Compiling (log: /var/log/endless-sky-build.log)"
+    if ! TMPDIR="$SRCDIR/endless-sky-build/tmp" cmake -S "$_es_src" -B "$SRCDIR/endless-sky-build/b" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DES_USE_VCPKG=OFF \
+            -DES_USE_SYSTEM_LIBRARIES=ON -DBUILD_TESTING=OFF > /var/log/endless-sky-build.log 2>&1 \
+       || ! TMPDIR="$SRCDIR/endless-sky-build/tmp" ninja -C "$SRCDIR/endless-sky-build/b" -j "$(nproc)" >> /var/log/endless-sky-build.log 2>&1 \
+       || ! ninja -C "$SRCDIR/endless-sky-build/b" install >> /var/log/endless-sky-build.log 2>&1; then
+        warn "the build failed -- the last lines of /var/log/endless-sky-build.log:"
+        tail -n 15 /var/log/endless-sky-build.log | sed 's/^/    /'; return 1
+    fi
+    rm -rf "$SRCDIR/endless-sky-build"
+    note "installed: /usr/local/bin/endless-sky (data in /usr/local/share/games/endless-sky)"
+}
+
+build_streamripper() {
+    say "streamripper -- built from source"
+    confirm "Build streamripper (records internet radio streams) from source?" || { note "Not built."; return 0; }
+    add_optional build-base automake glib-dev libvorbis-dev libogg-dev libmad-dev
+    apk info -e libmad-dev >/dev/null 2>&1 || { warn "development files missing -- cannot build streamripper"; return 1; }
+    SRCDIR=/usr/local/src; mkdir -p "$SRCDIR"
+    _sr_tar="$SRCDIR/streamripper-1.64.6.tar.gz"
+    [ -f "$_sr_tar" ] || curl -fsSL --retry 3 -o "$_sr_tar" \
+        "https://sourceforge.net/projects/streamripper/files/streamripper%20(current)/1.64.6/streamripper-1.64.6.tar.gz/download" \
+        || { rm -f "$_sr_tar"; warn "could not download streamripper"; return 1; }
+    echo "c1d75f2e9c7b38fd4695be66eff4533395248132f3cc61f375196403c4d8de42  $_sr_tar" | sha256sum -c - >/dev/null 2>&1 \
+        || { warn "checksum mismatch on $_sr_tar -- not building it"; rm -f "$_sr_tar"; return 1; }
+    rm -rf "$SRCDIR/streamripper-build"; mkdir -p "$SRCDIR/streamripper-build"
+    tar -xzf "$_sr_tar" -C "$SRCDIR/streamripper-build" || { warn "the archive did not unpack"; return 1; }
+    _sr_src="$SRCDIR/streamripper-build/streamripper-1.64.6"
+    cp /usr/share/automake-*/config.guess /usr/share/automake-*/config.sub "$_sr_src/" 2>/dev/null || true
+    say "Compiling (log: /var/log/streamripper-build.log)"
+    if ! (cd "$_sr_src" && ./configure --prefix=/usr/local \
+            && make -j "$(nproc)" CFLAGS="-O2 -std=gnu89 -include stdint.h -D__uint32_t=uint32_t -D__uint16_t=uint16_t -D__uint8_t=uint8_t -Wno-implicit-function-declaration -Wno-int-conversion" \
+            && make install) > /var/log/streamripper-build.log 2>&1; then
+        warn "the build failed -- the last lines of /var/log/streamripper-build.log:"
+        tail -n 15 /var/log/streamripper-build.log | sed 's/^/    /'; return 1
+    fi
+    rm -rf "$SRCDIR/streamripper-build"
+    note "installed: /usr/local/bin/streamripper   (streamripper URL -d ~/Music/rips)"
+}
+
+offer_source_builds() {
+    say "Not packaged by Alpine on any port, but buildable"
+    build_endless_sky
+    build_streamripper
+}
+
+seed_home_if_absent() {  # <relative path> <source file>  -- root and the user
+    ensure_user_home || true
+    for _h in /root "$(user_home)"; do
+        [ -n "$_h" ] && [ -d "$_h" ] || continue
+        [ -e "$_h/$1" ] && continue
+        mkdir -p "$_h/$(dirname "$1")"
+        cp "$2" "$_h/$1"
+        _own=$(stat -c '%u:%g' "$_h" 2>/dev/null) && chown -R "$_own" "$_h/$(dirname "$1")" 2>/dev/null || true
+        note "$_h/$1"
+    done
+}
+
+seed_app_configs() {
+    say "First-run dialogs: seeding what a file can answer"
+    _t=$(mktemp /tmp/copal-seed.XXXXXX)
+
+    # Firefox ESR: no welcome tab, no "make me the default", no telemetry.
+    # A policies file in the distribution directory; read on every start.
+    if [ -d /usr/lib/firefox-esr ] && [ ! -f /usr/lib/firefox-esr/distribution/policies.json ]; then
+        mkdir -p /usr/lib/firefox-esr/distribution
+        cat > /usr/lib/firefox-esr/distribution/policies.json <<'POL'
+{ "policies": {
+    "OverrideFirstRunPage": "",
+    "OverridePostUpdatePage": "",
+    "DisableTelemetry": true,
+    "DontCheckDefaultBrowser": true,
+    "NoDefaultBookmarks": true } }
+POL
+        note "/usr/lib/firefox-esr/distribution/policies.json"
+    fi
+
+    # qBittorrent: the "Legal Notice" box on first start (verified), and no
+    # vanishing into the tray: on i3 the bar has no tray, so a window closed
+    # "to the tray" is simply gone until the process is killed.
+    if command -v qbittorrent >/dev/null 2>&1; then
+        printf '[LegalNotice]\nAccepted=true\n\n[Preferences]\nGeneral\\CloseToTray=false\nGeneral\\MinimizeToTray=false\nGeneral\\SystrayEnabled=false\n' > "$_t"
+        seed_home_if_absent .config/qBittorrent/qBittorrent.conf "$_t"
+    fi
+
+    # Zim: without a notebook the first window is "Add Notebook". One in
+    # ~/Notebooks/Notes, registered as the default, and it opens on a page.
+    if command -v zim >/dev/null 2>&1; then
+        printf '[NotebookList]\nDefault=~/Notebooks/Notes\n\n[Notebook 1]\nuri=~/Notebooks/Notes\nname=Notes\n' > "$_t"
+        seed_home_if_absent .config/zim/notebooks.list "$_t"
+        printf '[Notebook]\nversion=0.4\nname=Notes\nhome=Home\n' > "$_t"
+        seed_home_if_absent Notebooks/Notes/notebook.zim "$_t"
+    fi
+
+    # Kate: its welcome view in every new window. Only when copal has not
+    # already written a katerc (stage 7 does, with the LSP client); then the
+    # line is added there instead.
+    if command -v kate >/dev/null 2>&1; then
+        printf '[General]\nShow welcome view for new window=false\n' > "$_t"
+        seed_home_if_absent .config/katerc "$_t"
+    fi
+
+    # Audacity 3.7 is NOT seeded, deliberately: its "Welcome to Audacity!"
+    # dialog ignores /GUI/ShowSplashScreen (tested -- the key is dropped on
+    # the next save) and the preference it does honour could not be found in
+    # the binaries. Its "New Plugins" dialog needs nothing: it is the first
+    # scan, and the second start does not show it.
+
+    if [ -n "${PI_MAIL_ADDRESS:-}" ]; then
+        _mname="${PI_MAIL_NAME:-${PI_GIT_NAME:-$PI_MAIL_ADDRESS}}"
+        _imap="${PI_MAIL_IMAP:-imap.${PI_MAIL_ADDRESS#*@}}"
+        _smtp="${PI_MAIL_SMTP:-smtp.${PI_MAIL_ADDRESS#*@}}"
+
+        # Thunderbird: an account is nothing but prefs. profiles.ini names a
+        # profile, user.js inside it declares IMAP (993, TLS), SMTP (465, TLS)
+        # and a Local Folders store; the first start opens on the Inbox and
+        # asks for the password once. The numeric codes are Thunderbird's:
+        # socketType 3 = SSL/TLS, authMethod 3 = normal password.
+        if command -v thunderbird >/dev/null 2>&1; then
+            printf '[General]\nStartWithLastProfile=1\nVersion=2\n\n[Profile0]\nName=default\nIsRelative=1\nPath=copal.default\nDefault=1\n' > "$_t"
+            seed_home_if_absent .thunderbird/profiles.ini "$_t"
+            cat > "$_t" <<TB
+user_pref("mail.accountmanager.accounts", "account1,account2");
+user_pref("mail.accountmanager.defaultaccount", "account1");
+user_pref("mail.accountmanager.localfoldersserver", "server2");
+user_pref("mail.account.account1.identities", "id1");
+user_pref("mail.account.account1.server", "server1");
+user_pref("mail.account.account2.server", "server2");
+user_pref("mail.server.server1.type", "imap");
+user_pref("mail.server.server1.hostname", "$_imap");
+user_pref("mail.server.server1.port", 993);
+user_pref("mail.server.server1.socketType", 3);
+user_pref("mail.server.server1.authMethod", 3);
+user_pref("mail.server.server1.userName", "$PI_MAIL_ADDRESS");
+user_pref("mail.server.server1.name", "$PI_MAIL_ADDRESS");
+user_pref("mail.server.server2.type", "none");
+user_pref("mail.server.server2.hostname", "Local Folders");
+user_pref("mail.server.server2.name", "Local Folders");
+user_pref("mail.identity.id1.fullName", "$_mname");
+user_pref("mail.identity.id1.useremail", "$PI_MAIL_ADDRESS");
+user_pref("mail.identity.id1.smtpServer", "smtp1");
+user_pref("mail.smtpservers", "smtp1");
+user_pref("mail.smtp.defaultserver", "smtp1");
+user_pref("mail.smtpserver.smtp1.hostname", "$_smtp");
+user_pref("mail.smtpserver.smtp1.port", 465);
+user_pref("mail.smtpserver.smtp1.try_ssl", 3);
+user_pref("mail.smtpserver.smtp1.authMethod", 3);
+user_pref("mail.smtpserver.smtp1.username", "$PI_MAIL_ADDRESS");
+user_pref("mail.shell.checkDefaultClient", false);
+user_pref("app.donation.eoy.version.viewed", 99);
+TB
+            seed_home_if_absent .thunderbird/copal.default/user.js "$_t"
+        fi
+
+        # Claws Mail skips its wizard when accountrc exists. protocol 3 is
+        # IMAP4, ssl_* 1 is TLS on connect, and the IMAP folder tree is
+        # declared in folderlist.xml or the account has nowhere to appear.
+        if command -v claws-mail >/dev/null 2>&1; then
+            cat > "$_t" <<CLAWS
+[Account: 1]
+account_name=$PI_MAIL_ADDRESS
+is_default=1
+name=$_mname
+address=$PI_MAIL_ADDRESS
+protocol=3
+receive_server=$_imap
+smtp_server=$_smtp
+user_id=$PI_MAIL_ADDRESS
+password=
+use_mail_command=0
+ssl_imap=1
+ssl_smtp=1
+use_smtp_auth=1
+smtp_user_id=$PI_MAIL_ADDRESS
+set_imapport=1
+imap_port=993
+set_smtpport=1
+smtp_port=465
+imap_directory=
+imap_subsonly=1
+CLAWS
+            seed_home_if_absent .claws-mail/accountrc "$_t"
+            cat > "$_t" <<FOLD
+<?xml version="1.0" encoding="UTF-8"?>
+<folderlist>
+  <folder type="imap" name="$PI_MAIL_ADDRESS" path="imapcache/$_imap/$PI_MAIL_ADDRESS" account_id="1" />
+  <folder type="mh" name="Mail" path="Mail" />
+</folderlist>
+FOLD
+            seed_home_if_absent .claws-mail/folderlist.xml "$_t"
+        fi
+    else
+        note "no mail address in answers.txt -- Thunderbird and Claws Mail keep their account wizards"
+    fi
+    rm -f "$_t"
+}
+
 stage_apps() {
     say "Stage 12: applications"
 
@@ -12588,6 +13570,8 @@ MSG
     # if it is already there, which makes calling them twice free and safe.
     dev_write_kate_config
     dev_write_emacs_config
+    seed_app_configs
+    offer_source_builds
 
     say "Done"
     note "Open the menu (Super+z) -- everything installed now appears in it,"
@@ -13189,6 +14173,647 @@ SLICER
     note "Copy the .gcode to the printer's SD card, or feed it to OctoPrint."
 }
 
+# ------------------------------------------------ KiCad: making it usable ---
+#
+# Alpine's kicad package is the editors and nothing else. What a fresh install
+# is missing, found by looking rather than by reading (docs/kicad-lab-report.md):
+#
+#   - project templates and drawing sheets. Upstream keeps them in a separate
+#     kicad-templates repository that Alpine does not package at all, so "New
+#     Project from Template" offers one entry and the Drawing Sheet Editor has
+#     no ISO 5457 / ANSI sheets to start from;
+#   - demos. kicad-demos is a package, just not a dependency;
+#   - the design-block library table. KiCad 10 points every new user's global
+#     table at /usr/share/kicad/template/design-block-lib-table, and Alpine's
+#     kicad-library (9.0.7, a release behind) ships no such file;
+#   - plugins. The Plugin and Content Manager is a dialog and only a dialog --
+#     no kicad-cli subcommand -- so an unattended install cannot use it. Hence
+#     kicad-addon, which does what the dialog does and records it where the
+#     dialog looks;
+#   - the first-run "configure global library tables" dialog, which seeded
+#     tables make unnecessary.
+#
+# What is NOT wrong, although it looks it: kicad-library 9.0.7 writes its paths
+# as ${KICAD9_SYMBOL_DIR} and the program is KiCad 10, which defines KICAD10_*.
+# Traced with strace and a STEP export: KiCad 10 resolves the KICAD9_* names
+# itself, for symbols, footprints and 3D models alike. Leave the tables alone.
+kicad_configure() {
+    command -v kicad-cli >/dev/null 2>&1 || return 0
+    say "Configuring KiCad"
+    _kver=$(kicad-cli version 2>/dev/null | grep -o '[0-9]*\.[0-9]*' | head -1)
+    [ -n "$_kver" ] || { warn "kicad-cli did not report a version -- skipping"; return 0; }
+    _tdir=/usr/share/kicad/template
+    mkdir -p "$_tdir"
+
+    # An empty table is a valid table; a missing file is an error on startup.
+    # Upstream's design-block library is still a tree of .gitkeep files, so
+    # empty is also accurate.
+    if [ ! -f "$_tdir/design-block-lib-table" ]; then
+        printf '(design_block_lib_table\n  (version 7)\n)\n' > "$_tdir/design-block-lib-table"
+        note "$_tdir/design-block-lib-table (empty)"
+    fi
+
+    # Project templates and drawing sheets, from the newest kicad-templates
+    # release for this KiCad's major.minor. Installed flat into the stock
+    # template directory, exactly as upstream's own CMake does, so they show
+    # under "System Templates" and the sheet editor's file dialog opens on them.
+    if [ ! -d "$_tdir/Arduino_Uno" ]; then
+        _tags="https://gitlab.com/api/v4/projects/kicad%2Flibraries%2Fkicad-templates/repository/tags?per_page=100"
+        _tver=$(curl -fsSL --max-time 30 "$_tags" 2>/dev/null | python3 -c '
+import json, sys
+want = sys.argv[1] + "."
+tags = [t["name"] for t in json.load(sys.stdin) if t["name"].startswith(want) and "-" not in t["name"]]
+print(sorted(tags, key=lambda s: [int(x) for x in s.split(".")])[-1] if tags else "")' "$_kver" 2>/dev/null)
+        # The API rate-limits and goes away; the release that was current when
+        # this was written does not. Only for the series it belongs to.
+        [ -z "$_tver" ] && [ "$_kver" = 10.0 ] && _tver=10.0.6
+        if [ -n "$_tver" ]; then
+            # Not /tmp: that is a 64 MB tmpfs on a Copal machine, and the
+            # unpacked release is a fair part of it.
+            mkdir -p /usr/local/src
+            _w=$(mktemp -d /usr/local/src/kicad-templates.XXXXXX)
+            _url="https://gitlab.com/kicad/libraries/kicad-templates/-/archive/$_tver/kicad-templates-$_tver.tar.gz"
+            if curl -fsSL --retry 3 --max-time 300 -o "$_w/t.tgz" "$_url" && tar -xzf "$_w/t.tgz" -C "$_w"; then
+                cp -r "$_w/kicad-templates-$_tver/Projects/." "$_tdir/"
+                find "$_w/kicad-templates-$_tver/Worksheets" -name '*.kicad_wks' -exec cp {} "$_tdir/" \;
+                note "kicad-templates $_tver: $(find "$_tdir" -mindepth 1 -maxdepth 1 -type d | wc -l) project templates, $(find "$_tdir" -maxdepth 1 -name '*.kicad_wks' | wc -l) drawing sheets"
+            else
+                warn "could not fetch kicad-templates $_tver -- templates skipped"
+            fi
+            rm -rf "$_w"
+        else
+            warn "no kicad-templates release found for KiCad $_kver -- templates skipped"
+        fi
+    fi
+
+    # Global library tables for accounts that have never opened KiCad: the
+    # file the first-run dialog writes, byte for byte, so the dialog does not
+    # appear. Never over an existing one -- that is where a person's own
+    # libraries are recorded.
+    ensure_user_home || true
+    for _h in /root "$(user_home)"; do
+        [ -n "$_h" ] && [ -d "$_h" ] || continue
+        _c="$_h/.config/kicad/$_kver"
+        mkdir -p "$_c"
+        for _k in sym fp; do
+            [ -f "$_c/$_k-lib-table" ] && continue
+            printf '(%s_lib_table\n\t(version 7)\n\t(lib (name "KiCad") (type "Table") (uri "%s/%s-lib-table") (options "") (descr "KiCad Default Libraries"))\n)\n' \
+                "$_k" "$_tdir" "$_k" > "$_c/$_k-lib-table"
+        done
+        [ -f "$_c/design-block-lib-table" ] \
+            || printf '(design_block_lib_table\n\t(version 7)\n)\n' > "$_c/design-block-lib-table"
+        _own=$(stat -c '%u:%g' "$_h" 2>/dev/null) && chown -R "$_own" "$_h/.config/kicad" 2>/dev/null || true
+    done
+
+    write_kicad_addon
+    write_kicad_guide
+    # Plugins live in the user's home, so they are installed as the user, on
+    # the user's PATH. Java is for Freerouting, the autorouter: the JRE with a
+    # display, not the headless one.
+    add_optional openjdk21-jre
+    if [ -n "${PI_USER:-}" ] && su - "$PI_USER" -c 'id' >/dev/null 2>&1; then
+        say "Installing the plugin set for $PI_USER"
+        su - "$PI_USER" -c 'kicad-addon api on && kicad-addon defaults' \
+            || warn "plugin install incomplete -- as $PI_USER, run: kicad-addon defaults"
+    fi
+    note "kicad-addon list            what else the plugin index offers"
+    note "guide                       the KiCad page: templates, sheets, plugins"
+}
+
+write_kicad_addon() {
+    cat > /usr/local/bin/kicad-addon <<'KICAD_ADDON'
+#!/usr/bin/env python3
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+#
+# kicad-addon -- install KiCad plugins, libraries and colour themes from the
+# official Plugin and Content Manager index, without opening KiCad.
+#
+#   kicad-addon list                 what the index offers this KiCad version
+#   kicad-addon search WORD          filter that list
+#   kicad-addon install ID...        by identifier, or a unique name fragment
+#   kicad-addon remove ID...
+#   kicad-addon installed            what is recorded as installed
+#   kicad-addon defaults             the Copal set: BOM, autorouter, fab export
+#   kicad-addon api on|off           the IPC API server newer plugins need
+#
+# KiCad's own Plugin and Content Manager (PCM) is a dialog, and only a dialog:
+# there is no kicad-cli subcommand for it. The installer needs the same result
+# from a script, so this does what the dialog does, in the same places, and
+# records what it did in the same file -- installed_packages.json -- so the
+# dialog shows these packages as installed and can update or remove them later.
+#
+# What the dialog does, for reference (it is not documented outside the source):
+#   - reads https://repository.kicad.org/repository.json, follows its
+#     "packages" URL to the index, keeps versions whose kicad_version range
+#     covers the running major.minor and whose platforms include this one;
+#   - downloads the version's zip, checks its sha256;
+#   - unpacks each top-level directory of the zip (plugins/, resources/,
+#     colors/, symbols/, footprints/, 3dmodels/) into
+#     ~/.local/share/kicad/<ver>/3rdparty/<that dir>/<identifier with every
+#     '.' turned into '_'>/ -- the renaming matters: KiCad imports each plugin
+#     directory by name, and "com.github.x" is not an importable module name;
+#   - for a library package, adds rows named PCM_<file> to the global symbol
+#     and footprint tables, using the ${KICAD<n>_3RD_PARTY} variable;
+#   - appends an entry to ~/.config/kicad/<ver>/installed_packages.json whose
+#     repository_id is the first 16 hex digits of sha256(repository URL) --
+#     the same string KiCad uses to name its cache directory for the repo.
+#
+# Run this as the user who will run KiCad. Everything lands in that user's
+# home; nothing here needs root.
+import hashlib, io, json, os, re, subprocess, sys, time, urllib.request, zipfile
+
+REPO_URL = "https://repository.kicad.org/repository.json"
+# What the Copal workshop installs by default: an interactive BOM for hand
+# assembly, the Freerouting autorouter, one-click fab output for JLCPCB, layout
+# replication for multi-channel boards, a printable board PDF, a label maker,
+# and two colour themes -- one dark, one for printing.
+DEFAULTS = [
+    "org.openscopeproject.InteractiveHtmlBom",
+    "app.freerouting.kicad-plugin",
+    "com.github.bennymeg.JLC-Plugin-for-KiCad",
+    "com.github.MitjaNemec.ReplicateLayout",
+    "com.gitlab.dennevi.Board2Pdf",
+    "com.github.gregdavill.KiBuzzard",
+    "com.github.pointhi.kicad-color-schemes.nord",
+    "com.github.pointhi.kicad-color-schemes.black-white",
+]
+# Top-level zip directories PCM knows how to place. Anything else is ignored.
+CONTENT_DIRS = ("plugins", "resources", "colors", "symbols", "footprints", "3dmodels")
+
+HOME = os.path.expanduser("~")
+CONFIG = os.environ.get("XDG_CONFIG_HOME") or os.path.join(HOME, ".config")
+DATA = os.environ.get("XDG_DATA_HOME") or os.path.join(HOME, ".local", "share")
+CACHE = os.environ.get("XDG_CACHE_HOME") or os.path.join(HOME, ".cache")
+
+
+def pkg_dir(ident):
+    """The directory PCM gives a package: its identifier, dots to underscores."""
+    return ident.replace(".", "_")
+
+
+def die(msg):
+    print("kicad-addon: " + msg, file=sys.stderr)
+    sys.exit(1)
+
+
+def kicad_version():
+    try:
+        out = subprocess.run(["kicad-cli", "version"], capture_output=True, text=True, timeout=60).stdout
+    except (OSError, subprocess.SubprocessError):
+        die("kicad-cli is not installed (apk add kicad)")
+    m = re.search(r"(\d+)\.(\d+)", out)
+    if not m:
+        die("cannot read the KiCad version from kicad-cli")
+    return int(m.group(1)), int(m.group(2))
+
+
+MAJOR, MINOR = kicad_version()
+VER = "%d.%d" % (MAJOR, MINOR)
+CONF_DIR = os.path.join(CONFIG, "kicad", VER)
+THIRD = os.path.join(DATA, "kicad", VER, "3rdparty")
+INSTALLED = os.path.join(CONF_DIR, "installed_packages.json")
+VAR_3RD = "${KICAD%d_3RD_PARTY}" % MAJOR
+
+
+def fetch(url):
+    req = urllib.request.Request(url, headers={"User-Agent": "kicad-addon (Copal Linux)"})
+    with urllib.request.urlopen(req, timeout=120) as r:
+        return r.read()
+
+
+def index(refresh=False):
+    """The package index, cached for a day: the dialog fetches it on every open,
+    a script that runs a dozen times in a row should not."""
+    os.makedirs(os.path.join(CACHE, "kicad-addon"), exist_ok=True)
+    cached = os.path.join(CACHE, "kicad-addon", "packages.json")
+    if not refresh and os.path.exists(cached) and time.time() - os.path.getmtime(cached) < 86400:
+        with open(cached) as f:
+            return json.load(f)
+    try:
+        repo = json.loads(fetch(REPO_URL))
+        raw = fetch(repo["packages"]["url"])
+    except Exception as e:
+        if os.path.exists(cached):
+            print("kicad-addon: index fetch failed (%s), using the cached copy" % e, file=sys.stderr)
+            with open(cached) as f:
+                return json.load(f)
+        die("cannot fetch the package index: %s" % e)
+    want = repo["packages"].get("sha256")
+    if want and hashlib.sha256(raw).hexdigest() != want:
+        die("package index checksum mismatch -- not using it")
+    data = json.loads(raw)
+    data["_repository"] = {"url": REPO_URL, "name": repo.get("name", "KiCad official repository")}
+    with open(cached, "w") as f:
+        json.dump(data, f)
+    return data
+
+
+def _mm(s, default_minor):
+    parts = str(s).split(".")
+    major = int(parts[0]) if parts and parts[0].isdigit() else 0
+    minor = int(parts[1]) if len(parts) > 1 and parts[1].isdigit() else default_minor
+    return (major, minor)
+
+
+def compatible(v):
+    lo = _mm(v.get("kicad_version", "0"), 0)
+    hi = _mm(v.get("kicad_version_max", "999"), 999)
+    plats = v.get("platforms")
+    return lo <= (MAJOR, MINOR) <= hi and (not plats or "linux" in plats)
+
+
+def vkey(v):
+    parts = re.findall(r"\d+|[A-Za-z]+", v.get("version", ""))
+    return (v.get("version_epoch", 0), tuple((0, int(p)) if p.isdigit() else (1, p) for p in parts))
+
+
+def best_version(pkg, testing=False):
+    ok = [v for v in pkg["versions"] if compatible(v) and (testing or v.get("status") == "stable")]
+    return max(ok, key=vkey) if ok else None
+
+
+def load_installed():
+    try:
+        with open(INSTALLED) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {"packages": []}
+
+
+def save_installed(d):
+    os.makedirs(CONF_DIR, exist_ok=True)
+    tmp = INSTALLED + ".tmp"
+    with open(tmp, "w") as f:
+        json.dump(d, f, indent=4)
+    os.replace(tmp, INSTALLED)
+
+
+def resolve(pkgs, word):
+    """An identifier, or a fragment that matches exactly one name/identifier."""
+    for p in pkgs:
+        if p["identifier"] == word:
+            return p
+    w = word.lower()
+    hits = [p for p in pkgs if w in p["identifier"].lower() or w in p["name"].lower()]
+    if len(hits) == 1:
+        return hits[0]
+    if not hits:
+        die("no package matches '%s' (try: kicad-addon search %s)" % (word, word))
+    die("'%s' is ambiguous: %s" % (word, ", ".join(p["identifier"] for p in hits[:8])))
+
+
+# --- the global library tables -------------------------------------------
+# KiCad's tables are s-expressions. Rows are one line each in every file KiCad
+# writes, so the edit is textual: insert before the final ')' and delete by
+# line. Parsing the grammar properly would be more code for the same result.
+def table_path(kind):
+    return os.path.join(CONF_DIR, kind + "-lib-table")
+
+
+def table_read(kind):
+    p = table_path(kind)
+    if os.path.exists(p):
+        with open(p) as f:
+            return f.read()
+    # The table KiCad's first-run dialog writes: one row that pulls in the
+    # stock table. Writing it here also means that dialog never appears.
+    stock = "/usr/share/kicad/template/%s-lib-table" % kind
+    tag = {"sym": "sym_lib_table", "fp": "fp_lib_table"}[kind]
+    return ('(%s\n\t(version 7)\n\t(lib (name "KiCad") (type "Table") (uri "%s") '
+            '(options "") (descr "KiCad Default Libraries"))\n)\n' % (tag, stock))
+
+
+def table_write(kind, text):
+    os.makedirs(CONF_DIR, exist_ok=True)
+    with open(table_path(kind), "w") as f:
+        f.write(text)
+
+
+def table_add(kind, rows):
+    text = table_read(kind)
+    added = 0
+    for nick, uri, descr in rows:
+        if '(name "%s")' % nick in text:
+            continue
+        row = '\t(lib (name "%s") (type "KiCad") (uri "%s") (options "") (descr "%s"))\n' % (nick, uri, descr)
+        i = text.rstrip().rfind(")")
+        text = text[:i] + row + text[i:]
+        added += 1
+    if added:
+        table_write(kind, text)
+    return added
+
+
+def table_remove(kind, ident):
+    p = table_path(kind)
+    if not os.path.exists(p):
+        return 0
+    with open(p) as f:
+        lines = f.readlines()
+    keep = [l for l in lines if not ("/%s/" % pkg_dir(ident) in l and '(name "PCM_' in l)]
+    if len(keep) != len(lines):
+        table_write(kind, "".join(keep))
+    return len(lines) - len(keep)
+
+
+def register_libraries(pkg):
+    """What the PCM dialog does after unpacking a 'library' package."""
+    ident = pkg["identifier"]
+    descr = pkg["name"].replace('"', "'")
+    syms, fps = [], []
+    for root, dirs, files in os.walk(os.path.join(THIRD, "symbols", pkg_dir(ident))):
+        for fn in sorted(files):
+            if fn.endswith(".kicad_sym"):
+                rel = os.path.relpath(os.path.join(root, fn), THIRD).replace(os.sep, "/")
+                syms.append(("PCM_" + fn[:-len(".kicad_sym")], VAR_3RD + "/" + rel, descr))
+    for root, dirs, files in os.walk(os.path.join(THIRD, "footprints", pkg_dir(ident))):
+        for d in sorted(dirs):
+            if d.endswith(".pretty"):
+                rel = os.path.relpath(os.path.join(root, d), THIRD).replace(os.sep, "/")
+                fps.append(("PCM_" + d[:-len(".pretty")], VAR_3RD + "/" + rel, descr))
+    n = table_add("sym", syms) + table_add("fp", fps)
+    if n:
+        print("  added %d librar%s to the global tables (PCM_*)" % (n, "y" if n == 1 else "ies"))
+
+
+# --- install / remove ------------------------------------------------------
+def unpack(blob, ident):
+    z = zipfile.ZipFile(io.BytesIO(blob))
+    placed = set()
+    for m in z.infolist():
+        parts = [p for p in m.filename.split("/") if p]
+        if not parts or ".." in parts or m.filename.startswith("/"):
+            continue
+        top = parts[0]
+        if top not in CONTENT_DIRS:
+            continue                      # metadata.json and anything unexpected
+        dest = os.path.join(THIRD, top, pkg_dir(ident), *parts[1:])
+        if m.is_dir() or m.filename.endswith("/"):
+            os.makedirs(dest, exist_ok=True)
+            continue
+        os.makedirs(os.path.dirname(dest), exist_ok=True)
+        with z.open(m) as src, open(dest, "wb") as out:
+            out.write(src.read())
+        placed.add(top)
+    return placed
+
+
+def remove_files(ident):
+    import shutil
+    gone = []
+    for d in CONTENT_DIRS:
+        p = os.path.join(THIRD, d, pkg_dir(ident))
+        if os.path.isdir(p):
+            shutil.rmtree(p)
+            gone.append(d)
+    return gone
+
+
+def install(words, testing=False, refresh=False):
+    idx = index(refresh)
+    pkgs = idx["packages"]
+    repo = idx.get("_repository", {"url": REPO_URL, "name": "KiCad official repository"})
+    repo_id = hashlib.sha256(repo["url"].encode()).hexdigest()[:16]
+    inst = load_installed()
+    have = {e["package"]["identifier"]: e for e in inst["packages"]}
+    failed = 0
+    for w in words:
+        pkg = resolve(pkgs, w)
+        ident = pkg["identifier"]
+        v = best_version(pkg, testing)
+        if not v:
+            print("%s: no %sversion for KiCad %s -- skipped" % (ident, "" if testing else "stable ", VER))
+            failed += 1
+            continue
+        if ident in have and have[ident].get("current_version") == v["version"]:
+            print("%s %s is already installed" % (ident, v["version"]))
+            continue
+        print("%s %s (%s)" % (pkg["name"], v["version"], ident))
+        try:
+            blob = fetch(v["download_url"])
+        except Exception as e:
+            print("  download failed: %s" % e)
+            failed += 1
+            continue
+        want = v.get("download_sha256")
+        if want:
+            got = hashlib.sha256(blob).hexdigest()
+            if got != want:
+                print("  checksum mismatch -- refusing to unpack it")
+                failed += 1
+                continue
+        else:
+            print("  (the index carries no checksum for this version)")
+        if ident in have:                 # an upgrade: clear the old files first
+            remove_files(ident)
+            for k in ("sym", "fp"):
+                table_remove(k, ident)
+        placed = unpack(blob, ident)
+        print("  unpacked %s into %s/{%s}/%s" % (
+            "%.1f MB" % (len(blob) / 1e6), THIRD.replace(HOME, "~"), ",".join(sorted(placed)), pkg_dir(ident)))
+        if pkg["type"] == "library":
+            register_libraries(pkg)
+        entry = {
+            "package": pkg,
+            "current_version": v["version"],
+            "install_timestamp": int(time.time()),
+            "pinned": False,
+            "repository_id": repo_id,
+            "repository_name": repo["name"],
+        }
+        inst["packages"] = [e for e in inst["packages"] if e["package"]["identifier"] != ident] + [entry]
+        have[ident] = entry
+        save_installed(inst)
+    return failed == 0
+
+
+def remove(words):
+    inst = load_installed()
+    for w in words:
+        hits = [e for e in inst["packages"] if e["package"]["identifier"] == w
+                or w.lower() in e["package"]["name"].lower()]
+        if len(hits) != 1:
+            print("%s: %s" % (w, "not installed" if not hits else "ambiguous"))
+            continue
+        ident = hits[0]["package"]["identifier"]
+        gone = remove_files(ident)
+        n = table_remove("sym", ident) + table_remove("fp", ident)
+        inst["packages"] = [e for e in inst["packages"] if e is not hits[0]]
+        save_installed(inst)
+        print("removed %s (%s%s)" % (ident, ", ".join(gone) or "no files",
+                                     ", %d library rows" % n if n else ""))
+
+
+def listing(word=None, refresh=False):
+    pkgs = index(refresh)["packages"]
+    have = {e["package"]["identifier"]: e["current_version"] for e in load_installed()["packages"]}
+    w = (word or "").lower()
+    rows = []
+    for p in sorted(pkgs, key=lambda p: (p["type"], p["name"].lower())):
+        v = best_version(p)
+        if not v:
+            continue
+        blob = " ".join([p["identifier"], p["name"], p.get("description", "")]).lower()
+        if w and w not in blob:
+            continue
+        mark = "*" if p["identifier"] in have else " "
+        rows.append("%s %-10s %-48s %-9s %s" % (mark, p["type"], p["identifier"][:48], v["version"][:9], p["name"][:38]))
+    print("\n".join(rows) if rows else "nothing matches")
+    if rows:
+        print("\n%d packages for KiCad %s; * = installed. Install by identifier or name fragment." % (len(rows), VER))
+
+
+def installed():
+    ps = load_installed()["packages"]
+    if not ps:
+        print("nothing installed by PCM or kicad-addon")
+    for e in ps:
+        print("%-10s %-48s %s" % (e["package"]["type"], e["package"]["identifier"], e.get("current_version", "?")))
+
+
+def api(state):
+    """The IPC API server is what plugins written for KiCad 9 and later talk
+    to; it is off by default. kicad-cli creates the settings file when run, so
+    the toggle works before KiCad has ever been opened."""
+    p = os.path.join(CONF_DIR, "kicad_common.json")
+    if not os.path.exists(p):
+        subprocess.run(["kicad-cli", "version"], capture_output=True, timeout=60)
+    if not os.path.exists(p):
+        die("kicad_common.json did not appear at %s" % p)
+    with open(p) as f:
+        d = json.load(f)
+    d.setdefault("api", {})["enable_server"] = (state == "on")
+    d["api"].setdefault("interpreter_path", "/usr/bin/python3")
+    with open(p + ".tmp", "w") as f:
+        json.dump(d, f, indent=2)
+    os.replace(p + ".tmp", p)
+    print("KiCad IPC API server: %s (Preferences > Plugins to change it in KiCad)" % state)
+
+
+def main(argv):
+    refresh = "--refresh" in argv
+    testing = "--testing" in argv
+    argv = [a for a in argv if a not in ("--refresh", "--testing")]
+    cmd = argv[0] if argv else "help"
+    args = argv[1:]
+    if cmd == "list":
+        listing(None, refresh)
+    elif cmd == "search" and args:
+        listing(" ".join(args), refresh)
+    elif cmd == "install" and args:
+        sys.exit(0 if install(args, testing, refresh) else 1)
+    elif cmd == "defaults":
+        sys.exit(0 if install(DEFAULTS, testing, refresh) else 1)
+    elif cmd == "remove" and args:
+        remove(args)
+    elif cmd == "installed":
+        installed()
+    elif cmd == "api" and args and args[0] in ("on", "off"):
+        api(args[0])
+    else:
+        print(__doc__ or open(__file__).read().split("\n\n")[0])
+        print("usage: kicad-addon list | search WORD | install ID... | remove ID... |"
+              " installed | defaults | api on|off   [--refresh] [--testing]")
+        sys.exit(2)
+
+
+if __name__ == "__main__":
+    main(sys.argv[1:])
+KICAD_ADDON
+    chmod 0755 /usr/local/bin/kicad-addon
+    note "kicad-addon -- KiCad plugins from the official index, without the dialog"
+}
+
+write_kicad_guide() {
+    mkdir -p /usr/local/share/copal/guides
+    cat > /usr/local/share/copal/guides/kicad.txt <<'GUIDE'
+KiCad -- where everything is, and the plugin set
+================================================
+
+Alpine's kicad package is the editors and nothing else. Copal fills in the
+rest at install time; this is what landed where, and how to get more.
+
+Libraries
+
+    Symbols, footprints and STEP models come from Alpine's kicad-library and
+    kicad-library-3d, under /usr/share/kicad/{symbols,footprints,3dmodels}.
+    Your global tables (~/.config/kicad/<ver>/sym-lib-table, fp-lib-table)
+    pull the stock tables in with one row each, so the first-run "configure
+    library tables" dialog never needs answering. Add your own libraries in
+    Preferences > Manage Symbol/Footprint Libraries, as usual.
+
+    The stock tables say ${KICAD9_SYMBOL_DIR} while the program is KiCad 10.
+    That is not a fault: KiCad 10 resolves the KICAD9_* names itself. Do not
+    edit the tables to "fix" it.
+
+Templates and drawing sheets
+
+    File > New Project from Template, tab "System Templates":
+        Arduino Uno / Mega / Micro / Nano / Pro Mini shields, Raspberry Pi HAT
+        and uHAT, BeagleBone cape, STM32 Nucleo-64 and DevEBox, TI LaunchPad
+        BoosterPacks, Eurocard 160x100, a Hammond 1593K enclosure board.
+    They live in /usr/share/kicad/template/; your own go in
+    ~/.local/share/kicad/<ver>/template/ and appear under "User Templates".
+
+    Drawing sheets (.kicad_wks) are in the same directory: A2/A3/A4 in ISO
+    5457 + ISO 7200 title blocks, compact and full, English, German and Greek,
+    the ANSI/ASME Y14.35 variant, GOST, and KiCad's own default and logo
+    sheets. Pick one in File > Page Settings, or open it in the Drawing Sheet
+    Editor and make it yours.
+
+Demos
+
+    /usr/share/kicad/demos/ -- twenty-odd real projects, from a single-valve
+    amplifier (ecc83) to a Jetson baseboard. Copy one somewhere writable
+    before opening it.
+
+Plugins
+
+    Installed by default, as your user, from the official index:
+
+        Interactive HTML BOM   a clickable BOM for hand assembly
+        Freerouting            the autorouter (Java; openjdk21-jre)
+        Fabrication Toolkit    gerbers + BOM + placement for JLCPCB, one click
+        Replicate Layout       copy one channel's layout to the others
+        Board2Pdf              a printable, layer-coloured PDF of the board
+        KiBuzzard              silkscreen labels in real fonts
+        Nord, Black-White      a dark theme and one for printing
+
+    They appear in the PCB editor's Tools > External Plugins menu and on the
+    right of the top toolbar. Themes are in Preferences > Colors.
+
+    kicad-addon list                 everything the index offers this KiCad
+    kicad-addon search jlc
+    kicad-addon install ID           or a unique fragment of the name
+    kicad-addon remove ID
+    kicad-addon installed
+
+    It records what it did in the same file KiCad's own Plugin and Content
+    Manager reads, so the dialog lists these as installed and can update or
+    remove them itself. Either tool can be used from here on.
+
+    KiKit (panelisation) is on the index too, but its plugin is a shell around
+    a Python package that has to be installed separately:
+
+        kicad-addon install kikit
+        python3 -m venv --system-site-packages ~/.local/kikit
+        ~/.local/kikit/bin/pip install kikit
+        # then put ~/.local/kikit/bin on PATH, or run its 'kikit' by path
+
+    The IPC API server (Preferences > Plugins) is switched on, because plugins
+    written for KiCad 9 and later talk to it rather than to the old Python
+    bindings. 'kicad-addon api off' turns it back off.
+
+To the fab
+
+    kicad-cli pcb export gerbers --output gerbers/ board.kicad_pcb
+    kicad-cli pcb export drill   --output gerbers/ board.kicad_pcb
+    pcbzip gerbers/                  one flat zip, checks the drill file is in
+GUIDE
+    chmod 0644 /usr/local/share/copal/guides/kicad.txt 2>/dev/null || true
+}
+
 workshop_electronics() {
     say "Electronics: schematic capture, PCB and simulation"
     cat <<'MSG'
@@ -13199,7 +14824,11 @@ workshop_electronics() {
               for Linux on ARM in any form; ngspice is the thing to learn.
     KiCad     aarch64 only. Schematic capture, PCB layout, and gerber
               export -- the whole flow, and the tool the fab houses expect.
-              About 2 GB with its libraries.
+              About 2 GB with its libraries and demos. Alpine's package is
+              the editors alone, so Copal adds what makes it usable: the
+              upstream project templates and drawing sheets, the demo
+              boards, and a plugin set (interactive BOM, Freerouting,
+              JLCPCB fab export, layout replication, board PDF, labels).
 
     Not packaged for any port here: Fritzing, gEDA, gerbv, Qucs, Oregano,
     xcircuit, KLayout, gnucap. On a Zero the honest workflow is ngspice for
@@ -13209,7 +14838,8 @@ MSG
     add_optional ngspice
     if [ "$ARCH_GATE" = a64 ] && have_space_mb 2500 "KiCad and its libraries"; then
         confirm "Install KiCad (about 2 GB with libraries)?" \
-            && add_optional kicad kicad-library kicad-library-3d
+            && add_optional kicad kicad-library kicad-library-3d kicad-demos py3-pip \
+            && kicad_configure
     elif [ "$ARCH_GATE" = a64 ]; then
         note "KiCad skipped -- not enough free space"
     else
@@ -13281,6 +14911,10 @@ workshop_maths() {
       LyX          LaTeX with a document view rather than raw markup.
       Maxima       computer algebra: solves systems of equations symbolically,
                    integrates, factors. The classic free CAS. (edge/testing)
+      wxMaxima     Maxima in a notebook: typeset output, plots inline, cells
+                   you can re-run. Not packaged by Alpine on any port, so it
+                   is compiled here against Alpine's wxWidgets -- about five
+                   minutes on four cores, considerably longer on a Pi.
       Octave       MATLAB-compatible numerics -- matrices, linear systems.
       SymPy        the same job inside Python, and lighter than either.
       Qalculate    a unit-aware calculator that is genuinely excellent.
@@ -13296,6 +14930,7 @@ MSG
     add_optional octave gnuplot qalculate-gtk py3-sympy py3-numpy py3-scipy py3-matplotlib
     add_optional maxima@testing
     add_optional pari singular R
+    build_wxmaxima
 
     cat <<'MSG'
 
@@ -13319,6 +14954,384 @@ MSG
         b|B|y|Y) add_optional texlive lyx ;;
         *)   note "Skipped TeX Live." ;;
     esac
+}
+
+# wxMaxima from source.
+#
+# Alpine packages Maxima (edge/testing) and gnuplot, and no wxMaxima at all --
+# main, community and testing carry zero on every port, checked on the package
+# index and on this machine's apk. Flathub has it for the two 64-bit ports at
+# the price of a GNOME runtime; that is a lot of card for a notebook front end.
+#
+# It is a plain CMake project on wxWidgets, and wxwidgets-dev is in community
+# for every port, so it builds: 26.08.0 configured and compiled first time on
+# an aarch64 guest with four cores in 4.5 minutes of wall clock (11 minutes of
+# CPU), 9.4 MB binary, 16 MB installed with fifty locales. CMake notices that
+# Alpine's wxWidgets has no usable webview or qa component and builds without
+# them by itself; nothing needs disabling by hand. Release tarballs ship a
+# .sha256 beside them, and it is checked.
+build_wxmaxima() {
+    say "wxMaxima -- Maxima in a notebook, built from source"
+    have_space_mb 1200 "the wxMaxima build (wxWidgets development files and the compile)" \
+        || { note "Skipping wxMaxima."; return 0; }
+    confirm "Build wxMaxima from source now (about five minutes here, longer on a Pi)?" || {
+        note "Not built. Run stage 14 again and choose the maths bundle."
+        return 0
+    }
+    add_optional build-base cmake ninja pkgconf wxwidgets-dev gettext-dev gnuplot
+    apk info -e wxwidgets-dev >/dev/null 2>&1 \
+        || { warn "no wxWidgets development files -- cannot build wxMaxima"; return 1; }
+
+    SRCDIR=/usr/local/src
+    mkdir -p "$SRCDIR"
+    # The newest release, from the GitHub API, with a pinned fallback for the
+    # day the API is rate-limited or gone. A release is a tag "Version-X.Y.Z".
+    _wm_ver=$(curl -fsSL --max-time 30 https://api.github.com/repos/wxMaxima-developers/wxmaxima/releases/latest 2>/dev/null \
+        | sed -n 's/.*"tag_name": *"Version-\([0-9.]*\)".*/\1/p' | head -n1)
+    _wm_ver="${_wm_ver:-26.08.0}"
+    _wm_base="https://github.com/wxMaxima-developers/wxmaxima/releases/download/Version-$_wm_ver"
+    _wm_tar="$SRCDIR/wxmaxima-$_wm_ver.tar.xz"
+    if [ ! -f "$_wm_tar" ]; then
+        say "Fetching wxmaxima-$_wm_ver.tar.xz"
+        if ! curl -fsSL --retry 3 -o "$_wm_tar" "$_wm_base/wxmaxima-$_wm_ver.tar.xz"; then
+            rm -f "$_wm_tar"; warn "could not download wxMaxima $_wm_ver"; return 1
+        fi
+    fi
+    if curl -fsSL --max-time 30 -o "$_wm_tar.sha256" "$_wm_base/wxmaxima-$_wm_ver.tar.xz.sha256"; then
+        (cd "$SRCDIR" && sha256sum -c "wxmaxima-$_wm_ver.tar.xz.sha256" >/dev/null 2>&1) \
+            || { warn "checksum mismatch on $_wm_tar -- not building it"; rm -f "$_wm_tar"; return 1; }
+        note "checksum verified"
+    else
+        warn "no checksum published for this release -- building it unverified"
+    fi
+
+    rm -rf "$SRCDIR/wxmaxima-build"; mkdir -p "$SRCDIR/wxmaxima-build"
+    tar -xJf "$_wm_tar" -C "$SRCDIR/wxmaxima-build" \
+        || { warn "the archive did not unpack -- delete $_wm_tar and try again"; return 1; }
+    _wm_src=$(dirname "$(find "$SRCDIR/wxmaxima-build" -maxdepth 2 -name CMakeLists.txt | head -n1)")
+    [ -n "$_wm_src" ] || { warn "cannot find the source tree inside $_wm_tar"; return 1; }
+    say "Compiling (the log is /var/log/wxmaxima-build.log)"
+    if ! cmake -S "$_wm_src" -B "$SRCDIR/wxmaxima-build/b" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local \
+            > /var/log/wxmaxima-build.log 2>&1; then
+        warn "cmake failed -- the last lines of /var/log/wxmaxima-build.log:"
+        tail -n 15 /var/log/wxmaxima-build.log | sed 's/^/    /'
+        return 1
+    fi
+    if ! ninja -C "$SRCDIR/wxmaxima-build/b" -j "$(nproc)" >> /var/log/wxmaxima-build.log 2>&1; then
+        warn "the build failed -- the last lines of /var/log/wxmaxima-build.log:"
+        tail -n 15 /var/log/wxmaxima-build.log | sed 's/^/    /'
+        return 1
+    fi
+    ninja -C "$SRCDIR/wxmaxima-build/b" install >> /var/log/wxmaxima-build.log 2>&1 \
+        || { warn "install failed -- see /var/log/wxmaxima-build.log"; return 1; }
+    rm -rf "$SRCDIR/wxmaxima-build"
+    note "installed: $(/usr/local/bin/wxmaxima --version 2>/dev/null || echo wxmaxima) -> /usr/local/bin/wxmaxima"
+    command -v maxima >/dev/null 2>&1 || note "it needs maxima to do anything: apk add maxima@testing"
+}
+
+
+# ---------------------------------------- Windows programs, in boxes ---
+#
+# Wine is in Alpine for aarch64, x86_64 and x86, and what it can run differs
+# by port in a way worth stating before anything is installed: Wine runs
+# Windows programs built for the CPU it is on. x86_64 gets the classic world
+# -- Alpine's package carries the 32-bit WoW64 half, checked against its file
+# list -- and aarch64 gets only the few programs that ship ARM64 builds,
+# because Alpine packages no x86 emulator (Box64, Hangover and FEX are all
+# absent). Notepad++ is one of the few, and was verified on an aarch64 guest:
+# its portable ARM64 zip runs; its installer does not, because NSIS installer
+# stubs are x86 whatever they carry.
+#
+# winebox is the launcher: one Wine prefix per program, an env file for its
+# settings, bubblewrap around it so the program sees a disposable Windows
+# and one shared folder rather than the machine. Its catalogue is the honest
+# version of ninite.com -- vendor downloads, published checksums, silent
+# switches -- since Ninite's own installers are online .NET programs that do
+# not run under Wine.
+workshop_windows() {
+    say "Windows programs under Wine, each in a box"
+    _arch=$(apk --print-arch 2>/dev/null || echo unknown)
+    case "$_arch" in
+        x86_64) note "x86_64: 32-bit and 64-bit Windows programs run. Boxes default to 32-bit prefixes." ;;
+        aarch64) note "aarch64: ONLY Windows programs built for ARM64 run -- there is no x86 emulator in Alpine."
+                 note "Notepad++ and 7-Zip ship ARM64 builds and the catalogue picks them; most classic software will not run here." ;;
+        x86) note "x86: 32-bit Windows programs run." ;;
+        *) warn "no Wine for $_arch in Alpine -- nothing to install here"; return 0 ;;
+    esac
+    have_space_mb 1500 "Wine" || return 0
+    confirm "Install Wine, bubblewrap and winebox?" || { note "Skipped."; return 0; }
+    add_optional wine bubblewrap unzip
+    command -v wine >/dev/null 2>&1 || { warn "wine did not install"; return 1; }
+    cat > /usr/local/bin/winebox <<'WINEBOX'
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+#
+#  winebox -- classic Windows programs under Wine, each in its own box.
+#
+#   winebox list                        boxes, and the catalogue of installers
+#   winebox new NAME                    an empty box (a fresh Wine prefix)
+#   winebox install notepad++ [NAME]    from the catalogue, checksum verified
+#   winebox run NAME [EXE [ARGS...]]    the box's program, sandboxed
+#   winebox cfg NAME                    winecfg inside that box
+#   winebox shell NAME                  a shell with the box's environment
+#   winebox rm NAME                     delete the box, prefix and all
+#
+# ONE BOX PER PROGRAM. A box is a directory under ~/.local/share/winebox/NAME:
+# a Wine prefix (its own C: drive and registry), an `env` file of KEY=VALUE
+# lines that is the whole configuration, and a `home` that is what the
+# program sees as the home directory. Programs in different boxes cannot see
+# each other, and none of them can see yours.
+#
+# THE SANDBOX. `run` starts Wine under bubblewrap: the system read-only, the
+# box read-write, a private /tmp, no view of the real home directory, and no
+# network unless the env file says NET=yes. The display sockets are passed
+# through so the program can draw. That is the "safely" in "run classic
+# Windows software safely": a program from 2004 gets a disposable Windows,
+# not the machine. Files you want it to see go in ~/Public/winebox, which is
+# bound into every box as Z:\shared.
+#
+# WHAT THIS PORT CAN RUN. Wine runs Windows programs built for the CPU it is
+# running on. On x86_64, Alpine's Wine carries the 32-bit WoW64 half, so both
+# 32-bit and 64-bit programs run and WINEARCH=win32 boxes are the default --
+# "32-bit everything", which is what the classic catalogue is. On aarch64
+# there is no x86 emulator in Alpine (no Box64, no Hangover, no FEX), so only
+# ARM64 Windows programs run: a handful of modern ones ship them, Notepad++
+# among them, and the catalogue picks that build. An NSIS installer is an
+# x86 program even when its payload is ARM64, so on aarch64 the catalogue
+# uses portable zips, not installers.
+#
+# THE CATALOGUE is the honest version of ninite.com: vendor downloads, a
+# published checksum, a silent install switch. Ninite's own installers are
+# online .NET programs that do not run under Wine and pick x86 builds only.
+#
+# Env file keys (winebox new writes the defaults):
+#   WINEARCH=win32|win64   the prefix's Windows bitness (x86_64 only)
+#   EXE=C:\...\prog.exe    what `run` starts when given no program
+#   NET=no|yes             network inside the sandbox
+#   WINEDLLOVERRIDES=...   Wine's; the default disables Mono/Gecko prompts
+#                          and the menu builder (it would write to your home)
+#   WINEDEBUG=-all         Wine's noise level
+set -eu
+ROOT="${WINEBOX_ROOT:-$HOME/.local/share/winebox}"
+SHARED="$HOME/Public/winebox"
+WINE="${WINE:-wine}"
+ARCH=$(uname -m)
+
+die() { echo "winebox: $*" >&2; exit 1; }
+need_wine() { command -v "$WINE" >/dev/null 2>&1 || die "wine is not installed (apk add wine)"; }
+box_dir() { printf '%s/%s' "$ROOT" "$1"; }
+
+# --- the catalogue ----------------------------------------------------------
+# name | what | x86_64 way | aarch64 way. Each "way" is a shell function below.
+catalogue() {
+    cat <<'CAT'
+notepad++|Notepad++ text editor|npp_installer|npp_portable_arm64
+7zip|7-Zip archiver (and its file manager)|sevenzip_installer|sevenzip_arm64
+CAT
+}
+
+gh_latest() {  # <owner/repo> -> tag
+    curl -fsSL --max-time 30 "https://api.github.com/repos/$1/releases/latest" \
+        | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n1
+}
+fetch_verified() {  # <url> <dest> <sha256 or ''>
+    echo "  fetching $(basename "$2")"
+    curl -fsSL --retry 3 --max-time 600 -o "$2.part" "$1" || die "download failed: $1"
+    if [ -n "$3" ]; then
+        echo "$3  $2.part" | sha256sum -c - >/dev/null 2>&1 || { rm -f "$2.part"; die "checksum mismatch on $(basename "$2") -- not using it"; }
+        echo "  checksum verified"
+    else
+        echo "  (no published checksum for this file)"
+    fi
+    mv "$2.part" "$2"
+}
+
+# Notepad++: GitHub releases, a checksums file signed by the project.
+npp_files() {
+    V=$(gh_latest notepad-plus-plus/notepad-plus-plus); V="${V#v}"; [ -n "$V" ] || V=8.9.8
+    BASE="https://github.com/notepad-plus-plus/notepad-plus-plus/releases/download/v$V"
+    curl -fsSL --max-time 60 -o "$DL/npp.checksums" "$BASE/npp.$V.checksums.sha256" || : > "$DL/npp.checksums"
+}
+npp_sha() { tr -d '\r' < "$DL/npp.checksums" 2>/dev/null | grep -i " $1\$" | cut -c1-64; }   # CRLF file
+npp_installer() {   # 32-bit, the classic build, silent
+    npp_files; f="npp.$V.Installer.exe"
+    fetch_verified "$BASE/$f" "$DL/$f" "$(npp_sha "$f")"
+    boxrun "$WINE" "$DL/$f" /S; "$WINE"server -w
+    set_env EXE 'C:\Program Files\Notepad++\notepad++.exe'
+}
+npp_portable_arm64() {
+    npp_files; f="npp.$V.portable.arm64.zip"
+    fetch_verified "$BASE/$f" "$DL/$f" "$(npp_sha "$f")"
+    d="$PREFIX/drive_c/Program Files/Notepad++"; mkdir -p "$d"; unzip -q -o "$DL/$f" -d "$d"
+    set_env EXE 'C:\Program Files\Notepad++\notepad++.exe'
+}
+# 7-Zip: its installer is a native program on both ports; the site publishes
+# no checksums, so the download is only as trusted as 7-zip.org's TLS.
+sevenzip_installer() {
+    V=$(curl -fsSL --max-time 30 https://www.7-zip.org/download.html | sed -n 's/.*7z\([0-9]\{4\}\)\.exe.*/\1/p' | head -n1); [ -n "$V" ] || V=2409
+    fetch_verified "https://www.7-zip.org/a/7z$V.exe" "$DL/7z$V.exe" ""
+    boxrun "$WINE" "$DL/7z$V.exe" /S; "$WINE"server -w
+    set_env EXE 'C:\Program Files\7-Zip\7zFM.exe'
+}
+sevenzip_arm64() {
+    V=$(curl -fsSL --max-time 30 https://www.7-zip.org/download.html | sed -n 's/.*7z\([0-9]\{4\}\)-arm64\.exe.*/\1/p' | head -n1); [ -n "$V" ] || V=2409
+    fetch_verified "https://www.7-zip.org/a/7z$V-arm64.exe" "$DL/7z$V-arm64.exe" ""
+    boxrun "$WINE" "$DL/7z$V-arm64.exe" /S; "$WINE"server -w
+    set_env EXE 'C:\Program Files\7-Zip\7zFM.exe'
+}
+
+# --- boxes ------------------------------------------------------------------
+load_env() {  # <name>
+    BOX=$(box_dir "$1"); [ -f "$BOX/env" ] || die "no box named '$1' (winebox list)"
+    PREFIX="$BOX/prefix"; DL="$BOX/downloads"; mkdir -p "$DL" "$BOX/home"
+    # shellcheck disable=SC1090
+    . "$BOX/env"
+    export WINEPREFIX="$PREFIX" WINEDEBUG="${WINEDEBUG:--all}" WINEDLLOVERRIDES="${WINEDLLOVERRIDES:-mscoree=d;mshtml=d;winemenubuilder.exe=d}"
+    # An if, not a && list: under set -e a false test as a function's last
+    # command would end the script.
+    if [ "$ARCH" = x86_64 ]; then export WINEARCH="${WINEARCH:-win32}"; fi
+}
+set_env() {  # <key> <value>  -- values are single-quoted: the file is sourced
+    grep -v "^$1=" "$BOX/env" > "$BOX/env.new" || true
+    printf "%s='%s'\n" "$1" "$2" >> "$BOX/env.new"; mv "$BOX/env.new" "$BOX/env"
+}
+# Wine inside bubblewrap. HOME is the box's own; the real one is not there.
+boxrun() {
+    mkdir -p "$SHARED" "$BOX/home"
+    _net="--unshare-net"; [ "${NET:-no}" = yes ] && _net=""
+    _disp=""
+    [ -n "${WAYLAND_DISPLAY:-}" ] && [ -S "${XDG_RUNTIME_DIR:-/nonexistent}/$WAYLAND_DISPLAY" ] \
+        && _disp="$_disp --ro-bind $XDG_RUNTIME_DIR/$WAYLAND_DISPLAY $XDG_RUNTIME_DIR/$WAYLAND_DISPLAY"
+    [ -d /tmp/.X11-unix ] && _disp="$_disp --ro-bind /tmp/.X11-unix /tmp/.X11-unix"
+    if command -v bwrap >/dev/null 2>&1 && [ -z "${WINEBOX_NO_SANDBOX:-}" ]; then
+        # shellcheck disable=SC2086
+        # Alpine's /bin, /sbin and /lib are real directories (busybox lives
+        # there), not symlinks into /usr -- bind them, read-only, as they are.
+        bwrap --ro-bind /usr /usr --ro-bind /etc /etc --ro-bind /bin /bin --ro-bind /sbin /sbin --ro-bind /lib /lib \
+            --dev /dev --proc /proc --tmpfs /tmp --dir "$XDG_RUNTIME_DIR" $_disp \
+            --bind "$BOX" "$BOX" --bind "$SHARED" "$SHARED" \
+            $( [ -n "${WINE_TREE:-}" ] && printf -- '--ro-bind %s %s' "$WINE_TREE" "$WINE_TREE" ) \
+            --unshare-pid --unshare-ipc --unshare-uts --unshare-cgroup $_net --die-with-parent \
+            --setenv HOME "$BOX/home" --setenv WINEPREFIX "$PREFIX" \
+            -- "$@"
+    else
+        HOME="$BOX/home" "$@"
+    fi
+}
+cmd_new() {
+    need_wine; BOX=$(box_dir "$1"); [ -e "$BOX" ] && die "box '$1' exists"
+    mkdir -p "$BOX/downloads" "$BOX/home" "$SHARED"
+    cat > "$BOX/env" <<ENV
+# winebox '$1' -- KEY='VALUE', sourced by winebox as shell. Edit freely;
+# keep the quotes, a Wine override list has semicolons in it.
+WINEARCH='win32'
+NET='no'
+WINEDEBUG='-all'
+WINEDLLOVERRIDES='mscoree=d;mshtml=d;winemenubuilder.exe=d'
+EXE=''
+ENV
+    load_env "$1"
+    echo "creating the Windows prefix for '$1' (a minute the first time)"
+    boxrun "$WINE"boot -u >/dev/null 2>&1 || true; "$WINE"server -w 2>/dev/null || true
+    # Z:\shared -> the one folder every box shares with you.
+    ln -sfn "$SHARED" "$PREFIX/dosdevices/z:" 2>/dev/null || true
+    echo "box '$1': $BOX"
+}
+cmd_install() {
+    need_wine; app="$1"; name="${2:-$1}"
+    line=$(catalogue | grep "^$app|") || die "not in the catalogue: $app (winebox list)"
+    case "$ARCH" in x86_64) way=$(echo "$line" | cut -d'|' -f3) ;; aarch64) way=$(echo "$line" | cut -d'|' -f4) ;; *) die "no Wine for $ARCH" ;; esac
+    [ -f "$(box_dir "$name")/env" ] || cmd_new "$name"
+    load_env "$name"
+    echo "installing $(echo "$line" | cut -d'|' -f2) into box '$name'"
+    "$way"
+    echo "done: winebox run $name"
+}
+cmd_run() {
+    need_wine; load_env "$1"; shift
+    if [ $# -gt 0 ]; then exec_target="$1"; shift; else exec_target="${EXE:-}"; fi
+    [ -n "$exec_target" ] || die "nothing to run: pass a program, or set EXE= in $BOX/env"
+    boxrun "$WINE" "$exec_target" "$@"
+}
+case "${1:-}" in
+    list)
+        echo "boxes in $ROOT:"; for d in "$ROOT"/*/; do [ -f "$d/env" ] && printf '  %-14s %s\n' "$(basename "$d")" "$(sed -n 's/^EXE=//p' "$d/env" | tr -d "'\"")"; done 2>/dev/null
+        echo; echo "catalogue (winebox install NAME):"; catalogue | while IFS='|' read -r n w x a; do printf '  %-12s %s\n' "$n" "$w"; done
+        echo; echo "this machine is $ARCH: $( [ "$ARCH" = x86_64 ] && echo '32-bit and 64-bit x86 Windows programs' || echo 'ARM64 Windows programs only (no x86 emulator in Alpine)')" ;;
+    new)     [ -n "${2:-}" ] || die "usage: winebox new NAME"; cmd_new "$2" ;;
+    install) [ -n "${2:-}" ] || die "usage: winebox install APP [NAME]"; cmd_install "$2" "${3:-}" ;;
+    run)     [ -n "${2:-}" ] || die "usage: winebox run NAME [EXE ARGS...]"; shift; cmd_run "$@" ;;
+    cfg)     [ -n "${2:-}" ] || die "usage: winebox cfg NAME"; need_wine; load_env "$2"; boxrun "$WINE"cfg ;;
+    shell)   [ -n "${2:-}" ] || die "usage: winebox shell NAME"; load_env "$2"; echo "WINEPREFIX=$WINEPREFIX  (exit to leave)"; boxrun "${SHELL:-/bin/sh}" ;;
+    rm)      [ -n "${2:-}" ] || die "usage: winebox rm NAME"; load_env "$2"; "$WINE"server -k 2>/dev/null || true; rm -rf "$BOX"; echo "removed box '$2'" ;;
+    *)       sed -n '5,20p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac
+
+WINEBOX
+    chmod 0755 /usr/local/bin/winebox
+    note "winebox -- 'winebox list' shows the catalogue; 'winebox install notepad++' is the first thing to try"
+    if [ -n "${PI_USER:-}" ] && su - "$PI_USER" -c 'id' >/dev/null 2>&1; then
+        if confirm "Install Notepad++ into a box for $PI_USER now (downloads ~7 MB)?"; then
+            su - "$PI_USER" -c 'winebox install notepad++' || warn "winebox install failed -- as $PI_USER, run: winebox install notepad++"
+        fi
+    fi
+    note "winebox run notepad++        starts it, sandboxed; files for it go in ~/Public/winebox (Z:\\shared)"
+    note "winebox cfg notepad++        winecfg for that box"
+    mkdir -p /usr/local/share/copal/guides
+    cat > /usr/local/share/copal/guides/windows.txt <<'GUIDE'
+Windows programs -- Wine, one box per program
+=============================================
+
+What this machine can run
+
+    Wine runs Windows programs built for the CPU it is on.
+      x86_64   32-bit and 64-bit x86 programs: the classic catalogue.
+      aarch64  ARM64 Windows programs only. Alpine has no x86 emulator
+               (no Box64, Hangover or FEX), so most old software will not
+               run here. Notepad++ and 7-Zip ship ARM64 builds and do.
+
+The boxes
+
+    winebox list                     boxes, and the installer catalogue
+    winebox install notepad++        a box named notepad++ with it inside
+    winebox run notepad++            start it, sandboxed
+    winebox run notepad++ 'Z:\shared\notes.txt'
+    winebox cfg notepad++            winecfg for that box
+    winebox new games                an empty box; winebox run games C:\...
+    winebox shell games              a shell inside the box's environment
+    winebox rm games                 delete the box, prefix and all
+
+    A box is ~/.local/share/winebox/NAME: a Wine prefix (its own C: drive),
+    a home the program sees as yours, and an env file. The env file is the
+    whole configuration -- KEY='VALUE', quoted:
+
+        WINEARCH='win32'     32-bit prefix (x86_64; the default there)
+        NET='no'             network inside the box; 'yes' to allow it
+        EXE='C:\...\x.exe'   what 'run' starts with no argument
+        WINEDLLOVERRIDES     Wine's; the default silences Mono/Gecko prompts
+                             and the menu builder
+
+The sandbox
+
+    Every run is inside bubblewrap: the system read-only, the box
+    read-write, a private /tmp, no view of your real home, no network unless
+    NET='yes'. The one folder every box shares with you is ~/Public/winebox,
+    which the program sees as Z:\shared. Put files there to hand them over.
+
+Installers
+
+    The catalogue is vendor downloads with published checksums and silent
+    switches, and the right build for this port -- installers on x86_64,
+    portable builds on aarch64, because NSIS installer stubs are x86 even
+    when what they carry is ARM64. ninite.com's installers are online .NET
+    programs and do not run under Wine.
+
+    Anything else: winebox new NAME, copy the installer into
+    ~/Public/winebox, then  winebox run NAME 'Z:\shared\setup.exe'
+GUIDE
+    chmod 0644 /usr/local/share/copal/guides/windows.txt 2>/dev/null || true
 }
 
 workshop_music() {
@@ -13628,14 +15641,15 @@ stage_workshop() {
       p   3D printing (Ender 3)     CuraEngine + slice-ender3, admesh,
                                     optionally OctoPrint and the Cura GUI
       e   Electronics               ngspice, KiCad, and pcbzip for the fab
-      m   LaTeX and mathematics     TeX Live, Maxima, Octave, SymPy, Gnuplot
+      m   LaTeX and mathematics     TeX Live, Maxima + wxMaxima, Octave, SymPy
       u   Music                     trackers, SID, MIDI, Hydrogen, Audacity
       k   Learning to play piano    PianoBooster (compiles), piano-midi
+      w   Windows programs          Wine in sandboxed boxes; Notepad++, 7-Zip
       a   All of them
       q   Back to the menu
 
 MSG
-    ask "Choose [c/p/e/m/u/k/a/q]:"
+    ask "Choose [c/p/e/m/u/k/w/a/q]:"
     case "$REPLY" in
         c|C) workshop_cad ;;
         p|P) workshop_3dprint ;;
@@ -13643,8 +15657,9 @@ MSG
         m|M) workshop_maths ;;
         u|U) workshop_music ;;
         k|K) workshop_piano ;;
+        w|W) workshop_windows ;;
         a|A) workshop_cad; workshop_3dprint; workshop_electronics
-             workshop_maths; workshop_music; workshop_piano ;;
+             workshop_maths; workshop_music; workshop_piano; workshop_windows ;;
         *)   note "Nothing installed."; return 0 ;;
     esac
 
@@ -13781,6 +15796,35 @@ stage_verify() {
     fi
     echo
     note "mounts:"; grep -E "$DISKDEV|[[:space:]]/[[:space:]]" /proc/mounts | sed 's/^/      /'
+    echo
+    # The pieces this session added, each with the one line that tells you it
+    # took on a clean install -- this is the checklist for that test.
+    note "extras:"
+    _uh=$(user_home)
+    if [ -x /etc/init.d/autofs ] && rc-service autofs status 2>/dev/null | grep -q started; then
+        note "  shared folder   : autofs running; /mnt/share $(ls /mnt/share >/dev/null 2>&1 && echo "mounts ($(ls -1 /mnt/share 2>/dev/null | wc -l | tr -d ' ') entries)" || echo 'not offered by the host')"
+    else
+        note "  shared folder   : $(mountpoint -q /mnt/share && echo 'mounted from fstab (no autofs)' || echo 'not configured -- stage 1')"
+    fi
+    if command -v kicad-cli >/dev/null 2>&1; then
+        _kv=$(kicad-cli version 2>/dev/null | grep -o '[0-9]*\.[0-9]*' | head -1)
+        note "  KiCad $_kv      : $(find /usr/share/kicad/template -mindepth 1 -maxdepth 1 -type d 2>/dev/null | wc -l | tr -d ' ') templates, $(find /usr/share/kicad/template -maxdepth 1 -name '*.kicad_wks' 2>/dev/null | wc -l | tr -d ' ') sheets, demos $([ -d /usr/share/kicad/demos ] && echo yes || echo no), design-block table $([ -f /usr/share/kicad/template/design-block-lib-table ] && echo yes || echo MISSING)"
+        _ip="$_uh/.config/kicad/$_kv/installed_packages.json"
+        note "  KiCad plugins   : $([ -f "$_ip" ] && grep -c '"current_version"' "$_ip" || echo 0) installed for $PI_USER; API $(grep -q '"enable_server": true' "$_uh/.config/kicad/$_kv/kicad_common.json" 2>/dev/null && echo on || echo off); kicad-addon $(command -v kicad-addon >/dev/null && echo present || echo MISSING)"
+    else
+        note "  KiCad           : not installed (stage 14, electronics)"
+    fi
+    note "  wxMaxima        : $(/usr/local/bin/wxmaxima --version 2>/dev/null || echo 'not built (stage 14, maths)'); maxima $(command -v maxima >/dev/null && echo yes || echo no)"
+    _cl="$(user_home)/.npm-global/bin/claude"
+    [ -x "$_cl" ] || _cl=$(command -v claude 2>/dev/null)
+    if [ -n "$_cl" ]; then
+        note "  Claude Code     : $("$_cl" --version 2>/dev/null | head -1) at $_cl; doctor: $(su - "$PI_USER" -c 'claude doctor' 2>/dev/null | grep -c 'warning found\|error' | sed 's/^0$/clean/; s/^[1-9].*/see: claude doctor/')"
+    else
+        note "  Claude Code     : not installed (stage 7)"
+    fi
+    note "  Windows/Wine    : $(command -v wine >/dev/null && wine --version 2>/dev/null || echo 'no wine'); winebox $(command -v winebox >/dev/null && echo present || echo no); boxes: $(ls -d "$_uh"/.local/share/winebox/*/ 2>/dev/null | wc -l | tr -d ' ')"
+    note "  built here      : endless-sky $(command -v endless-sky >/dev/null && echo yes || echo no), streamripper $(command -v streamripper >/dev/null && echo yes || echo no)"
+    note "  yt-dlp          : $(command -v yt-dlp >/dev/null && yt-dlp --version 2>/dev/null || echo 'not installed'); yt-brave $(command -v yt-brave >/dev/null && echo yes || echo no); ytq $(command -v ytq >/dev/null && echo yes || echo no); clipboard $(if command -v wl-paste >/dev/null; then echo wl-paste; elif command -v xclip >/dev/null; then echo xclip; else echo NONE; fi)"
     echo
     note "uncommitted changes (lbu status):"
     lbu status 2>&1 | sed 's/^/      /' || true
