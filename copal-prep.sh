@@ -11233,7 +11233,7 @@ hypr_write_waybar() {
     "exec": "echo '\u2261'",
     "interval": "once",
     "tooltip": true,
-    "tooltip-format": "Menu -- programs, settings, install, session (Super+Z). Right-click: shut down",
+    "tooltip-format": "Menu -- programs (Super+Space); settings, install, session (Super+Z). Right-click: shut down",
     "on-click": "copal-menu",
     "on-click-right": "copal-halt"
   },
@@ -13143,8 +13143,15 @@ ANTIQPAPER
 # JetBrains Mono is the packaged cousin, and the same substitution kitty gets.
 font=JetBrains Mono:size=11
 pad=8x8
+# foot 1.26 split [colors] into [colors-dark] and [colors-light] and reads
+# the dark one unless told otherwise; 1.28 drops the old name (Alpine 3.24
+# ships 1.27, which warns on every line of it, once per new terminal). This
+# palette is a light one, so it goes under the light heading and foot is
+# told to start there. Its builtin dark palette stays reachable through a
+# color-theme-toggle bind, should anyone want one.
+initial-color-theme=light
 
-[colors]
+[colors-light]
 # alpha and background are upstream's. foreground is hades.conf's
 # selection_foreground: upstream's foreground is the same #eaeaea as the
 # background and is legible only under blur, which software rendering has not
@@ -13178,9 +13185,14 @@ selection-foreground=000000
 lines=3000
 
 [key-bindings]
-# The two kitty binds the theme documents, kept on the same keys.
-font-increase=Control+shift+plus
-font-decrease=Control+shift+minus
+# The two kitty binds the theme documents (ctrl+shift+plus, ctrl+shift+minus),
+# kept on the same keys. foot's spelling differs: modifier names are
+# case-sensitive, and 'plus' already means the shifted key, so naming Shift
+# as well is refused as a double shift. Control+plus is Ctrl with whatever
+# key produces '+' -- on a US layout, Ctrl+Shift+=. minus is unshifted, so
+# there Shift is spelled out.
+font-increase=Control+plus
+font-decrease=Control+Shift+minus
 ANTIQFOOT
     install_home_file .config/foot/foot.ini /tmp/footini.$$
     rm -f /tmp/footini.$$
