@@ -11724,7 +11724,8 @@ stage_hyprland() {
     # compositor -- without it every X application on the machine goes dark
     # the moment the session switches.
     say "Installing the theme's supporting cast"
-    add_optional xwayland
+    # xset for the font path exec-once above, and the X11 core fonts it names.
+    add_optional xwayland xset font-misc-misc font-adobe-75dpi font-adobe-100dpi
     add_optional hyprpolkitagent polkit
     add_optional nemo
     add_optional wofi
@@ -12267,6 +12268,12 @@ exec-once = copal-clip watch
 # no clock, no workspace indicator and no window list.
 exec-once = copal-bar
 exec-once = sh -c '[ -x /usr/libexec/hyprpolkitagent ] && exec /usr/libexec/hyprpolkitagent'
+# X11 core fonts for Xwayland clients. Xwayland starts with a font path of
+# "built-ins" alone -- X.org's default already lists these directories -- so
+# xboard died with "Unable to create font set" and xfig warned about
+# -misc-fixed-*. Found by the application sweep (docs/app-integration-plan.md
+# on gfx-lab); adding the directories fixed both.
+exec-once = sh -c 'xset +fp /usr/share/fonts/misc,/usr/share/fonts/75dpi,/usr/share/fonts/100dpi; xset fp rehash'
 
 env = XCURSOR_SIZE,24
 env = HYPRCURSOR_SIZE,24
