@@ -6882,6 +6882,24 @@ if grep -q '^Emulators,' "$CSV"; then
     if have x64sc;   then out "VICE (C64),x64sc"
     elif have x64;   then out "VICE (C64),x64"
     fi
+    # Wine boxes, one entry each; the env file's EXE says whether it runs.
+    if have winebox; then
+        for b in "$HOME"/.local/share/winebox/*/; do
+            [ -f "$b/env" ] || continue
+            n=$(basename "$b")
+            out "$n (Wine box),winebox run $n"
+        done
+        out "New Wine box: winebox,$TERM_EMU -e sh -c 'winebox list; echo; echo winebox install NAME; exec sh'"
+    fi
+fi
+
+# ----- Built from source, by stages 12 and 14 -----
+if have endless-sky || have wxmaxima || have streamripper || have ytq; then
+    out '^sep(Built here)'
+    have endless-sky  && out "Endless Sky,endless-sky" || true
+    have wxmaxima     && out "wxMaxima,wxmaxima" || true
+    have ytq          && out "ytq download queue,$TERM_EMU -e ytq" || true
+    have streamripper && out "streamripper (radio to files),$TERM_EMU -e sh -c 'streamripper; exec sh'" || true
 fi
 
 # ----- System -----
@@ -15261,6 +15279,59 @@ WINEBOX
     fi
     note "winebox run notepad++        starts it, sandboxed; files for it go in ~/Public/winebox (Z:\\shared)"
     note "winebox cfg notepad++        winecfg for that box"
+    mkdir -p /usr/local/share/copal/guides
+    cat > /usr/local/share/copal/guides/windows.txt <<'GUIDE'
+Windows programs -- Wine, one box per program
+=============================================
+
+What this machine can run
+
+    Wine runs Windows programs built for the CPU it is on.
+      x86_64   32-bit and 64-bit x86 programs: the classic catalogue.
+      aarch64  ARM64 Windows programs only. Alpine has no x86 emulator
+               (no Box64, Hangover or FEX), so most old software will not
+               run here. Notepad++ and 7-Zip ship ARM64 builds and do.
+
+The boxes
+
+    winebox list                     boxes, and the installer catalogue
+    winebox install notepad++        a box named notepad++ with it inside
+    winebox run notepad++            start it, sandboxed
+    winebox run notepad++ 'Z:\shared\notes.txt'
+    winebox cfg notepad++            winecfg for that box
+    winebox new games                an empty box; winebox run games C:\...
+    winebox shell games              a shell inside the box's environment
+    winebox rm games                 delete the box, prefix and all
+
+    A box is ~/.local/share/winebox/NAME: a Wine prefix (its own C: drive),
+    a home the program sees as yours, and an env file. The env file is the
+    whole configuration -- KEY='VALUE', quoted:
+
+        WINEARCH='win32'     32-bit prefix (x86_64; the default there)
+        NET='no'             network inside the box; 'yes' to allow it
+        EXE='C:\...\x.exe'   what 'run' starts with no argument
+        WINEDLLOVERRIDES     Wine's; the default silences Mono/Gecko prompts
+                             and the menu builder
+
+The sandbox
+
+    Every run is inside bubblewrap: the system read-only, the box
+    read-write, a private /tmp, no view of your real home, no network unless
+    NET='yes'. The one folder every box shares with you is ~/Public/winebox,
+    which the program sees as Z:\shared. Put files there to hand them over.
+
+Installers
+
+    The catalogue is vendor downloads with published checksums and silent
+    switches, and the right build for this port -- installers on x86_64,
+    portable builds on aarch64, because NSIS installer stubs are x86 even
+    when what they carry is ARM64. ninite.com's installers are online .NET
+    programs and do not run under Wine.
+
+    Anything else: winebox new NAME, copy the installer into
+    ~/Public/winebox, then  winebox run NAME 'Z:\shared\setup.exe'
+GUIDE
+    chmod 0644 /usr/local/share/copal/guides/windows.txt 2>/dev/null || true
 }
 
 workshop_music() {
@@ -15751,6 +15822,8 @@ stage_verify() {
     else
         note "  Claude Code     : not installed (stage 7)"
     fi
+    note "  Windows/Wine    : $(command -v wine >/dev/null && wine --version 2>/dev/null || echo 'no wine'); winebox $(command -v winebox >/dev/null && echo present || echo no); boxes: $(ls -d "$_uh"/.local/share/winebox/*/ 2>/dev/null | wc -l | tr -d ' ')"
+    note "  built here      : endless-sky $(command -v endless-sky >/dev/null && echo yes || echo no), streamripper $(command -v streamripper >/dev/null && echo yes || echo no)"
     note "  yt-dlp          : $(command -v yt-dlp >/dev/null && yt-dlp --version 2>/dev/null || echo 'not installed'); yt-brave $(command -v yt-brave >/dev/null && echo yes || echo no); ytq $(command -v ytq >/dev/null && echo yes || echo no); clipboard $(if command -v wl-paste >/dev/null; then echo wl-paste; elif command -v xclip >/dev/null; then echo xclip; else echo NONE; fi)"
     echo
     note "uncommitted changes (lbu status):"
