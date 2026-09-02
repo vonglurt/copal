@@ -398,6 +398,10 @@ if [ -f "$COPAL_ANSWERS" ]; then
     info "Read answers from $(basename "$COPAL_ANSWERS")${COPAL_ROOT_PW_HASH:+ (root password set)}"
     CFG_GIT_NAME="${CFG_GIT_NAME-${COPAL_GIT_NAME-}}"
     CFG_GIT_EMAIL="${CFG_GIT_EMAIL-${COPAL_GIT_EMAIL-}}"
+    CFG_MAIL_ADDRESS="${CFG_MAIL_ADDRESS-${COPAL_MAIL_ADDRESS-}}"
+    CFG_MAIL_NAME="${CFG_MAIL_NAME-${COPAL_MAIL_NAME-}}"
+    CFG_MAIL_IMAP="${CFG_MAIL_IMAP-${COPAL_MAIL_IMAP-}}"
+    CFG_MAIL_SMTP="${CFG_MAIL_SMTP-${COPAL_MAIL_SMTP-}}"
     CFG_USER="${CFG_USER:-${COPAL_USER:-}}"
     CFG_HOSTNAME="${CFG_HOSTNAME:-${COPAL_HOSTNAME:-}}"
     CFG_TIMEZONE="${CFG_TIMEZONE:-${COPAL_TIMEZONE:-}}"
@@ -541,6 +545,10 @@ fi
 sanitise_conf_value() { printf '%s' "$1" | tr -d '"\\`$' | tr -d '[:cntrl:]'; }
 CFG_GIT_NAME=$(sanitise_conf_value "${CFG_GIT_NAME:-}")
 CFG_GIT_EMAIL=$(sanitise_conf_value "${CFG_GIT_EMAIL:-}")
+CFG_MAIL_ADDRESS=$(sanitise_conf_value "${CFG_MAIL_ADDRESS:-}")
+CFG_MAIL_NAME=$(sanitise_conf_value "${CFG_MAIL_NAME:-}")
+CFG_MAIL_IMAP=$(sanitise_conf_value "${CFG_MAIL_IMAP:-}")
+CFG_MAIL_SMTP=$(sanitise_conf_value "${CFG_MAIL_SMTP:-}")
 
 # Why a second partition:
 #
@@ -2087,6 +2095,10 @@ cat > "$MNT/copal.conf" <<CONF
 PI_USER="${CFG_USER}"
 PI_GIT_NAME="${CFG_GIT_NAME}"
 PI_GIT_EMAIL="${CFG_GIT_EMAIL}"
+PI_MAIL_ADDRESS="${CFG_MAIL_ADDRESS}"
+PI_MAIL_NAME="${CFG_MAIL_NAME}"
+PI_MAIL_IMAP="${CFG_MAIL_IMAP}"
+PI_MAIL_SMTP="${CFG_MAIL_SMTP}"
 CONF
 
 # Build identity, its own file rather than a line in copal.conf: it is read by
@@ -3542,7 +3554,7 @@ Retro|ScummVM (point-and-click adventures)|scummvm|scummvm|x|*
 Retro|DOSBox Staging (DOS)|dosbox-staging|dosbox|x|!x32
 Retro|VICE (Commodore 64 - see stage 9)|vice@testing|x64sc|x|*
 Retro|FS-UAE (Amiga)|fs-uae|fs-uae|x|*
-Retro|mGBA (Game Boy Advance)|mgba|mgba|x|!v6
+Retro|mGBA (Game Boy Advance)|mgba-qt|mgba-qt|x|!v6
 Retro|RetroArch (many consoles)|retroarch|retroarch|x|*
 Retro|Mednafen (many consoles)|mednafen|mednafen|h|*
 Engineering|SolveSpace (parametric CAD, exports STL)|solvespace|solvespace|x|*
@@ -3596,7 +3608,7 @@ Tools|tmux (terminal multiplexer)|tmux|tmux|t|*
 Tools|Galculator|galculator|galculator|x|*
 Tools|SQLite browser|sqlitebrowser|sqlitebrowser|x|*
 Tools|Sticky notes|xpad|xpad|x|*
-Tools|Screenshot to file|scrot|scrot|x|*
+Tools|Screenshot to file|scrot|scrot|h|*
 Tools|Remmina (remote desktop)|remmina|remmina|x|*
 Tools|x11vnc (share this screen)|x11vnc|x11vnc|t|*
 Tools|Screen lock and savers|xscreensaver|xscreensaver|x|*
@@ -4747,6 +4759,7 @@ stage_base_config() {
     # Before the commit, so the fstab line and the module list are inside the
     # apkovl. On a diskless system a change made after it is a change lost.
     configure_9p_share
+    configure_vm_graphics_env
     configure_power_button
     configure_debug_flag
 
@@ -4952,6 +4965,29 @@ configure_9p_share() {
     if writing back is refused, write as root, or work on a copy in your
     home directory.
 SHAREMSG
+}
+
+# ---------------------------------------- Qt Quick on a software GPU ---
+#
+# Alpine's Mesa carries no virgl driver on any architecture (the graphics lab
+# report), so every virtio-gpu guest renders with llvmpipe. Most programs do
+# not mind. Qt Quick does: MuseScore 4 dies with SIGSEGV inside the QML
+# renderer at startup, and with QT_QUICK_BACKEND=software it starts and runs.
+# The setting is harmless for Qt programs that do not use Quick, and it is
+# only written on a machine whose DRM card is virtio_gpu -- a Pi's V3D and a
+# PC's GPU keep the OpenGL scene graph they can actually drive.
+configure_vm_graphics_env() {
+    # card0/device/driver is the PCI bus driver (virtio-pci); the GPU driver
+    # is bound on the virtio bus, so ask that: a device under virtio_gpu.
+    [ -n "$(ls /sys/bus/virtio/drivers/virtio_gpu 2>/dev/null | grep '^virtio')" ] || return 0
+    cat > /etc/profile.d/copal-vm-gfx.sh <<'GFX'
+# Written by copal: this guest's GPU is virtio-gpu without virgl, i.e. llvmpipe.
+# Qt Quick's OpenGL scene graph crashes on it (MuseScore); its software
+# rasteriser does not.
+export QT_QUICK_BACKEND=software
+GFX
+    chmod 0644 /etc/profile.d/copal-vm-gfx.sh
+    note "/etc/profile.d/copal-vm-gfx.sh -- QT_QUICK_BACKEND=software (virtio-gpu, no virgl)"
 }
 
 # ------------------------------------------------ the power button ---
@@ -6422,7 +6458,11 @@ client.urgent           #f7768e #f7768e #1a1b26 #f7768e   #f7768e
 bar {
         status_command i3status
         position top
-        tray_output none
+        # The tray, on the primary output. nm-applet and blueman-applet from
+        # the catalogue live there, and qBittorrent "minimises to the tray":
+        # with tray_output none those had nowhere to appear and a window
+        # closed to the tray was gone until the process was killed.
+        tray_output primary
         colors {
                 background #16161e
                 statusline #c0caf5
@@ -8720,20 +8760,30 @@ install_claude_code() {
 MSG
     confirm "Install Claude Code?" || { note "Skipping Claude Code."; return 0; }
 
-    say "Installing @anthropic-ai/claude-code"
-    # Global, so it lands on PATH for every account. That is not the same as
-    # running as root: the credentials and settings Claude Code writes go to
-    # ~/.claude, so signing in as the admin user keeps them in that user's
-    # home where they belong.
-    if npm install -g @anthropic-ai/claude-code; then
-        note "installed: $(command -v claude 2>/dev/null || echo 'claude (not yet on PATH -- log out and back in)')"
-    else
+    say "Installing @anthropic-ai/claude-code for $PI_USER"
+    # Into a prefix the USER owns, not root's /usr/local. `claude doctor` on a
+    # root-installed copy reports one warning and it is a real one: Claude
+    # Code updates itself, and it cannot write /usr/local/lib/node_modules as
+    # the account that runs it, so every update attempt fails. Its own three
+    # suggested fixes are the native installer (a glibc binary -- not on
+    # musl), nvm, or an npm prefix in the home directory; the last is the one
+    # that works here. ~/.npmrc records the prefix, /etc/profile.d puts the
+    # bin directory first on PATH for every login shell, and credentials go to
+    # ~/.claude as before. The install runs as the user for the same reason.
+    if ! su - "$PI_USER" -c 'npm config set prefix "$HOME/.npm-global" && npm install -g @anthropic-ai/claude-code'; then
         warn "npm install failed -- see the output above."
         note "The usual causes on this board are RAM during the install, and"
         note "native modules with no ARMv6 build. Retry under zram, or with:"
         note "  NODE_OPTIONS=--max-old-space-size=256 npm install -g @anthropic-ai/claude-code"
         return 0
     fi
+    cat > /etc/profile.d/npm-global.sh <<'NPMG'
+# Written by copal-init.sh. npm's global prefix is per user (~/.npm-global),
+# so Claude Code can update itself without root. See `claude doctor`.
+export PATH="$HOME/.npm-global/bin:$PATH"
+NPMG
+    chmod 0644 /etc/profile.d/npm-global.sh
+    note "installed: $(user_home)/.npm-global/bin/claude (on PATH at the next login)"
 
     # $BROWSER is the convention CLI tools follow to open a URL. Point it at
     # whatever stage 4 actually installed, in preference order, so the sign-in
@@ -8752,6 +8802,10 @@ BROWSERENV
     done
     command -v "$_b" >/dev/null 2>&1 || \
         note "no browser installed yet -- run stage 4, or paste the sign-in URL"
+    # The checkup Claude Code ships with. Non-interactive, prints its
+    # findings and exits; run as the user so it looks at the user's install.
+    say "claude doctor"
+    su - "$PI_USER" -c 'claude doctor' 2>&1 | sed 's/^/    /' || true
     note "Sign in by running:  claude      (as $PI_USER, not as root)"
     note "Credentials land in ~/.claude, so run it as the account you use."
     note "If it runs out of memory: NODE_OPTIONS=--max-old-space-size=256 claude"
@@ -10533,6 +10587,7 @@ kateprojectplugin=true
 [General]
 Show Menu Bar=true
 Show Status Bar=true
+Show welcome view for new window=false
 KATERC
     install_home_file .config/katerc /tmp/katerc.$$
     rm -f /tmp/katerc.$$
@@ -13106,6 +13161,168 @@ p2_free_sectors() {
 # at the end of a card is normal.
 p2_growable() { [ "$(p2_free_sectors)" -gt 131072 ]; }
 
+
+# ------------------------------------- first-run dialogs, designed away ---
+#
+# docs/app-integration-plan.md is the record: every graphical program in the
+# catalogue launched once with tools/copal-app-probe.sh, and each first-run
+# wizard or welcome page written down. The ones a file can spare people are
+# spared here. Each seed is written only when the program is installed AND
+# its configuration is absent, so a person's own settings are never touched
+# and running stage 12 again is free. Mail seeds need the address from
+# answers.txt (PI_MAIL_*); without it the mail clients keep their wizards,
+# which is the right outcome for an account nobody has named.
+seed_home_if_absent() {  # <relative path> <source file>  -- root and the user
+    ensure_user_home || true
+    for _h in /root "$(user_home)"; do
+        [ -n "$_h" ] && [ -d "$_h" ] || continue
+        [ -e "$_h/$1" ] && continue
+        mkdir -p "$_h/$(dirname "$1")"
+        cp "$2" "$_h/$1"
+        _own=$(stat -c '%u:%g' "$_h" 2>/dev/null) && chown -R "$_own" "$_h/$(dirname "$1")" 2>/dev/null || true
+        note "$_h/$1"
+    done
+}
+
+seed_app_configs() {
+    say "First-run dialogs: seeding what a file can answer"
+    _t=$(mktemp /tmp/copal-seed.XXXXXX)
+
+    # Firefox ESR: no welcome tab, no "make me the default", no telemetry.
+    # A policies file in the distribution directory; read on every start.
+    if [ -d /usr/lib/firefox-esr ] && [ ! -f /usr/lib/firefox-esr/distribution/policies.json ]; then
+        mkdir -p /usr/lib/firefox-esr/distribution
+        cat > /usr/lib/firefox-esr/distribution/policies.json <<'POL'
+{ "policies": {
+    "OverrideFirstRunPage": "",
+    "OverridePostUpdatePage": "",
+    "DisableTelemetry": true,
+    "DontCheckDefaultBrowser": true,
+    "NoDefaultBookmarks": true } }
+POL
+        note "/usr/lib/firefox-esr/distribution/policies.json"
+    fi
+
+    # qBittorrent: the "Legal Notice" box on first start (verified), and no
+    # vanishing into the tray: on i3 the bar has no tray, so a window closed
+    # "to the tray" is simply gone until the process is killed.
+    if command -v qbittorrent >/dev/null 2>&1; then
+        printf '[LegalNotice]\nAccepted=true\n\n[Preferences]\nGeneral\\CloseToTray=false\nGeneral\\MinimizeToTray=false\nGeneral\\SystrayEnabled=false\n' > "$_t"
+        seed_home_if_absent .config/qBittorrent/qBittorrent.conf "$_t"
+    fi
+
+    # Zim: without a notebook the first window is "Add Notebook". One in
+    # ~/Notebooks/Notes, registered as the default, and it opens on a page.
+    if command -v zim >/dev/null 2>&1; then
+        printf '[NotebookList]\nDefault=~/Notebooks/Notes\n\n[Notebook 1]\nuri=~/Notebooks/Notes\nname=Notes\n' > "$_t"
+        seed_home_if_absent .config/zim/notebooks.list "$_t"
+        printf '[Notebook]\nversion=0.4\nname=Notes\nhome=Home\n' > "$_t"
+        seed_home_if_absent Notebooks/Notes/notebook.zim "$_t"
+    fi
+
+    # Kate: its welcome view in every new window. Only when copal has not
+    # already written a katerc (stage 7 does, with the LSP client); then the
+    # line is added there instead.
+    if command -v kate >/dev/null 2>&1; then
+        printf '[General]\nShow welcome view for new window=false\n' > "$_t"
+        seed_home_if_absent .config/katerc "$_t"
+    fi
+
+    # Audacity 3.7 is NOT seeded, deliberately: its "Welcome to Audacity!"
+    # dialog ignores /GUI/ShowSplashScreen (tested -- the key is dropped on
+    # the next save) and the preference it does honour could not be found in
+    # the binaries. Its "New Plugins" dialog needs nothing: it is the first
+    # scan, and the second start does not show it.
+
+    if [ -n "${PI_MAIL_ADDRESS:-}" ]; then
+        _mname="${PI_MAIL_NAME:-${PI_GIT_NAME:-$PI_MAIL_ADDRESS}}"
+        _imap="${PI_MAIL_IMAP:-imap.${PI_MAIL_ADDRESS#*@}}"
+        _smtp="${PI_MAIL_SMTP:-smtp.${PI_MAIL_ADDRESS#*@}}"
+
+        # Thunderbird: an account is nothing but prefs. profiles.ini names a
+        # profile, user.js inside it declares IMAP (993, TLS), SMTP (465, TLS)
+        # and a Local Folders store; the first start opens on the Inbox and
+        # asks for the password once. The numeric codes are Thunderbird's:
+        # socketType 3 = SSL/TLS, authMethod 3 = normal password.
+        if command -v thunderbird >/dev/null 2>&1; then
+            printf '[General]\nStartWithLastProfile=1\nVersion=2\n\n[Profile0]\nName=default\nIsRelative=1\nPath=copal.default\nDefault=1\n' > "$_t"
+            seed_home_if_absent .thunderbird/profiles.ini "$_t"
+            cat > "$_t" <<TB
+user_pref("mail.accountmanager.accounts", "account1,account2");
+user_pref("mail.accountmanager.defaultaccount", "account1");
+user_pref("mail.accountmanager.localfoldersserver", "server2");
+user_pref("mail.account.account1.identities", "id1");
+user_pref("mail.account.account1.server", "server1");
+user_pref("mail.account.account2.server", "server2");
+user_pref("mail.server.server1.type", "imap");
+user_pref("mail.server.server1.hostname", "$_imap");
+user_pref("mail.server.server1.port", 993);
+user_pref("mail.server.server1.socketType", 3);
+user_pref("mail.server.server1.authMethod", 3);
+user_pref("mail.server.server1.userName", "$PI_MAIL_ADDRESS");
+user_pref("mail.server.server1.name", "$PI_MAIL_ADDRESS");
+user_pref("mail.server.server2.type", "none");
+user_pref("mail.server.server2.hostname", "Local Folders");
+user_pref("mail.server.server2.name", "Local Folders");
+user_pref("mail.identity.id1.fullName", "$_mname");
+user_pref("mail.identity.id1.useremail", "$PI_MAIL_ADDRESS");
+user_pref("mail.identity.id1.smtpServer", "smtp1");
+user_pref("mail.smtpservers", "smtp1");
+user_pref("mail.smtp.defaultserver", "smtp1");
+user_pref("mail.smtpserver.smtp1.hostname", "$_smtp");
+user_pref("mail.smtpserver.smtp1.port", 465);
+user_pref("mail.smtpserver.smtp1.try_ssl", 3);
+user_pref("mail.smtpserver.smtp1.authMethod", 3);
+user_pref("mail.smtpserver.smtp1.username", "$PI_MAIL_ADDRESS");
+user_pref("mail.shell.checkDefaultClient", false);
+user_pref("app.donation.eoy.version.viewed", 99);
+TB
+            seed_home_if_absent .thunderbird/copal.default/user.js "$_t"
+        fi
+
+        # Claws Mail skips its wizard when accountrc exists. protocol 3 is
+        # IMAP4, ssl_* 1 is TLS on connect, and the IMAP folder tree is
+        # declared in folderlist.xml or the account has nowhere to appear.
+        if command -v claws-mail >/dev/null 2>&1; then
+            cat > "$_t" <<CLAWS
+[Account: 1]
+account_name=$PI_MAIL_ADDRESS
+is_default=1
+name=$_mname
+address=$PI_MAIL_ADDRESS
+protocol=3
+receive_server=$_imap
+smtp_server=$_smtp
+user_id=$PI_MAIL_ADDRESS
+password=
+use_mail_command=0
+ssl_imap=1
+ssl_smtp=1
+use_smtp_auth=1
+smtp_user_id=$PI_MAIL_ADDRESS
+set_imapport=1
+imap_port=993
+set_smtpport=1
+smtp_port=465
+imap_directory=
+imap_subsonly=1
+CLAWS
+            seed_home_if_absent .claws-mail/accountrc "$_t"
+            cat > "$_t" <<FOLD
+<?xml version="1.0" encoding="UTF-8"?>
+<folderlist>
+  <folder type="imap" name="$PI_MAIL_ADDRESS" path="imapcache/$_imap/$PI_MAIL_ADDRESS" account_id="1" />
+  <folder type="mh" name="Mail" path="Mail" />
+</folderlist>
+FOLD
+            seed_home_if_absent .claws-mail/folderlist.xml "$_t"
+        fi
+    else
+        note "no mail address in answers.txt -- Thunderbird and Claws Mail keep their account wizards"
+    fi
+    rm -f "$_t"
+}
+
 stage_apps() {
     say "Stage 12: applications"
 
@@ -13229,6 +13446,7 @@ MSG
     # if it is already there, which makes calling them twice free and safe.
     dev_write_kate_config
     dev_write_emacs_config
+    seed_app_configs
 
     say "Done"
     note "Open the menu (Super+z) -- everything installed now appears in it,"
@@ -15166,6 +15384,13 @@ stage_verify() {
         note "  KiCad           : not installed (stage 14, electronics)"
     fi
     note "  wxMaxima        : $(/usr/local/bin/wxmaxima --version 2>/dev/null || echo 'not built (stage 14, maths)'); maxima $(command -v maxima >/dev/null && echo yes || echo no)"
+    _cl="$(user_home)/.npm-global/bin/claude"
+    [ -x "$_cl" ] || _cl=$(command -v claude 2>/dev/null)
+    if [ -n "$_cl" ]; then
+        note "  Claude Code     : $("$_cl" --version 2>/dev/null | head -1) at $_cl; doctor: $(su - "$PI_USER" -c 'claude doctor' 2>/dev/null | grep -c 'warning found\|error' | sed 's/^0$/clean/; s/^[1-9].*/see: claude doctor/')"
+    else
+        note "  Claude Code     : not installed (stage 7)"
+    fi
     note "  yt-dlp          : $(command -v yt-dlp >/dev/null && yt-dlp --version 2>/dev/null || echo 'not installed'); yt-brave $(command -v yt-brave >/dev/null && echo yes || echo no); ytq $(command -v ytq >/dev/null && echo yes || echo no); clipboard $(if command -v wl-paste >/dev/null; then echo wl-paste; elif command -v xclip >/dev/null; then echo xclip; else echo NONE; fi)"
     echo
     note "uncommitted changes (lbu status):"

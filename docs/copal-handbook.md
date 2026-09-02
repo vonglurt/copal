@@ -525,6 +525,16 @@ to start over to pick up script changes.**
 
 ### Configuration
 
+`make answers` also asks, optionally, for a mail address with its display
+name and IMAP and SMTP hosts. Given those, stage 12 writes the account into
+Thunderbird (`profiles.ini` + `user.js`) and Claws Mail (`accountrc` +
+`folderlist.xml`) before either has run, so the first start opens on the
+Inbox rather than the account wizard; the password is asked once by the
+client and never stored by Copal. The same step drops a `policies.json` for
+Firefox ESR that turns off its welcome tab and default-browser nag. Which
+programs show a first-run dialog, and what was done about each, is the table
+in [docs/app-integration-plan.md](app-integration-plan.md).
+
 Set these in the environment to override the defaults baked into `answers.txt`:
 
 | Variable | Default | What it sets |
