@@ -122,9 +122,8 @@ sends arrives from a new virtual keyboard with a fresh keymap, and Hyprland
 answers each with `activelayout>>hl-virtual-keyboard-wtype` followed at once by
 `submap>>` — the submap is reset before the key lands. That is why the
 scripted walkthroughs kept "losing" the submap while the signal test did not.
-A physical keyboard does not change keymaps mid-session. The arrows have been
-verified by the mechanism, not yet by a finger; that is the one result in this
-report the author has to supply.
+A physical keyboard does not change keymaps mid-session, and under the
+author's own keyboard Left and Right switch panes as intended.
 
 ### E. Shut down did nothing
 
@@ -182,12 +181,20 @@ ever grow a key that exits, the walker already accepts 10–29 as a switch.
 **The cost, unchanged.** Left and Right do not move the cursor in the search
 box. Typing, Backspace and Ctrl-W still edit it.
 
-**Open.** (1) The arrows under a physical keyboard, per §D. (2) Whether the
-`hyprland/submap` module's `menu` label while the menu is open is wanted or
-should be hidden. (3) On a Raspberry Pi with no power button, "safe to unplug"
-is the console going quiet after the kernel's `reboot: Power down` line;
-Copal prints nothing of its own, and a one-line notice from the shutdown
-runlevel would be a small addition.
+**Verified since.** The arrows, under the author's own keyboard: Left and
+Right switch panes as described in §D.
+
+**Safe to unplug.** On a Raspberry Pi with no power button, the only sign that
+a halt has finished was the console going quiet after the kernel's
+`reboot: Power down` line. Stage 4 now installs `copal-unplug`, an OpenRC
+service in the shutdown runlevel ordered after `mount-ro`, which prints a
+plain notice on the console once the filesystems are read-only. Alpine's
+inittab runs `openrc shutdown` for reboots as well as halts without saying
+which, so the notice covers both. It is installed only when the device tree
+names a Pi; a PC or a VM cuts its own power before anyone could read it.
+
+**Open.** Whether the `hyprland/submap` module's `menu` label while the menu
+is open is wanted or should be hidden.
 
 ## Where the fixes are
 
@@ -197,4 +204,5 @@ runlevel would be a small addition.
 | `copal-prep.sh`, `hyprland.conf` heredoc | `submap = menu` block after the Super+Z binding |
 | `copal-prep.sh`, `copal-halt` heredoc | asks with wofi on Wayland, logs out with `hyprctl`, detaches under `WAYLAND_DISPLAY` too |
 | `copal-prep.sh`, `copal-install` heredoc | `copal-menu --rebuild-all` as `DOAS_USER` after a successful install |
+| `copal-prep.sh`, stage 4 after `copal-halt` | `/etc/init.d/copal-unplug` in the shutdown runlevel, on a Raspberry Pi only |
 | On this guest, live | `~/.local/bin/copal-menu` and `~/.local/bin/copal-halt` shadow `/usr/local/bin` until stage 16 re-runs; the submap block is in `~/.config/hypr/hyprland.conf` |

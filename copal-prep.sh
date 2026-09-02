@@ -8103,6 +8103,56 @@ COPALHALT
     chmod 0755 /usr/local/bin/copal-halt
 
     # ----------------------------------------------------------------------
+    # "SAFE TO UNPLUG." A Pi has no power button and no light that means
+    # "off": the red one is mains, the green one is disk activity, and the
+    # kernel's last words on the console -- "reboot: Power down" -- are true
+    # but addressed to nobody. So on a Pi one more OpenRC service sits in the
+    # shutdown runlevel, after mount-ro, and says it in words on the console,
+    # where the HDMI screen shows it once the desktop has gone. Not installed
+    # on a PC or a VM: those cut their own power and the screen is dark before
+    # anyone could read it.
+    #
+    # Alpine's inittab runs 'openrc shutdown' for a reboot as well as a halt
+    # and does not say which, so the notice covers both rather than claiming
+    # to know.
+    if grep -qi "raspberry pi" /proc/device-tree/model 2>/dev/null; then
+        say "Installing /etc/init.d/copal-unplug (the safe-to-unplug notice)"
+        cat > /etc/init.d/copal-unplug <<'UNPLUG'
+#!/sbin/openrc-run
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# copal-unplug -- the last words on the console when a Raspberry Pi halts.
+#
+# OpenRC "starts" the shutdown runlevel's services on the way down; this one
+# runs after mount-ro, so it speaks once the filesystems are read-only and
+# there is nothing left to lose. The kernel then prints "reboot: Power down",
+# the green light goes dark, and the notice stays on the screen.
+description="Says on the console when it is safe to unplug the Pi"
+
+depend() {
+    after killprocs savecache mount-ro
+}
+
+start() {
+    if [ "${RC_REBOOT:-no}" = yes ]; then
+        printf '\n   Restarting -- leave the power alone.\n\n' > /dev/console
+    else
+        printf '\n   The Raspberry Pi has halted.\n' > /dev/console
+        printf '   If you asked for a restart it will come back by itself.\n' > /dev/console
+        printf '   Otherwise it is SAFE TO UNPLUG once the green light stays off.\n\n' > /dev/console
+    fi
+    return 0
+}
+UNPLUG
+        chmod 0755 /etc/init.d/copal-unplug
+        if rc-update add copal-unplug shutdown >/dev/null 2>&1; then
+            note "copal-unplug -- 'safe to unplug' on the console when the Pi halts"
+        else
+            warn "could not add copal-unplug to the shutdown runlevel -- rc-update add copal-unplug shutdown, by hand"
+        fi
+    fi
+
+    # ----------------------------------------------------------------------
     # copal-logs.
     #
     # Logs on this machine come from three places that have nothing to do with
