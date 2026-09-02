@@ -24,6 +24,16 @@ if "--log" in sys.argv:
 # the configuration step that spares the wizard or the error, or the reason
 # to leave it alone. Add to it as the passes go on.
 NOTES = {
+    "gzdoom": "opened a 'Fatal error' box: no game data. RESOLVED: the row installs freedoom with it; verified with DOOMWADDIR pointed at Freedoom's WADs -- GZDoom starts into the game",
+    "chocolate-doom": "same: needs an IWAD. RESOLVED: freedoom in the row; verified -- 'Freedoom: Phase 1 - Chocolate Doom'",
+    "openmw-launcher": "the row named the engine binary, which exits without game data. RESOLVED: the row now starts openmw-launcher, whose 'First run' wizard asks for the Morrowind data -- expected, nothing to seed",
+    "lbreakout2": "exit 133 after 'lbreakout2.conf: file not found', EGL cannot create a screen; SDL_VIDEODRIVER=wayland makes no difference. A software-GL guest casualty; retest on hardware",
+    "pingus": "SIGSEGV after SDL_Mixer fails to open ALSA; the EGL failure is there too. Retest after the sound card fix, then on hardware",
+    "supertux2": "starts; ALSA 'cannot find card' -- the sound card question",
+    "freeciv-sdl2": "starts; ALSA 'cannot find card' -- the sound card question",
+    "krusader": "an 'Information' box on the very first start only; the second start went straight to the panes. Its one-time notice about optional helper tools -- leave",
+    "xboard": "exit 2, 'Unable to create font set': Xwayland's font path is built-ins only. RESOLVED on the antiquity-desktop branch (stage 16): an exec-once adds the misc/75dpi/100dpi directories; verified by hand with xset +fp",
+    "xfig": "starts; its 'Cannot convert string -misc-fixed-*' warning is the same Xwayland font path, gone with the same fix",
     "welle-io": "SIGSEGV on start: the Qt Quick renderer on llvmpipe, same as MuseScore. RESOLVED by the same QT_QUICK_BACKEND=software (verified: opens its window). Needs an RTL-SDR to receive anything",
     "kitty": "exits 1: needs OpenGL 3.3 through EGL and this guest's llvmpipe/virtio-gpu EGL path fails to create a screen. A software-GL guest problem; fine on hardware. foot is the terminal here",
     "wezterm": "no window in 45 s, process alive, EGL cannot create a screen: a GPU terminal on a software-GL guest. Fine on hardware; foot is the terminal here",
@@ -45,7 +55,6 @@ NOTES = {
     "feh": "needs an image argument; exit 1 without one is its usage error",
     "nsxiv": "needs an image argument; same",
     "cura": "BROKEN upstream: ModuleNotFoundError 'imp' -- Cura 5 on Alpine's Python 3.14 (imp was removed in 3.12). Report to Alpine's cura@testing; nothing to seed",
-    "krusader": "an 'Information' dialog on first start; the screenshot was overdrawn by a concurrent test -- probe by hand with --keep and read it",
     "koreader": "opens its Quickstart Guide on first run; that is its intended first page",
     "xfburn": "'No drives were found' -- the VM has no optical drive; expected",
     "umbrello6": "a warning about a missing help index; harmless",

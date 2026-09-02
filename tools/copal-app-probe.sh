@@ -7,6 +7,13 @@
 #   copal-app-probe.sh NAME [COMMAND [ARGS...]]     COMMAND defaults to NAME
 #   copal-app-probe.sh --keep NAME ...              leave it running for you
 #   copal-app-probe.sh --wait 40 NAME ...           seconds to allow for a window
+#   copal-app-probe.sh --workspace 2 NAME ...       run it on that workspace (default 2)
+#   copal-app-probe.sh --doc DIR NAME ...           also save a half-size PNG in DIR
+#
+# WORKSPACE 2. The program is launched on its own workspace and the session
+# doing the testing stays on workspace 1, so the screenshot holds the program
+# and nothing else, and a fullscreen game does not land on the terminal
+# driving it. Hyprland only; elsewhere it runs where it runs.
 #
 # The integration test for a desktop program is dull and has to be done a
 # hundred times: start it, see whether a window appears, see whether that
@@ -26,11 +33,13 @@
 # "Account", "First", "Wizard", "Assistant"), because a wizard on first launch
 # is precisely the thing this exercise exists to find and then design away.
 set -u
-KEEP=0; WAIT=30
+KEEP=0; WAIT=30; WS="${COPAL_PROBE_WORKSPACE:-2}"; DOC=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --keep) KEEP=1; shift ;;
         --wait) WAIT="${2:?--wait needs seconds}"; shift 2 ;;
+        --workspace) WS="${2:?--workspace needs a number}"; shift 2 ;;
+        --doc) DOC="${2:?--doc needs a directory}"; shift 2 ;;
         --) shift; break ;;
         -*) echo "copal-app-probe: unknown option $1" >&2; exit 2 ;;
         *) break ;;
@@ -78,6 +87,12 @@ for c in json.load(sys.stdin):
     print("%s|%s|%s|%s" % (c.get("pid"), c.get("class",""), c.get("title",""), c.get("address","")))'
     fi
 }
+HYPR=0
+if command -v hyprctl >/dev/null 2>&1 && [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]; then
+    HYPR=1
+    WS_HOME=$(hyprctl activeworkspace -j 2>/dev/null | python3 -c 'import json,sys;print(json.load(sys.stdin)["id"])' 2>/dev/null)
+    [ -n "$WS" ] && [ "$WS" != "$WS_HOME" ] && hyprctl dispatch workspace "$WS" >/dev/null 2>&1 && sleep 0.5
+fi
 BEFORE=$(all_windows | cut -d'|' -f4)
 T0=$(date +%s)
 setsid "$@" >"$LOG" 2>&1 &
@@ -109,7 +124,9 @@ if [ -n "$WIN" ]; then
     if [ "$DETACHED" -eq 1 ]; then WIN=$(new_windows); else WIN=$(my_windows); fi
 fi
 
-if command -v grim >/dev/null 2>&1 && [ -n "${WAYLAND_DISPLAY:-}" ]; then grim "$PNG" 2>/dev/null
+if command -v grim >/dev/null 2>&1 && [ -n "${WAYLAND_DISPLAY:-}" ]; then
+    grim "$PNG" 2>/dev/null
+    [ -n "$DOC" ] && mkdir -p "$DOC" && grim -s 0.5 "$DOC/$NAME.png" 2>/dev/null
 elif command -v scrot >/dev/null 2>&1; then scrot -o "$PNG" 2>/dev/null
 elif command -v import >/dev/null 2>&1; then import -window root "$PNG" 2>/dev/null; fi
 
@@ -133,6 +150,10 @@ if [ "$KEEP" -eq 0 ]; then
     sleep 1
     for _p in $(descendants "$PID" | sort -rn); do kill -9 "$_p" 2>/dev/null; done
 fi
+
+# Back to where the person is.
+[ "$HYPR" -eq 1 ] && [ -n "${WS_HOME:-}" ] && [ "$WS" != "$WS_HOME" ] && [ "$KEEP" -eq 0 ] \
+    && hyprctl dispatch workspace "$WS_HOME" >/dev/null 2>&1
 
 if [ -z "$WIN" ]; then
     VERDICT="NO WINDOW in ${WAIT}s, process $ALIVE"

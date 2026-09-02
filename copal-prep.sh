@@ -3533,9 +3533,9 @@ Games|Widelands (settlers-like)|widelands|widelands|x|*
 Games|Wesnoth (heavy - turn-based strategy)|wesnoth|wesnoth|x|*
 Games|Luanti (Minetest - voxel sandbox)|luanti|luanti|x|*
 Games|SuperTux (platformer - needs a GPU)|supertux|supertux2|x|!v6
-Games|OpenMW (Morrowind engine)|openmw|openmw|x|64
-Games|GZDoom (Doom engine)|gzdoom|gzdoom|x|64
-Games|Chocolate Doom (faithful Doom)|chocolate-doom@testing|chocolate-doom|x|*
+Games|OpenMW (Morrowind engine - needs the game's data)|openmw|openmw-launcher|x|64
+Games|GZDoom (Doom engine, with Freedoom)|gzdoom freedoom|gzdoom|x|64
+Games|Chocolate Doom (faithful Doom, with Freedoom)|chocolate-doom@testing freedoom|chocolate-doom|x|*
 Games|Colossal Cave Adventure|bsd-games|adventure|t|*
 Games|Robots|bsd-games|robots|t|*
 Games|Hangman|bsd-games|hangman|t|*

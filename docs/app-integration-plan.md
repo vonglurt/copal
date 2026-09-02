@@ -42,7 +42,7 @@ are probed one by one with a person watching.
 | Audio | Hydrogen (drum machine) | `hydrogen` | ok 2s (3 windows)            stderr:23  [Mixer;Hydrogen;Hydrogen;] -- [31m(E) [AudioEngine::createAudioDriver] [nullptr/nullptr] Error code [-1] while initializing audio | starts, but cannot open an audio driver (JACK, then ALSA) -- the sound card question |
 | Audio | LMMS (DAW - tracker lineage) | `lmms` | ok 1s (1 window)             stderr:2   [Working directory;] -- libEGL warning: egl: failed to create dri2 screen |  |
 | Audio | MilkyTracker (Fasttracker II style) | `milkytracker` | ok 1s (1 window)             stderr:12  [MilkyTracker - Untitled.xm (modified);] -- libEGL warning: egl: failed to create dri2 screen |  |
-| Audio | MuseScore (music notation) | `mscore` | NO WINDOW in 25s, process no (exit 127) stderr:29  -- [1;31m15:21:09.094 / ERROR / main_thread     / LanguagesService::loadLanguages / Failed to read lan | SIGSEGV on start in the QML renderer under llvmpipe. RESOLVED: stage 1 exports QT_QUICK_BACKEND=software on virtio-gpu guests; with it MuseScore starts (its 'Getting started' tour is the expected first run) |
+| Audio | MuseScore (music notation) | `mscore` | WIZARD 2s (2 windows)        stderr:29  [MuseScore Studio;Getting started;] -- [1;31m15:51:36.653 / ERROR / main_thread     / LanguagesService::loadLanguages / Failed to read lan | SIGSEGV on start in the QML renderer under llvmpipe. RESOLVED: stage 1 exports QT_QUICK_BACKEND=software on virtio-gpu guests; with it MuseScore starts (its 'Getting started' tour is the expected first run) |
 | Audio | Schism Tracker (Impulse Tracker style) | `schismtracker` | ok 1s (1 window)             stderr:34  [Schism Tracker;] -- libEGL warning: egl: failed to create dri2 screen |  |
 | Audio | VICE vsid (Commodore 64 SID player) | `vsid` | ok 1s (1 window)             stderr:9   [VICE (VSID);] -- Error - Invalid or unset autosave screenshot format, defaulting to PNG | same sound requirement as x64sc |
 | Control | Bluetooth manager | `blueman-manager` | ok 1s (1 window)             stderr:0 |  |
@@ -58,10 +58,10 @@ are probed one by one with a person watching.
 | Design | Pinta (Paint.NET-like) | `pinta` | ok 4s (1 window)             stderr:3   [Unsaved Image 1 - Pinta;] -- libEGL warning: egl: failed to create dri2 screen |  |
 | Design | Tux Paint (for children) | `tuxpaint` | ok 1s (1 window)             stderr:19  [;] -- ALSA lib confmisc.c:855:(parse_card) [error.core] cannot find card '0' | starts; ALSA 'cannot find card' -- the sound card question |
 | Design | Umbrello (UML diagram editor) | `umbrello6` | ok 1s (1 window)             stderr:17  [Umbrello UML Modeller;] -- umbrello: UMLAppPrivate::findWelcomeFile tried  "/usr/bin/../doc/apphelp/index.cache.bz2"  (not foun | a warning about a missing help index; harmless |
-| Design | Xfig (vector drawing - classic) | `xfig` | ok 1s (1 window)             stderr:5   [Xfig 3.2.9a - No file;] -- Warning: Cannot convert string "-misc-fixed-bold-r-normal--13-*-*-*-*-70-iso10646-1,			-*-fixed-bold |  |
+| Design | Xfig (vector drawing - classic) | `xfig` | ok 1s (1 window)             stderr:5   [Xfig 3.2.9a - No file;] -- Warning: Cannot convert string "-misc-fixed-bold-r-normal--13-*-*-*-*-70-iso10646-1,			-*-fixed-bold | starts; its 'Cannot convert string -misc-fixed-*' warning is the same Xwayland font path, gone with the same fix |
 | Devtools | Code::Blocks (IDE - GDB breakpoints) | `codeblocks` | ok 1s (1 window)             stderr:1   [codeblocks;] -- /home/buildozer/aports/community/wxwidgets/src/wxWidgets-3.2.9/src/common/dcgraph.cpp(466): assert " |  |
 | Devtools | KDevelop (IDE - GDB breakpoints) | `kdevelop` | ok 2s (1 window)             stderr:3   [default:  (no projects) — KDevelop;] -- kdevplatform.shell: Could not load plugin "kdevperforce" , it reported the error: "The variable P4CO | cannot load the kdevperforce plugin; harmless |
-| Devtools | Lapce (modern GUI editor, Rust) | `lapce` | ok 1s (2 windows), detached  stderr:0   [Lapce;Add Notebook;] | re-launches itself detached ('lapce --wait') and exits 0, so the first probe saw no window; the probe now catches detached windows. Starts fine |
+| Devtools | Lapce (modern GUI editor, Rust) | `lapce` | ok 1s (1 window), detached   stderr:0   [Lapce;] | re-launches itself detached ('lapce --wait') and exits 0, so the first probe saw no window; the probe now catches detached windows. Starts fine |
 | Devtools | VSCodium (VS Code without telemetry) | `codium` |  |  |
 | Discs | Xfburn (CD/DVD burner) | `xfburn` | ok 1s (1 window)             stderr:1   [;] -- ** (xfburn:8687): WARNING **: 15:24:20.102: No drives were found! If this is in error, check the per | 'No drives were found' -- the VM has no optical drive; expected |
 | Documents | AbiWord (word processor) | `abiword` | ok 1s (1 window)             stderr:0   [Untitled1;] |  |
@@ -77,14 +77,14 @@ are probed one by one with a person watching.
 | Editors | Emacs (Eglot LSP built in; -nw for terminal) | `emacs` | ok 1s (1 window)             stderr:0   [*GNU Emacs* - GNU Emacs at neagh;] |  |
 | Editors | Geany (programmer's editor) | `geany` | ok 2s (1 window)             stderr:0   [untitled - Geany;] |  |
 | Editors | gedit (GNOME editor) | `gedit` | ok 1s (1 window)             stderr:1   [Untitled Document 1 - gedit;] |  |
-| Editors | Kate (KDE - LSP client built in) | `kate` | WIZARD 1s (1 window)         stderr:0   [Welcome  — Kate;] | opened its Welcome view. RESOLVED: 'Show welcome view for new window=false' in the katerc stage 7 writes, and seeded by stage 12 where stage 7 did not run; verified |
+| Editors | Kate (KDE - LSP client built in) | `kate` | ok 1s (1 window), detached   stderr:0   [Untitled  — Kate;] | opened its Welcome view. RESOLVED: 'Show welcome view for new window=false' in the katerc stage 7 writes, and seeded by stage 12 where stage 7 did not run; verified |
 | Editors | Mousepad (small GUI editor) | `mousepad` | ok 2s (1 window)             stderr:0   [Untitled 1 - Mousepad;] | the first probe saw no window because Mousepad is D-Bus single-instance and the window belongs to another pid; the probe now catches that. Fine |
 | Engineering | Blender (3D modelling - very heavy) | `blender` |  |  |
 | Engineering | Cura (slicer for the Ender 3) | `cura` | NO WINDOW in 25s, process no (exit 1) stderr:1   -- ModuleNotFoundError: No module named 'imp' | first run is a printer-setup wizard; copal's slice-ender3 covers the headless path, the GUI wizard is expected |
 | Engineering | FreeCAD (parametric 3D CAD - heavy) | `FreeCAD` | ok 5s (1 window)             stderr:3   [FreeCAD 1.1.1;] -- libEGL warning: egl: failed to create dri2 screen | heavy; first launch builds its addon cache and may exceed the probe's wait — rerun with --wait 60 |
 | Engineering | KiCad (schematic + PCB + gerbers) | `kicad` | ok 1s (1 window)             stderr:0   [KiCad 10.0;] | done — templates, sheets, demos, plugins seeded by stage 14 (kicad-lab-report.md) |
 | Engineering | SolveSpace (parametric CAD, exports STL) | `solvespace` | ok 1s (2 windows)            stderr:2   [Property Browser — SolveSpace;(new sketch) — SolveSpace;] -- libEGL warning: egl: failed to create dri2 screen |  |
-| Files | Krusader (two-pane - powerful) | `krusader` | ok 2s (1 window)             stderr:1   [Information — Krusader;] -- 15:27:39.103-warning qt.qpa.services unknown@0 # Failed to register with host portal QDBusError("org | an 'Information' dialog on first start; the screenshot was overdrawn by a concurrent test -- probe by hand with --keep and read it |
+| Files | Krusader (two-pane - powerful) | `krusader` | ok 1s (1 window)             stderr:52  [Krusader;] -- 15:59:00.404-critical default unknown@0 # Couldn't start kglobalaccel from org.kde.kglobalaccel.serv | an 'Information' box on the very first start only; the second start went straight to the panes. Its one-time notice about optional helper tools -- leave |
 | Files | PCManFM (file manager) | `pcmanfm` | ok 1s (1 window)             stderr:2   [user;] -- (pcmanfm:20649): Gtk-WARNING **: 15:27:50.530: Theme parsing error: <data>:2:27: The style property |  |
 | Files | Thunar (file manager) | `thunar` | ok 1s (1 window)             stderr:3   [user - Thunar;] -- (thunar:21364): thunar-WARNING **: 15:28:01.797: ThunarThumbnailer: Failed to retrieve supported typ |  |
 | Files | Xarchiver (zip/tar/7z) | `xarchiver` | ok 1s (1 window)             stderr:0   [xarchiver 0.5.4.26;] |  |
@@ -99,13 +99,13 @@ are probed one by one with a person watching.
 | Instruments | GTKWave (view digital waveforms) | `gtkwave` | ok 1s (1 window)             stderr:0   [GTKWave - [no file loaded];] |  |
 | Instruments | PulseView (oscilloscope + logic analyser) | `pulseview` | ok 2s (1 window)             stderr:10  [Session 1 - PulseView;] -- libEGL warning: egl: failed to create dri2 screen |  |
 | Instruments | QSpectrumAnalyzer (spectrum from an SDR) | `qspectrumanalyzer` | ok 1s (1 window)             stderr:2   [QSpectrumAnalyzer;] -- libEGL warning: egl: failed to create dri2 screen |  |
-| Instruments | SpeedCrunch (calculator - bin/oct/hex) | `speedcrunch` | ok 1s (1 window)             stderr:2   [SpeedCrunch;] -- libEGL warning: egl: failed to create dri2 screen |  |
+| Instruments | SpeedCrunch (calculator - bin/oct/hex) | `speedcrunch` | ok 2s (1 window)             stderr:2   [SpeedCrunch;] -- libEGL warning: egl: failed to create dri2 screen |  |
 | Internet | BadWolf (WebKit - modern engine, tiny) | `badwolf` |  |  |
 | Internet | Chromium (full browser) | `chromium` |  |  |
 | Internet | Dillo (tiny web browser) | `dillo` |  |  |
 | Internet | Firefox ESR (full browser) | `firefox-esr` | WIZARD 2s (1 window)         stderr:0   [Welcome to Firefox — Mozilla Firefox;] | first run opens 'Welcome to Firefox'. RESOLVED in stage 12: policies.json in the distribution directory (root; verify on the clean install) |
 | Internet | NetSurf (web - own engine) | `netsurf` |  |  |
-| Internet | qBittorrent (torrents) | `qbittorrent` | ok 2s (1 window)             stderr:1   [Legal Notice;] -- qt.qpa.services: Failed to register with host portal QDBusError("org.freedesktop.DBus.Error.ServiceU | first start shows a Legal Notice, then minimises to the tray. RESOLVED: stage 12 seeds the notice as accepted and turns off close/minimise-to-tray; the i3 bar now has a tray (tray_output primary) for the applets that need one |
+| Internet | qBittorrent (torrents) | `qbittorrent` | ok 1s (1 window)             stderr:1   [qBittorrent v5.2.1;] -- qt.qpa.services: Failed to register with host portal QDBusError("org.freedesktop.DBus.Error.ServiceU | first start shows a Legal Notice, then minimises to the tray. RESOLVED: stage 12 seeds the notice as accepted and turns off close/minimise-to-tray; the i3 bar now has a tray (tray_output primary) for the applets that need one |
 | Internet | Transmission (torrents) | `transmission-gtk` | ok 1s (1 window)             stderr:2   [Transmission;] -- libEGL warning: egl: failed to create dri2 screen |  |
 | Learn | KTouch (typing tutor with a keyboard map) | `ktouch` | ok 1s (1 window)             stderr:3   [Typewriting Trainer;] -- libEGL warning: DRI3 error: Could not get DRI3 device |  |
 | Learn | Minuet (music theory and ear training) | `minuet` | NO WINDOW in 25s, process no (exit 139) stderr:88  -- ALSA lib confmisc.c:855:(parse_card) [error.core] cannot find card '0' | SIGSEGV with 'cannot find card 0' -- retest after the sound card fix; if it still dies it is a Qt Quick program too (try QT_QUICK_BACKEND=software) |
@@ -120,12 +120,12 @@ are probed one by one with a person watching.
 | Notes | CherryTree (hierarchical notebook) | `cherrytree` | ok 1s (2 windows)            stderr:1   [CherryTree 1.7.0;Start in CherryTree;] |  |
 | Notes | Ghostwriter (distraction-free Markdown) | `ghostwriter` | ok 1s (1 window)             stderr:11  [untitled - ghostwriter;] -- libEGL warning: egl: failed to create dri2 screen |  |
 | Notes | Gnote (sticky wiki notes) | `gnote` |  |  |
-| Notes | Zim (wiki-style notebook) | `zim` | ok 1s (1 window)             stderr:0   [Add Notebook;] | first window is 'Add Notebook'. RESOLVED: stage 12 seeds ~/Notebooks/Notes as the default notebook; verified -- opens on 'Home - Notes' |
+| Notes | Zim (wiki-style notebook) | `zim` | ok 1s (1 window)             stderr:0   [Home - Notes;] | first window is 'Add Notebook'. RESOLVED: stage 12 seeds ~/Notebooks/Notes as the default notebook; verified -- opens on 'Home - Notes' |
 | Radio | GNU Radio (build your own SDR, in blocks) | `gnuradio-companion` | ok 2s (1 window)             stderr:0   [*untitled - GNU Radio Companion;] | slow first start (Python block cache); rerun with --wait 60 |
 | Radio | Gqrx (SDR receiver with a waterfall) | `gqrx` | ok 2s (1 window)             stderr:1   [Audio Error;] -- "Pulseaudio error: Connection refused" | asks for an SDR device on first launch; without hardware it shows a device dialog, which is correct |
 | Radio | QSSTV (slow-scan television) | `qsstv` | ok 1s (1 window)             stderr:10  [QSSTV 9.5.8;] -- libEGL warning: egl: failed to create dri2 screen | first run asks for a sound device; depends on the sound card fix |
 | Radio | SDRangel (many modes, heavy) | `sdrangel` |  |  |
-| Radio | welle.io (DAB+ radio) | `welle-io` | NO WINDOW in 25s, process no (exit 139) stderr:10  -- 2026-09-02T15:44:07.314 Debug: main: Error while loading language "C" use untranslated text (ie. Eng | SIGSEGV on start: the Qt Quick renderer on llvmpipe, same as MuseScore. RESOLVED by the same QT_QUICK_BACKEND=software (verified: opens its window). Needs an RTL-SDR to receive anything |
+| Radio | welle.io (DAB+ radio) | `welle-io` | ok 1s (1 window)             stderr:8   [welle.io;] -- 2026-09-02T15:51:47.698 Debug: main: Error while loading language "C" use untranslated text (ie. Eng | SIGSEGV on start: the Qt Quick renderer on llvmpipe, same as MuseScore. RESOLVED by the same QT_QUICK_BACKEND=software (verified: opens its window). Needs an RTL-SDR to receive anything |
 | Retro | DOSBox Staging (DOS) | `dosbox` | ok 1s (1 window)             stderr:15  [DOSBox Staging - 3000 cycles/ms - to capture the mouse press Ctrl+F10 or click any button;] -- libEGL warning: egl: failed to create dri2 screen |  |
 | Retro | FS-UAE (Amiga) | `fs-uae` | ok 2s (1 window)             stderr:10  [FS-UAE · Amiga 500;] -- libEGL warning: egl: failed to create dri2 screen | the sweep's window was closed by a concurrent test; re-probe by hand. Needs a Kickstart ROM to do anything, which is its own first-run dialog |
 | Retro | mGBA (Game Boy Advance) | `mgba-qt` |  | the catalogue installed 'mgba', which is the SDL binary and needs a ROM on its command line -- a GUI entry with no GUI. RESOLVED: the row now installs mgba-qt, the Qt front end |
@@ -164,22 +164,22 @@ are probed one by one with a person watching.
 | Tools | Screen lock and savers | `xscreensaver` |  | a daemon; the probe would only see its settings dialog |
 | Tools | SQLite browser | `sqlitebrowser` | ok 1s (1 window)             stderr:2   [DB Browser for SQLite;] -- libEGL warning: egl: failed to create dri2 screen |  |
 | Tools | Sticky notes | `xpad` | ok 1s (1 window)             stderr:0   [;] |  |
-| Games | Cataclysm DDA (survival roguelike) | `cataclysm-tiles` |  |  |
-| Games | Chess (XBoard + GNU Chess) | `xboard` |  |  |
-| Games | Chocolate Doom (faithful Doom) | `chocolate-doom` |  |  |
-| Games | Freeciv (SDL client - slow) | `freeciv-sdl2` |  |  |
-| Games | GZDoom (Doom engine) | `gzdoom` |  |  |
-| Games | LBreakout2 (breakout) | `lbreakout2` |  |  |
-| Games | Luanti (Minetest - voxel sandbox) | `luanti` |  |  |
-| Games | Minesweeper | `gnome-mines` |  |  |
-| Games | OpenMW (Morrowind engine) | `openmw` |  |  |
-| Games | OpenTTD (transport sim) | `openttd` |  |  |
-| Games | Pingus (Lemmings-like) | `pingus` |  |  |
-| Games | Solitaire | `sol` |  |  |
-| Games | Sudoku | `gnome-sudoku` |  |  |
-| Games | SuperTux (platformer - needs a GPU) | `supertux2` |  |  |
-| Games | Wesnoth (heavy - turn-based strategy) | `wesnoth` |  |  |
-| Games | Widelands (settlers-like) | `widelands` |  |  |
+| Games | Cataclysm DDA (survival roguelike) | `cataclysm-tiles` | ok 1s (1 window)             stderr:10  [Cataclysm: Dark Days Ahead - 0.I;] -- libEGL warning: egl: failed to create dri2 screen |  |
+| Games | Chess (XBoard + GNU Chess) | `xboard` | NO WINDOW in 40s, process no (exit 2) stderr:0 | exit 2, 'Unable to create font set': Xwayland's font path is built-ins only. RESOLVED on the antiquity-desktop branch (stage 16): an exec-once adds the misc/75dpi/100dpi directories; verified by hand with xset +fp |
+| Games | Chocolate Doom (faithful Doom, with Freedoom) | `chocolate-doom` | ok 2s (1 window)             stderr:22  [Freedoom: Phase 1 - Chocolate Doom 3.1.1;] -- ALSA lib confmisc.c:855:(parse_card) [error.core] cannot find card '0' | same: needs an IWAD. RESOLVED: freedoom in the row; verified -- 'Freedoom: Phase 1 - Chocolate Doom' |
+| Games | Freeciv (SDL client - slow) | `freeciv-sdl2` | ok 1s (1 window)             stderr:11  [SDL2 Client for Freeciv;] -- ALSA lib confmisc.c:855:(parse_card) [error.core] cannot find card '0' | starts; ALSA 'cannot find card' -- the sound card question |
+| Games | GZDoom (Doom engine, with Freedoom) | `gzdoom` | ok 1s (1 window)             stderr:2   [GZDoom;] -- libEGL warning: egl: failed to create dri2 screen | opened a 'Fatal error' box: no game data. RESOLVED: the row installs freedoom with it; verified with DOOMWADDIR pointed at Freedoom's WADs -- GZDoom starts into the game |
+| Games | LBreakout2 (breakout) | `lbreakout2` | NO WINDOW in 30s, process no (exit 133) stderr:12  -- /home/user/.lgames/lbreakout2.conf: file not found | exit 133 after 'lbreakout2.conf: file not found', EGL cannot create a screen; SDL_VIDEODRIVER=wayland makes no difference. A software-GL guest casualty; retest on hardware |
+| Games | Luanti (Minetest - voxel sandbox) | `luanti` | ok 1s (1 window)             stderr:11  [Luanti 5.15.0 [Main Menu] [4.6 (Compatibility Profile) Mesa 26.1.6];] -- ALSA lib confmisc.c:855:(parse_card) [error.core] cannot find card '0' |  |
+| Games | Minesweeper | `gnome-mines` | ok 1s (1 window)             stderr:4   [Mines;] -- libEGL warning: egl: failed to create dri2 screen |  |
+| Games | OpenMW (Morrowind engine - needs the game's data) | `openmw-launcher` | WIZARD 2s (1 window)         stderr:0   [First run;] | the row named the engine binary, which exits without game data. RESOLVED: the row now starts openmw-launcher, whose 'First run' wizard asks for the Morrowind data -- expected, nothing to seed |
+| Games | OpenTTD (transport sim) | `openttd` | ok 1s (1 window)             stderr:86  [OpenTTD 15.3;] -- libEGL warning: egl: failed to create dri2 screen |  |
+| Games | Pingus (Lemmings-like) | `pingus` | NO WINDOW in 40s, process no (exit 139) stderr:12  -- libEGL warning: egl: failed to create dri2 screen | SIGSEGV after SDL_Mixer fails to open ALSA; the EGL failure is there too. Retest after the sound card fix, then on hardware |
+| Games | Solitaire | `sol` | ok 1s (1 window)             stderr:0   [Klondike;] |  |
+| Games | Sudoku | `gnome-sudoku` | ok 1s (1 window)             stderr:3   [Sudoku;] -- libEGL warning: egl: failed to create dri2 screen |  |
+| Games | SuperTux (platformer - needs a GPU) | `supertux2` | ok 2s (1 window)             stderr:9   [SuperTux v0.6.3;] -- ALSA lib confmisc.c:855:(parse_card) [error.core] cannot find card '0' | starts; ALSA 'cannot find card' -- the sound card question |
+| Games | Wesnoth (heavy - turn-based strategy) | `wesnoth` | ok 1s (1 window)             stderr:0   [The Battle for Wesnoth - 1.18.7;] |  |
+| Games | Widelands (settlers-like) | `widelands` | ok 1s (1 window)             stderr:11  [Widelands 1.3 Release;] -- [00:00:00.001 real] ERROR: [] config:0: RealFSImpl::load: could not open file for reading: /home/use |  |
 
 Outside the catalogue table, installed by their own stages:
 
@@ -189,7 +189,7 @@ Outside the catalogue table, installed by their own stages:
 | wxMaxima (built) | `wxmaxima` |  |  |
 | ytq | `ytq` |  |  |
 
-Tally: NO WINDOW 10, WIZARD 5, not probed 37, ok 90.
+Tally: NO WINDOW 11, WIZARD 6, not probed 21, ok 104.
 
 
 ## Recipes for launching into the program, not the wizard
@@ -300,4 +300,4 @@ declarative seed. The honest plan is to let the wizard run, or to use
 `kmail-account-wizard` with its ISPDB lookup, which is three fields.
 
 
-*Generated 2026-09-02 15:47.*
+*Generated 2026-09-02 16:01.*

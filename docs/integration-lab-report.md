@@ -135,7 +135,15 @@ in `app-integration-plan.md`; the tally on this bench:
 | ok | 90 | a window of its own, no first-run dialog |
 | WIZARD | 5 | Claws Mail, Firefox, Kate, Audacity, and one false match (feh's window title contained a file name) |
 | NO WINDOW | 10 | four re-launch detached or need a file argument (Lapce, Mousepad, VLC, mpv, feh, nsxiv — the probe now catches the detached ones); three GPU terminals that cannot get an EGL screen on this software-GL guest (kitty, WezTerm, Zutty); two Qt Quick programs that crash in the renderer (MuseScore, welle.io); one upstream breakage (Cura imports `imp`, removed in Python 3.12) |
-| not probed | 37 | the 32 games, left for a hand pass, and applets or root tools with no window by design |
+| not probed | 5 | applets and root tools with no window by design (nm-applet, blueman-applet, xscreensaver, gparted, scrot) |
+
+The games, in a second pass on workspace 2 (16 graphical entries): 13 opened;
+GZDoom showed a fatal-error box for want of game data and OpenMW's engine
+binary exited without a window, both catalogue rows now corrected (Freedoom
+installed with the two Doom engines, the OpenMW launcher named instead of
+the engine); LBreakout2 and Pingus crash on the EGL path like the GPU
+terminals. Xwayland's font path, found through xboard, is a change on the
+antiquity-desktop branch (stage 16), where the Hyprland session is written.
 
 **Resolved in the installer:** mail accounts for Thunderbird and Claws Mail
 seeded from four optional questions in `make answers` (Claws verified here
@@ -213,7 +221,29 @@ grep -l '^0x0403' /sys/bus/pci/devices/*/class
 ls /lib/modules/$(uname -r)/kernel/sound
 ```
 
-## VII. Files touched
+## VII. Pictures: before and after
+
+Half-size screenshots from the bench, taken by `tools/copal-app-probe.sh
+--doc docs/img/apps` on workspace 2 so that only the program under test is in
+frame. "Before" is the sweep's first launch on this bench; "after" is the same
+program with the installer's fix in place — the seed applied to the real
+home, the Qt setting in the environment, or, for the mail client, a
+throwaway home seeded with a dummy address the way stage 12 seeds a real one.
+
+| Program | Before | After | What changed |
+|---|---|---|---|
+| Claws Mail | ![](img/apps/before-claws-mail.png) | ![](img/apps/after-claws-mail.png) | `accountrc` + `folderlist.xml` from the mail answers: opens on the account, no Setup Wizard |
+| Kate | ![](img/apps/before-kate.png) | ![](img/apps/after-kate.png) | `Show welcome view for new window=false` in katerc: an empty document instead of the welcome view |
+| Zim | ![](img/apps/before-zim.png) | ![](img/apps/after-zim.png) | a default notebook in `~/Notebooks/Notes`: "Home - Notes" instead of "Add Notebook" |
+| qBittorrent | ![](img/apps/before-qbittorrent.png) | ![](img/apps/after-qbittorrent.png) | legal notice accepted and tray behaviour off in `qBittorrent.conf` |
+| MuseScore | *no window: SIGSEGV in the QML renderer* | ![](img/apps/after-mscore.png) | `QT_QUICK_BACKEND=software`: starts, showing its own first-run theme chooser |
+| welle.io | *no window: SIGSEGV* | ![](img/apps/after-welle-io.png) | the same setting |
+| Lapce | *no window attributed: it re-launches itself detached* | ![](img/apps/after-lapce.png) | the probe's detached-window detection; the program was fine |
+| GZDoom | *a 'Fatal error' box: no IWAD* | ![](img/apps/after-gzdoom.png) | Freedoom installed beside it (tested with DOOMWADDIR at Freedoom's WADs) |
+| Audacity | ![](img/apps/before-audacity.png) | *unchanged* | its welcome dialog has no discoverable preference; left as is |
+| Firefox ESR | ![](img/apps/before-firefox-esr.png) | *root needed here* | `policies.json` in the distribution directory; the clean install verifies it |
+
+## VIII. Files touched
 
 | File | Change |
 |---|---|
@@ -221,4 +251,5 @@ ls /lib/modules/$(uname -r)/kernel/sound
 | `utm/utm-vm.sh` | sound card `virtio-sound-pci`; share text |
 | `tools/copal-app-probe.sh`, `tools/copal-app-plan.py` | new |
 | `docs/app-integration-plan.md` | new, generated from the probe log |
+| `docs/img/apps/` | before/after screenshots, half size |
 | `docs/copal-handbook.md` | electronics, maths, mail, workshop rows |
