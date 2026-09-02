@@ -405,7 +405,7 @@ is missing, and the installer degrades to a warning rather than failing.
   fail with "no such package". `!v6` entries (Firefox, Krita, FreeCAD, LMMS,
   MuseScore, mGBA, Krusader, Foliate) exist everywhere but ARMv6; `64` entries
   (Blender, KiCad, OpenMW, GZDoom, Calibre, KOReader, Cura, Cataclysm DDA,
-  Ghostwriter, GHC, Zig, OpenJDK, VSCodium) need a 64-bit port; and a row can
+  Ghostwriter, GHC, Zig, OpenJDK, VSCodium, KMail) need a 64-bit port; and a row can
   carry more than one exclusion — Chromium is `!v6,!x32`.
 - **A few things come from `edge/testing`,** written `name@testing` in the
   catalogue. That is apk's own syntax for taking one package from a tagged
@@ -417,6 +417,7 @@ is missing, and the installer degrades to a warning rather than failing.
   will help: Endless Sky, 0 A.D., Teeworlds, Hedgewars, Frozen Bubble, OpenRA,
   ADOM, ToME4, Fuse, PrusaSlicer, Slic3r, OpenSCAD, LibreCAD, QCAD, MeshLab,
   Fritzing, gEDA, gerbv, Qucs, Joplin, Obsidian, `hfsutils`, and kdegames.
+  wxMaxima is in that group too, and the maths bundle compiles it instead.
 - **No usable OpenGL on a Zero.** X here renders on the CPU through `fbdev`, so
   anything expecting a GPU falls back to a software rasteriser. Xonotic,
   SuperTux and SuperTuxKart are packaged for every port here and unplayable on a
@@ -927,7 +928,7 @@ copal --auto      # also starts it, and is what the resume hook calls
 | 11 | Snapshots: rsync snapshots on a third partition, and Timeshift if you want it. **Offers to repartition** | 3, network |
 | 12 | Applications: the 316-program catalogue, as a minimal set, by section, or all of it | 3, network |
 | 13 | Hands over root: locks the root password, `PermitRootLogin no`, leaving `user` + `doas`. Verifies the admin account first and declines if it is not ready | 1 |
-| 14 | The workshop: CAD and 3D printing for the Ender 3, KiCad and gerber export, ngspice, LaTeX and maths, trackers and SID, and a piano tutor built from source. Six bundles, each stating what this port lacks before it installs | 3, network |
+| 14 | The workshop: CAD and 3D printing for the Ender 3, KiCad with its templates, demos and plugin set, gerber export, ngspice, LaTeX and maths (wxMaxima compiled from source), trackers and SID, and a piano tutor built from source. Six bundles, each stating what this port lacks before it installs | 3, network |
 | 15 | SD card and logs: log policy, syslog caps, and a genuinely read-only root via `overlaytmpfs`. **Not run unattended** — read-only root would discard everything the later stages did | 3 |
 
 > **Stage 3 reboots the machine**, and must — `/` does not actually become
@@ -1002,7 +1003,7 @@ The 28 sections, and the shape of each:
 | Section | What is in it |
 |---|---|
 | **Internet** | Dillo, NetSurf, BadWolf (WebKit), Firefox ESR, Chromium, links/elinks/w3m/lynx, Transmission, qBittorrent |
-| **Mail** | Thunderbird, Claws Mail, alpine, mutt, aerc, irssi, WeeChat, Profanity |
+| **Mail** | Thunderbird, KMail, Claws Mail, alpine, mutt, aerc, irssi, WeeChat, Profanity |
 | **News** | Newsboat, Newsraft, Liferea, sfeed, Ticker |
 | **Notes** | Zim, Gnote, CherryTree, Ghostwriter, vim+spell, mdBook, Hugo, Zola |
 | **Documents** | Zathura, MuPDF, Evince, AbiWord, Gnumeric, LibreOffice, sc-im, Foliate, KOReader, Calibre, poppler, qpdf |
@@ -1014,7 +1015,7 @@ The 28 sections, and the shape of each:
 | **Games** | NetHack, Brogue, Angband, Cataclysm DDA, Solitaire, Chess, OpenTTD, Freeciv, Widelands, Wesnoth, Luanti, the 18 `bsd-games`, Frotz |
 | **Retro** | ScummVM, DOSBox Staging, VICE, FS-UAE, mGBA, RetroArch, Mednafen |
 | **Engineering** | SolveSpace, FreeCAD, Blender, KiCad, ngspice, Cura, admesh |
-| **Science** | TeX Live, LyX, Octave, Maxima, SymPy, SciPy, Qalculate, Gnuplot, PARI/GP, Singular, R |
+| **Science** | TeX Live, LyX, Octave, Maxima, wxMaxima (built), SymPy, SciPy, Qalculate, Gnuplot, PARI/GP, Singular, R |
 | **Security** | Wireshark, tshark, Termshark, tcpdump, ClamAV, Lynis, nmap, Suricata, fail2ban, ufw, John, Aircrack-ng |
 | **Sharing** | FileZilla, Syncthing, croc, darkhttpd, Samba, sshfs, rsync, Unison |
 | **Files** | PCManFM, Thunar, Xfe, Krusader, Xarchiver, mc, nnn, ranger |
@@ -1652,11 +1653,36 @@ two files to fetch and where to put them rather than failing with a stack
 trace. OctoPrint (edge/testing, all ports) is offered if you would rather drive
 the printer over USB than walk SD cards about.
 
-**Electronics.** `ngspice` everywhere; KiCad on `aarch64` only. PSpice is a
-proprietary Cadence product with no Linux/ARM build in any form — ngspice is
-the thing to learn. `pcbzip` packages gerbers and drill files the way PCBWay,
-JLCPCB, OSH Park and Aisler all want them — one flat zip, no directories —
-and warns if the drill file is missing, which is the expensive mistake:
+**Electronics.** `ngspice` everywhere; KiCad on the 64-bit ports. PSpice is
+a proprietary Cadence product with no Linux/ARM build in any form — ngspice is
+the thing to learn.
+
+Alpine's `kicad` package is the editors and nothing else, so the bundle adds
+what makes it usable, and the lab report on how each gap was found is
+[docs/kicad-lab-report.md](kicad-lab-report.md):
+
+- **Libraries** — `kicad-library` and `kicad-library-3d`, and a seeded global
+  table per account so the first-run "configure library tables" dialog never
+  appears. The stock tables say `${KICAD9_*}` under a KiCad 10; that is not a
+  fault, KiCad 10 resolves the old names itself, and the report shows the trace.
+- **Templates and drawing sheets** — upstream's `kicad-templates` release
+  matching the installed major.minor (20 project templates: Arduino shields,
+  Pi HATs, Nucleo, LaunchPad, Eurocard; 36 ISO/ANSI/GOST title-block sheets),
+  which Alpine does not package. They land in `/usr/share/kicad/template/`,
+  under *System Templates* and the Drawing Sheet Editor's file dialog.
+- **Demos** — `kicad-demos`, a package that is merely not a dependency.
+- **The design-block table** — KiCad 10 points every new account at a stock
+  file the 9.0.7 library package does not ship; an empty one is written.
+- **Plugins** — the Plugin and Content Manager is a dialog with no `kicad-cli`
+  equivalent, so `kicad-addon` does what it does from a script: Interactive
+  HTML BOM, Freerouting (with `openjdk21-jre`), Fabrication Toolkit for JLCPCB,
+  Replicate Layout, Board2Pdf, KiBuzzard, and two colour themes, recorded in
+  the same `installed_packages.json` the dialog reads. `kicad-addon list`
+  shows the hundred-odd others; `guide` has the KiCad page.
+
+`pcbzip` packages gerbers and drill files the way PCBWay, JLCPCB, OSH Park and
+Aisler all want them — one flat zip, no directories — and warns if the drill
+file is missing, which is the expensive mistake:
 
 ```sh
 kicad-cli pcb export gerbers --output gerbers/ board.kicad_pcb
@@ -1666,7 +1692,11 @@ pcbzip gerbers/
 
 **Maths and LaTeX.** All available on every port — this is the one area where
 ARMv6 costs nothing but time. TeX Live (basic or full), LyX, Maxima, Octave,
-SymPy, Gnuplot, Qalculate, PARI/GP, Singular, R. Solving a system three ways:
+SymPy, Gnuplot, Qalculate, PARI/GP, Singular, R. wxMaxima, the notebook front
+end for Maxima, is packaged by Alpine on no port at all, so the bundle offers
+to compile it against Alpine's wxWidgets — a CMake project that built first
+time in four and a half minutes on a four-core aarch64 guest. Solving a
+system three ways:
 
 ```
 maxima:  solve([x+y=10, x-y=2], [x,y]);

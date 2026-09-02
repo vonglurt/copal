@@ -705,8 +705,12 @@ fi)</array>
 	<key>Sound</key>
 	<array>
 		<dict>
+			<!-- Not intel-hda: Alpine's linux-virt kernel ships exactly one
+			     sound driver, virtio_snd, so an HDA controller appears on the
+			     guest's PCI bus with no driver and ALSA reports "cannot find
+			     card 0". virtio-sound-pci is the card that kernel can drive. -->
 			<key>Hardware</key>
-			<string>intel-hda</string>
+			<string>virtio-sound-pci</string>
 		</dict>
 	</array>
 	<key>System</key>
@@ -863,8 +867,9 @@ do_create() {
   by asking UTM to record it rather than by clicking through its settings.
   Change it later with:  utm/utm-vm.sh share --target $TARGET --share DIR
 
-  Stage 1 mounts it at /mnt/share and keeps it there, in fstab with nofail,
-  with ~/Shared and ~/Downloads/SharedVM pointing at it.
+  Stage 1 puts it at /mnt/share under autofs, so it mounts itself the first
+  time anything looks and comes back on its own if the host drops it, with
+  ~/Shared and ~/Downloads/SharedVM pointing at it.
 
   Then start it:
 
