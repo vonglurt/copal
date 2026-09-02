@@ -11654,8 +11654,9 @@ The queue: ytq
     ytq                 a window. While it is focused, every URL you copy is
                         checked and queued; downloads run one at a time as
                         MP4 into ~/Videos. Keys are on the bottom line.
-    ytq add URL...      queue from a shell; 'ytq run' works the queue with
-                        no window, 'ytq list' shows it.
+    ytq add URL...      queue from a shell; 'ytq clip' queues whatever URL is
+                        on the clipboard; 'ytq run' works the queue with no
+                        window, 'ytq list' shows it.
 
     When a download fails on a login, age gate or bot check, ytq opens Brave
     on the URL; sign in or pass the check there, press 'c' in ytq, and it
@@ -11819,9 +11820,11 @@ install_ytq() {
 #
 # ytq -- a yt-dlp download queue that watches the clipboard.
 #
-#   ytq                the queue window. While it has focus, every URL that
-#                      lands on the clipboard is checked and queued.
+#   ytq                the queue window. The URL on the clipboard right now is
+#                      queued at once; while the window has focus, every URL
+#                      copied afterwards is checked and queued too.
 #   ytq add URL...     queue from a shell instead
+#   ytq clip           queue the URL on the clipboard, no window
 #   ytq run            work the queue without the window (one at a time)
 #   ytq list           what is queued, done, waiting, failed
 #   ytq clear          forget finished, rejected and failed entries
@@ -11865,7 +11868,9 @@ DEFAULT_FORMAT = ("bv*[ext=mp4][vcodec^=avc1]+ba[ext=m4a]/bv*[ext=mp4]+ba[ext=m4
                   "/b[ext=mp4]/bv*+ba/b")
 COOKIE_WORDS = ("sign in", "log in", "login", "cookies", "age", "bot", "private video",
                 "members", "premium", "confirm you", "403", "restricted", "subscriber")
-URL_RE = re.compile(r"^https?://\S+$")
+# A URL, strictly enough that a pasted sentence or a path never qualifies:
+# scheme, a host with at least one dot or a port, then anything without spaces.
+URL_RE = re.compile(r"^https?://(?:[A-Za-z0-9-]+\.)+[A-Za-z0-9-]+(?::\d+)?(?:/\S*)?$|^https?://localhost(?::\d+)?(?:/\S*)?$")
 ORDER = ["downloading", "cookies", "checking", "queued", "retry", "done", "failed", "rejected"]
 
 
@@ -12142,8 +12147,18 @@ def focused():
 WATCH = {"on": True, "focused": True, "last": None}
 
 
+def clipboard_url():
+    """The clipboard's current text, if it is a URL; else None."""
+    text = read_clipboard()
+    return text if URL_RE.match(text) else None
+
+
 def watcher():
-    WATCH["last"] = read_clipboard()          # what is there now is not a request
+    # What is on the clipboard at start counts: launching ytq with a link
+    # already copied is the common case, so it is queued straight away.
+    WATCH["last"] = read_clipboard()
+    if URL_RE.match(WATCH["last"]) and not Q.has(WATCH["last"]):
+        Q.add(WATCH["last"])
     while not STOP.is_set():
         time.sleep(float(S["POLL"]))
         WATCH["focused"] = focused()
@@ -12341,11 +12356,19 @@ def main(argv):
         Q.items = [i for i in Q.items if i["status"] not in ("done", "failed", "rejected")]
         Q.save()
         print("removed %d" % (n - len(Q.items)))
+    elif cmd == "clip":
+        # Queue whatever URL is on the clipboard now, without the window.
+        u = clipboard_url()
+        if not u:
+            print("the clipboard does not hold a URL"); sys.exit(1)
+        print(("queued: " if Q.add(u) else "already queued: ") + u)
+        while Q.first("checking"):
+            check(Q.first("checking"))
     elif cmd == "tui":
         curses.wrapper(tui)
     else:
         print(open(__file__).read().split("\n\n")[0].replace("#!/usr/bin/env python3\n", ""))
-        print("usage: ytq | ytq add URL... | ytq run | ytq list | ytq clear")
+        print("usage: ytq | ytq add URL... | ytq clip | ytq run | ytq list | ytq clear")
         sys.exit(2)
 
 
@@ -13172,6 +13195,89 @@ p2_growable() { [ "$(p2_free_sectors)" -gt 131072 ]; }
 # and running stage 12 again is free. Mail seeds need the address from
 # answers.txt (PI_MAIL_*); without it the mail clients keep their wizards,
 # which is the right outcome for an account nobody has named.
+
+# ---------------------------------------- not packaged: built from source ---
+#
+# Two programs people ask for that Alpine carries on no port. Both were built
+# on the aarch64 bench without root (dev packages unpacked under the home
+# directory), so the quirks below are observed, not guessed.
+#
+# Endless Sky: a 350 MB source release (the game data is most of it), CMake,
+# links against SDL2, OpenAL, GLEW, libmad, libavif, FLAC, minizip. Its
+# CMakeLists turns on link-time optimisation for Release builds and that
+# fails on Alpine -- GCC's LTO cannot inline the fortified vsnprintf -- so the
+# one line is patched to FALSE. The LTO link also filled a 64 MB /tmp, which
+# is why TMPDIR points at the build directory. Two minutes on four cores.
+#
+# streamripper 1.64.6: 2008-era C. Its config.guess predates aarch64 (the
+# automake copies replace it), its bundled libmad has the same problem (the
+# system one is used), it declares libc functions K&R-style (GCC 15 needs
+# -std=gnu89) and it uses glibc's __uint32_t (defined away). After that it
+# builds and runs.
+build_endless_sky() {
+    say "Endless Sky -- built from source"
+    have_space_mb 2500 "the Endless Sky build (350 MB source, ~1 GB during the build)" \
+        || { note "Skipping Endless Sky."; return 0; }
+    confirm "Build Endless Sky from source now (350 MB download, a few minutes)?" || { note "Not built."; return 0; }
+    add_optional build-base cmake ninja pkgconf sdl2-dev openal-soft-dev glew-dev libmad-dev \
+        libavif-dev flac-dev minizip-dev libpng-dev libjpeg-turbo-dev zlib-dev util-linux-dev mesa-dev
+    apk info -e sdl2-dev >/dev/null 2>&1 || { warn "development files missing -- cannot build Endless Sky"; return 1; }
+    SRCDIR=/usr/local/src; mkdir -p "$SRCDIR"
+    _es_ver=$(curl -fsSL --max-time 30 https://api.github.com/repos/endless-sky/endless-sky/releases/latest 2>/dev/null \
+        | sed -n 's/.*"tag_name": *"v\([0-9.]*\)".*/\1/p' | head -n1); _es_ver="${_es_ver:-0.11.2}"
+    _es_tar="$SRCDIR/endless-sky-$_es_ver.tar.gz"
+    [ -f "$_es_tar" ] || curl -fsSL --retry 3 -o "$_es_tar" "https://github.com/endless-sky/endless-sky/archive/refs/tags/v$_es_ver.tar.gz" \
+        || { rm -f "$_es_tar"; warn "could not download Endless Sky $_es_ver"; return 1; }
+    rm -rf "$SRCDIR/endless-sky-build"; mkdir -p "$SRCDIR/endless-sky-build/tmp"
+    tar -xzf "$_es_tar" -C "$SRCDIR/endless-sky-build" || { warn "the archive did not unpack"; return 1; }
+    _es_src="$SRCDIR/endless-sky-build/endless-sky-$_es_ver"
+    sed -i 's/^set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE TRUE)/set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE FALSE)  # copal: LTO fails on Alpine/' "$_es_src/CMakeLists.txt"
+    say "Compiling (log: /var/log/endless-sky-build.log)"
+    if ! TMPDIR="$SRCDIR/endless-sky-build/tmp" cmake -S "$_es_src" -B "$SRCDIR/endless-sky-build/b" -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release -DCMAKE_INSTALL_PREFIX=/usr/local -DES_USE_VCPKG=OFF \
+            -DES_USE_SYSTEM_LIBRARIES=ON -DBUILD_TESTING=OFF > /var/log/endless-sky-build.log 2>&1 \
+       || ! TMPDIR="$SRCDIR/endless-sky-build/tmp" ninja -C "$SRCDIR/endless-sky-build/b" -j "$(nproc)" >> /var/log/endless-sky-build.log 2>&1 \
+       || ! ninja -C "$SRCDIR/endless-sky-build/b" install >> /var/log/endless-sky-build.log 2>&1; then
+        warn "the build failed -- the last lines of /var/log/endless-sky-build.log:"
+        tail -n 15 /var/log/endless-sky-build.log | sed 's/^/    /'; return 1
+    fi
+    rm -rf "$SRCDIR/endless-sky-build"
+    note "installed: /usr/local/bin/endless-sky (data in /usr/local/share/games/endless-sky)"
+}
+
+build_streamripper() {
+    say "streamripper -- built from source"
+    confirm "Build streamripper (records internet radio streams) from source?" || { note "Not built."; return 0; }
+    add_optional build-base automake glib-dev libvorbis-dev libogg-dev libmad-dev
+    apk info -e libmad-dev >/dev/null 2>&1 || { warn "development files missing -- cannot build streamripper"; return 1; }
+    SRCDIR=/usr/local/src; mkdir -p "$SRCDIR"
+    _sr_tar="$SRCDIR/streamripper-1.64.6.tar.gz"
+    [ -f "$_sr_tar" ] || curl -fsSL --retry 3 -o "$_sr_tar" \
+        "https://sourceforge.net/projects/streamripper/files/streamripper%20(current)/1.64.6/streamripper-1.64.6.tar.gz/download" \
+        || { rm -f "$_sr_tar"; warn "could not download streamripper"; return 1; }
+    echo "c1d75f2e9c7b38fd4695be66eff4533395248132f3cc61f375196403c4d8de42  $_sr_tar" | sha256sum -c - >/dev/null 2>&1 \
+        || { warn "checksum mismatch on $_sr_tar -- not building it"; rm -f "$_sr_tar"; return 1; }
+    rm -rf "$SRCDIR/streamripper-build"; mkdir -p "$SRCDIR/streamripper-build"
+    tar -xzf "$_sr_tar" -C "$SRCDIR/streamripper-build" || { warn "the archive did not unpack"; return 1; }
+    _sr_src="$SRCDIR/streamripper-build/streamripper-1.64.6"
+    cp /usr/share/automake-*/config.guess /usr/share/automake-*/config.sub "$_sr_src/" 2>/dev/null || true
+    say "Compiling (log: /var/log/streamripper-build.log)"
+    if ! (cd "$_sr_src" && ./configure --prefix=/usr/local \
+            && make -j "$(nproc)" CFLAGS="-O2 -std=gnu89 -include stdint.h -D__uint32_t=uint32_t -D__uint16_t=uint16_t -D__uint8_t=uint8_t -Wno-implicit-function-declaration -Wno-int-conversion" \
+            && make install) > /var/log/streamripper-build.log 2>&1; then
+        warn "the build failed -- the last lines of /var/log/streamripper-build.log:"
+        tail -n 15 /var/log/streamripper-build.log | sed 's/^/    /'; return 1
+    fi
+    rm -rf "$SRCDIR/streamripper-build"
+    note "installed: /usr/local/bin/streamripper   (streamripper URL -d ~/Music/rips)"
+}
+
+offer_source_builds() {
+    say "Not packaged by Alpine on any port, but buildable"
+    build_endless_sky
+    build_streamripper
+}
+
 seed_home_if_absent() {  # <relative path> <source file>  -- root and the user
     ensure_user_home || true
     for _h in /root "$(user_home)"; do
@@ -13447,6 +13553,7 @@ MSG
     dev_write_kate_config
     dev_write_emacs_config
     seed_app_configs
+    offer_source_builds
 
     say "Done"
     note "Open the menu (Super+z) -- everything installed now appears in it,"
@@ -14905,6 +15012,257 @@ build_wxmaxima() {
     command -v maxima >/dev/null 2>&1 || note "it needs maxima to do anything: apk add maxima@testing"
 }
 
+
+# ---------------------------------------- Windows programs, in boxes ---
+#
+# Wine is in Alpine for aarch64, x86_64 and x86, and what it can run differs
+# by port in a way worth stating before anything is installed: Wine runs
+# Windows programs built for the CPU it is on. x86_64 gets the classic world
+# -- Alpine's package carries the 32-bit WoW64 half, checked against its file
+# list -- and aarch64 gets only the few programs that ship ARM64 builds,
+# because Alpine packages no x86 emulator (Box64, Hangover and FEX are all
+# absent). Notepad++ is one of the few, and was verified on an aarch64 guest:
+# its portable ARM64 zip runs; its installer does not, because NSIS installer
+# stubs are x86 whatever they carry.
+#
+# winebox is the launcher: one Wine prefix per program, an env file for its
+# settings, bubblewrap around it so the program sees a disposable Windows
+# and one shared folder rather than the machine. Its catalogue is the honest
+# version of ninite.com -- vendor downloads, published checksums, silent
+# switches -- since Ninite's own installers are online .NET programs that do
+# not run under Wine.
+workshop_windows() {
+    say "Windows programs under Wine, each in a box"
+    _arch=$(apk --print-arch 2>/dev/null || echo unknown)
+    case "$_arch" in
+        x86_64) note "x86_64: 32-bit and 64-bit Windows programs run. Boxes default to 32-bit prefixes." ;;
+        aarch64) note "aarch64: ONLY Windows programs built for ARM64 run -- there is no x86 emulator in Alpine."
+                 note "Notepad++ and 7-Zip ship ARM64 builds and the catalogue picks them; most classic software will not run here." ;;
+        x86) note "x86: 32-bit Windows programs run." ;;
+        *) warn "no Wine for $_arch in Alpine -- nothing to install here"; return 0 ;;
+    esac
+    have_space_mb 1500 "Wine" || return 0
+    confirm "Install Wine, bubblewrap and winebox?" || { note "Skipped."; return 0; }
+    add_optional wine bubblewrap unzip
+    command -v wine >/dev/null 2>&1 || { warn "wine did not install"; return 1; }
+    cat > /usr/local/bin/winebox <<'WINEBOX'
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+#
+#  winebox -- classic Windows programs under Wine, each in its own box.
+#
+#   winebox list                        boxes, and the catalogue of installers
+#   winebox new NAME                    an empty box (a fresh Wine prefix)
+#   winebox install notepad++ [NAME]    from the catalogue, checksum verified
+#   winebox run NAME [EXE [ARGS...]]    the box's program, sandboxed
+#   winebox cfg NAME                    winecfg inside that box
+#   winebox shell NAME                  a shell with the box's environment
+#   winebox rm NAME                     delete the box, prefix and all
+#
+# ONE BOX PER PROGRAM. A box is a directory under ~/.local/share/winebox/NAME:
+# a Wine prefix (its own C: drive and registry), an `env` file of KEY=VALUE
+# lines that is the whole configuration, and a `home` that is what the
+# program sees as the home directory. Programs in different boxes cannot see
+# each other, and none of them can see yours.
+#
+# THE SANDBOX. `run` starts Wine under bubblewrap: the system read-only, the
+# box read-write, a private /tmp, no view of the real home directory, and no
+# network unless the env file says NET=yes. The display sockets are passed
+# through so the program can draw. That is the "safely" in "run classic
+# Windows software safely": a program from 2004 gets a disposable Windows,
+# not the machine. Files you want it to see go in ~/Public/winebox, which is
+# bound into every box as Z:\shared.
+#
+# WHAT THIS PORT CAN RUN. Wine runs Windows programs built for the CPU it is
+# running on. On x86_64, Alpine's Wine carries the 32-bit WoW64 half, so both
+# 32-bit and 64-bit programs run and WINEARCH=win32 boxes are the default --
+# "32-bit everything", which is what the classic catalogue is. On aarch64
+# there is no x86 emulator in Alpine (no Box64, no Hangover, no FEX), so only
+# ARM64 Windows programs run: a handful of modern ones ship them, Notepad++
+# among them, and the catalogue picks that build. An NSIS installer is an
+# x86 program even when its payload is ARM64, so on aarch64 the catalogue
+# uses portable zips, not installers.
+#
+# THE CATALOGUE is the honest version of ninite.com: vendor downloads, a
+# published checksum, a silent install switch. Ninite's own installers are
+# online .NET programs that do not run under Wine and pick x86 builds only.
+#
+# Env file keys (winebox new writes the defaults):
+#   WINEARCH=win32|win64   the prefix's Windows bitness (x86_64 only)
+#   EXE=C:\...\prog.exe    what `run` starts when given no program
+#   NET=no|yes             network inside the sandbox
+#   WINEDLLOVERRIDES=...   Wine's; the default disables Mono/Gecko prompts
+#                          and the menu builder (it would write to your home)
+#   WINEDEBUG=-all         Wine's noise level
+set -eu
+ROOT="${WINEBOX_ROOT:-$HOME/.local/share/winebox}"
+SHARED="$HOME/Public/winebox"
+WINE="${WINE:-wine}"
+ARCH=$(uname -m)
+
+die() { echo "winebox: $*" >&2; exit 1; }
+need_wine() { command -v "$WINE" >/dev/null 2>&1 || die "wine is not installed (apk add wine)"; }
+box_dir() { printf '%s/%s' "$ROOT" "$1"; }
+
+# --- the catalogue ----------------------------------------------------------
+# name | what | x86_64 way | aarch64 way. Each "way" is a shell function below.
+catalogue() {
+    cat <<'CAT'
+notepad++|Notepad++ text editor|npp_installer|npp_portable_arm64
+7zip|7-Zip archiver (and its file manager)|sevenzip_installer|sevenzip_arm64
+CAT
+}
+
+gh_latest() {  # <owner/repo> -> tag
+    curl -fsSL --max-time 30 "https://api.github.com/repos/$1/releases/latest" \
+        | sed -n 's/.*"tag_name": *"\([^"]*\)".*/\1/p' | head -n1
+}
+fetch_verified() {  # <url> <dest> <sha256 or ''>
+    echo "  fetching $(basename "$2")"
+    curl -fsSL --retry 3 --max-time 600 -o "$2.part" "$1" || die "download failed: $1"
+    if [ -n "$3" ]; then
+        echo "$3  $2.part" | sha256sum -c - >/dev/null 2>&1 || { rm -f "$2.part"; die "checksum mismatch on $(basename "$2") -- not using it"; }
+        echo "  checksum verified"
+    else
+        echo "  (no published checksum for this file)"
+    fi
+    mv "$2.part" "$2"
+}
+
+# Notepad++: GitHub releases, a checksums file signed by the project.
+npp_files() {
+    V=$(gh_latest notepad-plus-plus/notepad-plus-plus); V="${V#v}"; [ -n "$V" ] || V=8.9.8
+    BASE="https://github.com/notepad-plus-plus/notepad-plus-plus/releases/download/v$V"
+    curl -fsSL --max-time 60 -o "$DL/npp.checksums" "$BASE/npp.$V.checksums.sha256" || : > "$DL/npp.checksums"
+}
+npp_sha() { tr -d '\r' < "$DL/npp.checksums" 2>/dev/null | grep -i " $1\$" | cut -c1-64; }   # CRLF file
+npp_installer() {   # 32-bit, the classic build, silent
+    npp_files; f="npp.$V.Installer.exe"
+    fetch_verified "$BASE/$f" "$DL/$f" "$(npp_sha "$f")"
+    boxrun "$WINE" "$DL/$f" /S; "$WINE"server -w
+    set_env EXE 'C:\Program Files\Notepad++\notepad++.exe'
+}
+npp_portable_arm64() {
+    npp_files; f="npp.$V.portable.arm64.zip"
+    fetch_verified "$BASE/$f" "$DL/$f" "$(npp_sha "$f")"
+    d="$PREFIX/drive_c/Program Files/Notepad++"; mkdir -p "$d"; unzip -q -o "$DL/$f" -d "$d"
+    set_env EXE 'C:\Program Files\Notepad++\notepad++.exe'
+}
+# 7-Zip: its installer is a native program on both ports; the site publishes
+# no checksums, so the download is only as trusted as 7-zip.org's TLS.
+sevenzip_installer() {
+    V=$(curl -fsSL --max-time 30 https://www.7-zip.org/download.html | sed -n 's/.*7z\([0-9]\{4\}\)\.exe.*/\1/p' | head -n1); [ -n "$V" ] || V=2409
+    fetch_verified "https://www.7-zip.org/a/7z$V.exe" "$DL/7z$V.exe" ""
+    boxrun "$WINE" "$DL/7z$V.exe" /S; "$WINE"server -w
+    set_env EXE 'C:\Program Files\7-Zip\7zFM.exe'
+}
+sevenzip_arm64() {
+    V=$(curl -fsSL --max-time 30 https://www.7-zip.org/download.html | sed -n 's/.*7z\([0-9]\{4\}\)-arm64\.exe.*/\1/p' | head -n1); [ -n "$V" ] || V=2409
+    fetch_verified "https://www.7-zip.org/a/7z$V-arm64.exe" "$DL/7z$V-arm64.exe" ""
+    boxrun "$WINE" "$DL/7z$V-arm64.exe" /S; "$WINE"server -w
+    set_env EXE 'C:\Program Files\7-Zip\7zFM.exe'
+}
+
+# --- boxes ------------------------------------------------------------------
+load_env() {  # <name>
+    BOX=$(box_dir "$1"); [ -f "$BOX/env" ] || die "no box named '$1' (winebox list)"
+    PREFIX="$BOX/prefix"; DL="$BOX/downloads"; mkdir -p "$DL" "$BOX/home"
+    # shellcheck disable=SC1090
+    . "$BOX/env"
+    export WINEPREFIX="$PREFIX" WINEDEBUG="${WINEDEBUG:--all}" WINEDLLOVERRIDES="${WINEDLLOVERRIDES:-mscoree=d;mshtml=d;winemenubuilder.exe=d}"
+    # An if, not a && list: under set -e a false test as a function's last
+    # command would end the script.
+    if [ "$ARCH" = x86_64 ]; then export WINEARCH="${WINEARCH:-win32}"; fi
+}
+set_env() {  # <key> <value>  -- values are single-quoted: the file is sourced
+    grep -v "^$1=" "$BOX/env" > "$BOX/env.new" || true
+    printf "%s='%s'\n" "$1" "$2" >> "$BOX/env.new"; mv "$BOX/env.new" "$BOX/env"
+}
+# Wine inside bubblewrap. HOME is the box's own; the real one is not there.
+boxrun() {
+    mkdir -p "$SHARED" "$BOX/home"
+    _net="--unshare-net"; [ "${NET:-no}" = yes ] && _net=""
+    _disp=""
+    [ -n "${WAYLAND_DISPLAY:-}" ] && [ -S "${XDG_RUNTIME_DIR:-/nonexistent}/$WAYLAND_DISPLAY" ] \
+        && _disp="$_disp --ro-bind $XDG_RUNTIME_DIR/$WAYLAND_DISPLAY $XDG_RUNTIME_DIR/$WAYLAND_DISPLAY"
+    [ -d /tmp/.X11-unix ] && _disp="$_disp --ro-bind /tmp/.X11-unix /tmp/.X11-unix"
+    if command -v bwrap >/dev/null 2>&1 && [ -z "${WINEBOX_NO_SANDBOX:-}" ]; then
+        # shellcheck disable=SC2086
+        # Alpine's /bin, /sbin and /lib are real directories (busybox lives
+        # there), not symlinks into /usr -- bind them, read-only, as they are.
+        bwrap --ro-bind /usr /usr --ro-bind /etc /etc --ro-bind /bin /bin --ro-bind /sbin /sbin --ro-bind /lib /lib \
+            --dev /dev --proc /proc --tmpfs /tmp --dir "$XDG_RUNTIME_DIR" $_disp \
+            --bind "$BOX" "$BOX" --bind "$SHARED" "$SHARED" \
+            $( [ -n "${WINE_TREE:-}" ] && printf -- '--ro-bind %s %s' "$WINE_TREE" "$WINE_TREE" ) \
+            --unshare-pid --unshare-ipc --unshare-uts --unshare-cgroup $_net --die-with-parent \
+            --setenv HOME "$BOX/home" --setenv WINEPREFIX "$PREFIX" \
+            -- "$@"
+    else
+        HOME="$BOX/home" "$@"
+    fi
+}
+cmd_new() {
+    need_wine; BOX=$(box_dir "$1"); [ -e "$BOX" ] && die "box '$1' exists"
+    mkdir -p "$BOX/downloads" "$BOX/home" "$SHARED"
+    cat > "$BOX/env" <<ENV
+# winebox '$1' -- KEY='VALUE', sourced by winebox as shell. Edit freely;
+# keep the quotes, a Wine override list has semicolons in it.
+WINEARCH='win32'
+NET='no'
+WINEDEBUG='-all'
+WINEDLLOVERRIDES='mscoree=d;mshtml=d;winemenubuilder.exe=d'
+EXE=''
+ENV
+    load_env "$1"
+    echo "creating the Windows prefix for '$1' (a minute the first time)"
+    boxrun "$WINE"boot -u >/dev/null 2>&1 || true; "$WINE"server -w 2>/dev/null || true
+    # Z:\shared -> the one folder every box shares with you.
+    ln -sfn "$SHARED" "$PREFIX/dosdevices/z:" 2>/dev/null || true
+    echo "box '$1': $BOX"
+}
+cmd_install() {
+    need_wine; app="$1"; name="${2:-$1}"
+    line=$(catalogue | grep "^$app|") || die "not in the catalogue: $app (winebox list)"
+    case "$ARCH" in x86_64) way=$(echo "$line" | cut -d'|' -f3) ;; aarch64) way=$(echo "$line" | cut -d'|' -f4) ;; *) die "no Wine for $ARCH" ;; esac
+    [ -f "$(box_dir "$name")/env" ] || cmd_new "$name"
+    load_env "$name"
+    echo "installing $(echo "$line" | cut -d'|' -f2) into box '$name'"
+    "$way"
+    echo "done: winebox run $name"
+}
+cmd_run() {
+    need_wine; load_env "$1"; shift
+    if [ $# -gt 0 ]; then exec_target="$1"; shift; else exec_target="${EXE:-}"; fi
+    [ -n "$exec_target" ] || die "nothing to run: pass a program, or set EXE= in $BOX/env"
+    boxrun "$WINE" "$exec_target" "$@"
+}
+case "${1:-}" in
+    list)
+        echo "boxes in $ROOT:"; for d in "$ROOT"/*/; do [ -f "$d/env" ] && printf '  %-14s %s\n' "$(basename "$d")" "$(sed -n 's/^EXE=//p' "$d/env" | tr -d "'\"")"; done 2>/dev/null
+        echo; echo "catalogue (winebox install NAME):"; catalogue | while IFS='|' read -r n w x a; do printf '  %-12s %s\n' "$n" "$w"; done
+        echo; echo "this machine is $ARCH: $( [ "$ARCH" = x86_64 ] && echo '32-bit and 64-bit x86 Windows programs' || echo 'ARM64 Windows programs only (no x86 emulator in Alpine)')" ;;
+    new)     [ -n "${2:-}" ] || die "usage: winebox new NAME"; cmd_new "$2" ;;
+    install) [ -n "${2:-}" ] || die "usage: winebox install APP [NAME]"; cmd_install "$2" "${3:-}" ;;
+    run)     [ -n "${2:-}" ] || die "usage: winebox run NAME [EXE ARGS...]"; shift; cmd_run "$@" ;;
+    cfg)     [ -n "${2:-}" ] || die "usage: winebox cfg NAME"; need_wine; load_env "$2"; boxrun "$WINE"cfg ;;
+    shell)   [ -n "${2:-}" ] || die "usage: winebox shell NAME"; load_env "$2"; echo "WINEPREFIX=$WINEPREFIX  (exit to leave)"; boxrun "${SHELL:-/bin/sh}" ;;
+    rm)      [ -n "${2:-}" ] || die "usage: winebox rm NAME"; load_env "$2"; "$WINE"server -k 2>/dev/null || true; rm -rf "$BOX"; echo "removed box '$2'" ;;
+    *)       sed -n '5,20p' "$0" | sed 's/^# \{0,1\}//'; exit 2 ;;
+esac
+
+WINEBOX
+    chmod 0755 /usr/local/bin/winebox
+    note "winebox -- 'winebox list' shows the catalogue; 'winebox install notepad++' is the first thing to try"
+    if [ -n "${PI_USER:-}" ] && su - "$PI_USER" -c 'id' >/dev/null 2>&1; then
+        if confirm "Install Notepad++ into a box for $PI_USER now (downloads ~7 MB)?"; then
+            su - "$PI_USER" -c 'winebox install notepad++' || warn "winebox install failed -- as $PI_USER, run: winebox install notepad++"
+        fi
+    fi
+    note "winebox run notepad++        starts it, sandboxed; files for it go in ~/Public/winebox (Z:\\shared)"
+    note "winebox cfg notepad++        winecfg for that box"
+}
+
 workshop_music() {
     say "Trackers, chiptune and MIDI"
     cat <<'MSG'
@@ -15215,11 +15573,12 @@ stage_workshop() {
       m   LaTeX and mathematics     TeX Live, Maxima + wxMaxima, Octave, SymPy
       u   Music                     trackers, SID, MIDI, Hydrogen, Audacity
       k   Learning to play piano    PianoBooster (compiles), piano-midi
+      w   Windows programs          Wine in sandboxed boxes; Notepad++, 7-Zip
       a   All of them
       q   Back to the menu
 
 MSG
-    ask "Choose [c/p/e/m/u/k/a/q]:"
+    ask "Choose [c/p/e/m/u/k/w/a/q]:"
     case "$REPLY" in
         c|C) workshop_cad ;;
         p|P) workshop_3dprint ;;
@@ -15227,8 +15586,9 @@ MSG
         m|M) workshop_maths ;;
         u|U) workshop_music ;;
         k|K) workshop_piano ;;
+        w|W) workshop_windows ;;
         a|A) workshop_cad; workshop_3dprint; workshop_electronics
-             workshop_maths; workshop_music; workshop_piano ;;
+             workshop_maths; workshop_music; workshop_piano; workshop_windows ;;
         *)   note "Nothing installed."; return 0 ;;
     esac
 

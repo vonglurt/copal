@@ -417,7 +417,8 @@ is missing, and the installer degrades to a warning rather than failing.
   will help: Endless Sky, 0 A.D., Teeworlds, Hedgewars, Frozen Bubble, OpenRA,
   ADOM, ToME4, Fuse, PrusaSlicer, Slic3r, OpenSCAD, LibreCAD, QCAD, MeshLab,
   Fritzing, gEDA, gerbv, Qucs, Joplin, Obsidian, `hfsutils`, and kdegames.
-  wxMaxima is in that group too, and the maths bundle compiles it instead.
+  wxMaxima, Endless Sky and streamripper are in that group too, and are
+  compiled instead — the maths bundle and the end of stage 12 offer them.
 - **No usable OpenGL on a Zero.** X here renders on the CPU through `fbdev`, so
   anything expecting a GPU falls back to a software rasteriser. Xonotic,
   SuperTux and SuperTuxKart are packaged for every port here and unplayable on a
@@ -938,7 +939,7 @@ copal --auto      # also starts it, and is what the resume hook calls
 | 11 | Snapshots: rsync snapshots on a third partition, and Timeshift if you want it. **Offers to repartition** | 3, network |
 | 12 | Applications: the 316-program catalogue, as a minimal set, by section, or all of it | 3, network |
 | 13 | Hands over root: locks the root password, `PermitRootLogin no`, leaving `user` + `doas`. Verifies the admin account first and declines if it is not ready | 1 |
-| 14 | The workshop: CAD and 3D printing for the Ender 3, KiCad with its templates, demos and plugin set, gerber export, ngspice, LaTeX and maths (wxMaxima compiled from source), trackers and SID, and a piano tutor built from source. Six bundles, each stating what this port lacks before it installs | 3, network |
+| 14 | The workshop: CAD and 3D printing for the Ender 3, KiCad with its templates, demos and plugin set, gerber export, ngspice, LaTeX and maths (wxMaxima compiled from source), trackers and SID, a piano tutor built from source, and Windows programs under Wine in sandboxed boxes (`winebox`). Seven bundles, each stating what this port lacks before it installs | 3, network |
 | 15 | SD card and logs: log policy, syslog caps, and a genuinely read-only root via `overlaytmpfs`. **Not run unattended** — read-only root would discard everything the later stages did | 3 |
 
 > **Stage 3 reboots the machine**, and must — `/` does not actually become

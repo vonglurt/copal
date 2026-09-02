@@ -106,6 +106,12 @@ new_windows() {
 while [ "$n" -lt "$WAIT" ]; do
     WIN=$(my_windows)
     [ -n "$WIN" ] && break
+    # Wine, Flatpak and the like hand the window to a process outside our
+    # tree while the launcher lives on. After a grace period, a window the
+    # compositor did not have before the launch is taken as the program's.
+    if [ "$n" -ge 8 ]; then
+        WIN=$(new_windows); [ -n "$WIN" ] && { DETACHED=1; break; }
+    fi
     if ! kill -0 "$PID" 2>/dev/null; then
         # It exited. Keep watching for the rest of the wait: a re-launched
         # copy opens its window well after the launcher has gone.

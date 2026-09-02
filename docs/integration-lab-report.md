@@ -173,6 +173,55 @@ detached-window fallback attributes any new window to the program under test,
 and three verdicts (Krusader, welle.io, FS-UAE) were polluted that way before
 the rule was learned.
 
+### F. Windows programs, in boxes
+
+Alpine 3.24 packages Wine 11 for aarch64, x86_64 and x86 and no x86
+emulator on any port (no Box64, Hangover or FEX). So the honest statement
+per port is: x86_64 runs the classic 32-bit and 64-bit catalogue, because the
+package's file list shows the `i386-windows` WoW64 half; aarch64 runs only
+programs built for ARM64 Windows. That was tested here, on the aarch64 bench,
+with Wine 11.0 unpacked under the home directory and run from the relocated
+tree (Wine finds its own files relative to its binary):
+
+- `wine cmd /c echo` ran; `winecfg` opened its window. The probe missed it
+  at first because the process that owns a Wine window belongs to the
+  wineserver's tree, not the launcher's; the probe now accepts a window the
+  compositor did not have before the launch while the launcher is alive.
+- Notepad++'s ARM64 *installer* failed with `err:wow:load_64bit_module …
+  c0000135`: NSIS installer stubs are x86 whatever they carry. Its portable
+  ARM64 zip, verified against the project's published `checksums.sha256`
+  (a CRLF file, which the first parser missed), unpacked into the prefix
+  and ran: "new 1 - Notepad++".
+
+`winebox` is the launcher the workshop's new bundle installs: one Wine
+prefix per program, an `env` file of quoted KEY='VALUE' lines (quoted
+because the file is sourced and a Wine override list has semicolons in it),
+and bubblewrap around every run. Verified from inside a box: HOME is the
+box's own, the real home and `~/.ssh` are absent, `/tmp` is private, and
+the network is off unless the env file says otherwise. A first version hid
+Alpine's real `/bin` behind a symlink to `/usr/bin`; on Alpine `/bin`,
+`/sbin` and `/lib` are real directories and are now bound as they are. Its
+catalogue is the honest version of ninite.com: vendor downloads, published
+checksums, silent switches, and the right build for the port. Ninite's own
+installers are online .NET programs that do not run under Wine.
+
+### G. Two more programs built from source
+
+**Endless Sky** 0.11.2: a 350 MB source release, CMake, all dependencies
+packaged. Three Alpine quirks: the game turns on link-time optimisation for
+Release builds and GCC's LTO cannot inline the fortified `vsnprintf`, so the
+one CMake line is patched off; the LTO link had first filled the 64 MB
+`/tmp`, so TMPDIR points at the build directory; the test suite wants Catch2,
+so tests are off. Two minutes on four cores without LTO, a 6.3 MB binary,
+title screen rendered on the bench.
+
+**streamripper** 1.64.6: packaged nowhere, 2008-era C. Its `config.guess`
+predates aarch64 (automake's copies replace it), its bundled libmad has the
+same problem (the system libmad is used), it declares libc functions K&R
+style (`-std=gnu89`) and uses glibc's `__uint32_t` (defined away). Builds and
+prints its usage. Both builds are offered at the end of stage 12, the
+streamripper tarball pinned by SHA-256 since SourceForge publishes none.
+
 ## V. Discussion
 
 **"Installed" is the package manager's word.** Every finding here came from a
@@ -239,6 +288,10 @@ throwaway home seeded with a dummy address the way stage 12 seeds a real one.
 | MuseScore | *no window: SIGSEGV in the QML renderer* | ![](img/apps/after-mscore.png) | `QT_QUICK_BACKEND=software`: starts, showing its own first-run theme chooser |
 | welle.io | *no window: SIGSEGV* | ![](img/apps/after-welle-io.png) | the same setting |
 | Lapce | *no window attributed: it re-launches itself detached* | ![](img/apps/after-lapce.png) | the probe's detached-window detection; the program was fine |
+| Notepad++ under Wine | *installer: STATUS_DLL_NOT_FOUND (x86 stub)* | ![](img/apps/after-notepad++.png) | the portable ARM64 build, checksum verified, in a Wine prefix |
+| Notepad++ in a winebox | | ![](img/apps/after-winebox-notepad++.png) | the same, started by `winebox run` inside bubblewrap |
+| winecfg | | ![](img/apps/after-winecfg.png) | Wine 11.0 from the relocated tree |
+| Endless Sky | *not packaged* | ![](img/apps/after-endless-sky.png) | built from source, title screen |
 | GZDoom | *a 'Fatal error' box: no IWAD* | ![](img/apps/after-gzdoom.png) | Freedoom installed beside it (tested with DOOMWADDIR at Freedoom's WADs) |
 | Audacity | ![](img/apps/before-audacity.png) | *unchanged* | its welcome dialog has no discoverable preference; left as is |
 | Firefox ESR | ![](img/apps/before-firefox-esr.png) | *root needed here* | `policies.json` in the distribution directory; the clean install verifies it |
@@ -247,7 +300,7 @@ throwaway home seeded with a dummy address the way stage 12 seeds a real one.
 
 | File | Change |
 |---|---|
-| `copal-prep.sh` | `configure_9p_share` (autofs), `build_wxmaxima`, `install_ytq`, the audio-card check in stage 10, KMail row, the verify checklist; KiCad work per the other report |
+| `copal-prep.sh` | `configure_9p_share` (autofs), `build_wxmaxima`, `install_ytq` (+ `ytq clip`), the audio-card check in stage 10, KMail row, the verify checklist, `seed_app_configs`, `workshop_windows` + `winebox`, `build_endless_sky`, `build_streamripper`; KiCad work per the other report |
 | `utm/utm-vm.sh` | sound card `virtio-sound-pci`; share text |
 | `tools/copal-app-probe.sh`, `tools/copal-app-plan.py` | new |
 | `docs/app-integration-plan.md` | new, generated from the probe log |

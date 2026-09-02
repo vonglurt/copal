@@ -24,6 +24,9 @@ if "--log" in sys.argv:
 # the configuration step that spares the wizard or the error, or the reason
 # to leave it alone. Add to it as the passes go on.
 NOTES = {
+    "endless-sky": "not packaged; built from source by stage 12's offer (LTO off, tests off). Title screen rendered here; audio waits on the sound card",
+    "winebox": "Wine in bubblewrap boxes, stage 14 bundle w. Verified on this aarch64 bench with Notepad++'s ARM64 portable build; x86 programs need the x86_64 port",
+    "streamripper": "not packaged; built from source by stage 12's offer (four musl/GCC 15 fixes). Command-line; prints its usage",
     "gzdoom": "opened a 'Fatal error' box: no game data. RESOLVED: the row installs freedoom with it; verified with DOOMWADDIR pointed at Freedoom's WADs -- GZDoom starts into the game",
     "chocolate-doom": "same: needs an IWAD. RESOLVED: freedoom in the row; verified -- 'Freedoom: Phase 1 - Chocolate Doom'",
     "openmw-launcher": "the row named the engine binary, which exits without game data. RESOLVED: the row now starts openmw-launcher, whose 'First run' wizard asks for the Morrowind data -- expected, nothing to seed",
