@@ -1,0 +1,36 @@
+# Linux Antiquity — mako notification theme.
+# Colors match the default "helios" color scheme, and the 9px radius / 1px
+# border match the window decoration in hyprland.lua.
+
+max-visible=5
+sort=-time
+anchor=top-right
+
+width=370
+height=140
+margin=12
+padding=15
+border-size=1
+border-radius=9
+
+font=sans-serif 11
+
+# base with slight transparency / textLight / shadow
+background-color=#181818f0
+text-color=#d0daed
+border-color=#121212
+# accent
+progress-color=over #fccf8a
+
+default-timeout=6000
+
+[urgency=high]
+# urgent orange border so it stands out, and no timeout.
+border-color=#ff723e
+text-color=#fccf8a
+default-timeout=0
+
+[urgency=low]
+# accentDark, quieter and quicker to leave.
+text-color=#87704f
+default-timeout=4000
