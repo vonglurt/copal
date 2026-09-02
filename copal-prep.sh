@@ -17351,17 +17351,31 @@ echo "take their colours at startup, so those change on the next login."
 COPALTHEME
     chmod 0755 /usr/local/bin/copal-theme
 
-    # Point both homes at a theme now, so nothing has to run copal-theme
-    # before Neovim has colours. Stage 16 moves it to antiquity when the
-    # Hyprland desktop is installed.
-    copal_set_theme tokyo-night
+    # Point each home that has no theme yet at one, so nothing has to run
+    # copal-theme before Neovim has colours. A home that already has one
+    # keeps it: stage 16 sets antiquity when it installs the Hyprland
+    # desktop, and the manifest runs 16 BEFORE this stage, so setting
+    # tokyo-night here unconditionally undid that four minutes later --
+    # 'copal-theme --list' then showed the i3 palette as current on an
+    # Antiquity desktop. The default follows the session this machine has
+    # claimed, for the same reason: on a Wayland machine that somehow got
+    # here without a link, the other palette would be the wrong guess.
+    _def=tokyo-night
+    [ "$(cat /etc/copal/session 2>/dev/null)" = wayland ] && _def=antiquity
+    copal_set_theme "$_def" --if-unset
 }
 
 # Set the current-theme symlink in every home this script writes to. Split
-# out because stage 16 calls it too, with the other name.
-copal_set_theme() {  # <theme name>
+# out because stage 16 calls it too, with the other name. With --if-unset,
+# a home whose link already points at an installed theme is left alone:
+# that is a choice, stage 16's or the user's, and a later stage does not
+# get to overrule it.
+copal_set_theme() {  # <theme name> [--if-unset]
     for _h in /root "$(user_home)"; do
         [ -n "$_h" ] && [ -d "$_h" ] || continue
+        if [ "${2:-}" = --if-unset ] && [ -d "$_h/.config/copal/current/theme/." ]; then
+            continue
+        fi
         ensure_user_home || true
         mkdir -p "$_h/.config/copal/current"
         ln -sfn "$copal_theme_dir/$1" "$_h/.config/copal/current/theme"
