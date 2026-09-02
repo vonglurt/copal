@@ -949,7 +949,7 @@ copal --auto      # also starts it, and is what the resume hook calls
 | 11 | Snapshots: rsync snapshots on a third partition, and Timeshift if you want it. **Offers to repartition** | 3, network |
 | 12 | Applications: the 316-program catalogue, as a minimal set, by section, or all of it | 3, network |
 | 13 | Hands over root: locks the root password, `PermitRootLogin no`, leaving `user` + `doas`. Verifies the admin account first and declines if it is not ready | 1 |
-| 14 | The workshop: CAD and 3D printing for the Ender 3, KiCad and gerber export, ngspice, LaTeX and maths, trackers and SID, and a piano tutor built from source. Six bundles, each stating what this port lacks before it installs | 3, network |
+| 14 | The workshop: CAD and 3D printing for the Ender 3, KiCad and gerber export, ngspice, the ADI instrument stack (libiio and iiod, pyadi-iio, libm2k, the IIO oscilloscope, GNU Radio blocks — mostly compiled), LaTeX and maths, trackers and SID, and a piano tutor built from source. Seven bundles, each stating what this port lacks before it installs | 3, network |
 | 15 | SD card and logs: log policy, syslog caps, and a genuinely read-only root via `overlaytmpfs`. **Not run unattended** — read-only root would discard everything the later stages did | 3 |
 
 > **Stage 3 reboots the machine**, and must — `/` does not actually become
@@ -2155,7 +2155,7 @@ saving writes that were never the problem.
 
 ## The workshop (stage 14)
 
-Six bundles, each of which states what this port cannot do before installing
+Seven bundles, each of which states what this port cannot do before installing
 anything.
 
 **CAD and 3D.** SolveSpace on every port — parametric, constraint-solving,
@@ -2192,6 +2192,57 @@ and warns if the drill file is missing, which is the expensive mistake:
 kicad-cli pcb export gerbers --output gerbers/ board.kicad_pcb
 kicad-cli pcb export drill   --output gerbers/ board.kicad_pcb
 pcbzip gerbers/
+```
+
+**Instruments — the ADALM2000, the ADALM-Pluto, and IIO.** Analog Devices
+ships this stack ready-made for its Kuiper Linux, which is a Debian and is
+dated; Alpine packages exactly one piece of it, and that piece only in
+`edge/testing`. So the bundle is one `apk add` and seven compiles, each with
+its own `/var/log/iio-build-*.log`, and a failed one costs only itself.
+
+| piece | from | what it is |
+|---|---|---|
+| libiio, `iiod`, `iio_info` / `iio_attr` / `iio_readdev` | apk, `edge/testing` | the library everything else links; the daemon; the tools |
+| pyadi-iio | pip, `--no-deps` over apk's numpy and `py3-libiio` | the Python layer |
+| libad9361-iio | source | Pluto transceiver helpers |
+| libm2k, `m2kcli` | source, Python bindings on | the ADALM2000 API |
+| iio-oscilloscope (`osc`) | source, plus gtkdatabox and matio | the basic GTK debugging GUI |
+| gr-m2k | source, against `gnuradio-dev` | ADALM2000 blocks in Companion |
+| SoapyPlutoSDR | source | the Pluto through GNU Radio's Soapy blocks |
+
+Every version is pinned to the libiio 0.x line on purpose — Alpine's package
+is 0.25, libm2k and the oscilloscope both say "0.26 or older", and libiio 1.0
+has no tagged release yet. Three things the board imposes:
+
+- **Alpine's `gnuradio` is built without gr-iio.** Its APKBUILD never asks
+  for libiio, so the in-tree IIO component is silently switched off, and
+  rebuilding GNU Radio is not something a Pi does. gr-m2k and SoapyPlutoSDR
+  are the two routes that remain, and both give you blocks in Companion.
+- **Scopy is not here and cannot be built here.** It pins a forked GNU Radio
+  and a forked qwt, and ADI's ARM builds are glibc AppImages made from a
+  Kuiper root filesystem. Run Scopy on the desktop; the instrument does not
+  mind which machine it is plugged into, and this board serves `iiod` either
+  way.
+- **An instrument on USB, as you rather than root.** libiio opens it through
+  libusb, and mdev creates `/dev/bus/usb/*/*` as `root:root 0660`. The bundle
+  creates a `usb` group (Alpine has none), puts you in it, adds an mdev rule
+  that hands USB devices to that group on hotplug, and sweeps the nodes at boot
+  from `/etc/local.d`, because the coldplug scan at power-on does not see the
+  rule. Log in again for the group to count.
+
+`iiod` starts at boot and serves whatever IIO devices *this board's kernel*
+has — a sensor on the I2C pins — to any libiio client on port 30431. It does
+not proxy a USB instrument: that runs its own `iiod`, and is also a USB
+network adapter at `192.168.2.1`, so it answers on `ip:` as well as `usb:`.
+
+```sh
+iio-scan                          # what libiio can see from here, and why not
+iio_info -s                       # the raw scan
+iio_info -u ip:192.168.2.1        # the Pluto or M2K over its USB network
+osc -c usb:1.4.5                  # the oscilloscope, straight to one device
+m2kcli --help                     # the ADALM2000 from the shell
+python3 -c 'import adi, libm2k'   # both Python layers
+SoapySDRUtil --find=driver=plutosdr
 ```
 
 **Maths and LaTeX.** All available on every port — this is the one area where

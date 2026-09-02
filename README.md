@@ -851,8 +851,10 @@ Then the menu itself:
    13) Hand over root         lock the root account and log in as 'user'
                                with doas instead. Checks first; run it last
    14) The workshop           CAD and 3D printing for the Ender 3, KiCad and
-                               gerbers, ngspice, LaTeX and maths, trackers
-                               and SID. Each bundle says what this port lacks
+                               gerbers, ngspice, the ADI instrument stack
+                               (ADALM2000, Pluto, libiio -- mostly compiled),
+                               LaTeX and maths, trackers and SID. Each bundle
+                               says what this port lacks
    15) SD card and logs       what actually wears a card and what does not;
                                log policy, and a genuinely read-only root
     r) Reboot
@@ -1358,7 +1360,7 @@ Roughly: 1–3 make it a computer, 4–6 make it usable, 7–15 make it yours.
 | 11 | snapshots | rsync snapshots on a third partition |
 | 12 | applications | the catalogue — 316 small programs |
 | 13 | hand over root | lock root, log in as yourself with `doas`. **Checks first, run it last** |
-| 14 | the workshop | CAD, KiCad, ngspice, LaTeX, trackers |
+| 14 | the workshop | CAD, KiCad, ngspice, the ADI instruments (libiio, ADALM2000, Pluto), LaTeX, trackers |
 | 15 | SD card care | what actually wears a card; log policy; a genuinely read-only root |
 
 ### What the machine gains

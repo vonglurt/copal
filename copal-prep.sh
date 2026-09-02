@@ -20671,6 +20671,439 @@ PCBZIP
     note "ngspice circuit.cir         simulate"
 }
 
+# ------------------------------------- stage 14: the ADI instrument stack ---
+#
+# The ADALM2000, the ADALM-Pluto, and anything else that speaks IIO. Analog
+# Devices ships this stack ready-made for Kuiper Linux, which is a Debian;
+# Alpine packages exactly one piece of it -- libiio, and only in edge/testing.
+# Everything else is built here, which is why this bundle is the longest
+# read in stage 14: each piece says what it is and where it comes from.
+#
+#   libiio, iiod, iio_*   apk, edge/testing. The library every other piece
+#                         links against; the daemon that serves this board's
+#                         own IIO devices to the network; the command-line
+#                         tools (iio_info, iio_attr, iio_readdev ...).
+#   pyadi-iio             pip. Pure Python on top of libiio's bindings,
+#                         which come from apk too (py3-libiio).
+#   libad9361-iio         source. The Pluto's transceiver helpers.
+#   libm2k, m2kcli        source. The ADALM2000 API, Python bindings included.
+#   iio-oscilloscope      source -- and gtkdatabox and matio with it, which
+#                         Alpine does not have and it will not build without.
+#   GNU Radio blocks      source. Alpine's gnuradio (stage 12) is built
+#                         WITHOUT gr-iio: its APKBUILD never asks for libiio,
+#                         so the in-tree IIO component is silently switched
+#                         off, and rebuilding GNU Radio is not a thing a Pi
+#                         does. So: gr-m2k for the ADALM2000, and
+#                         SoapyPlutoSDR, which reaches the Pluto through the
+#                         Soapy blocks that ARE in Alpine's package.
+#   Scopy                 not here, and not buildable here. It pins a forked
+#                         GNU Radio and a forked qwt, and ADI's ARM builds are
+#                         glibc AppImages made from a Kuiper root filesystem.
+#                         It runs on the desktop; the instrument does not
+#                         mind which machine it is plugged into.
+#
+# Every version is pinned, the way PianoBooster's is, and all of them sit on
+# the libiio 0.x line on purpose: Alpine's package is 0.25, libm2k and the
+# oscilloscope both say "0.26 or older", and libiio 1.0 has no tagged
+# release for any of them to have been built against yet.
+LIBAD9361_REF="${LIBAD9361_REF:-v0.4.0}"
+LIBM2K_REF="${LIBM2K_REF:-v0.9.1}"
+IIO_OSC_REF="${IIO_OSC_REF:-v0.18.1}"
+SOAPYPLUTO_REF="${SOAPYPLUTO_REF:-soapy-plutosdr-0.2.2}"
+GRM2K_REF="${GRM2K_REF:-v1.0.0}"
+MATIO_VER="${MATIO_VER:-1.6.0}"
+# gtkdatabox lives on SourceForge, which answers a plain wget with a 403 or a
+# page of HTML depending on the day. Fedora's source cache carries the same
+# tarball at a URL that is addressed by its own checksum, so the version and
+# the hash are one fact and are pinned together.
+GTKDATABOX_VER="${GTKDATABOX_VER:-1.0.0}"
+GTKDATABOX_SHA512="${GTKDATABOX_SHA512:-63007ab50e1e1eba185a2c05ccc1a8759aded91797688c4b4888728af3527514cc79280851981e36b01e24859fe8e0f95d660a219d456edeb50e0b847d7b9999}"
+
+# How many compilers to run at once. nproc alone is wrong on a Zero 2 W: four
+# cores and 512 MB, and one gr-m2k translation unit with the GNU Radio and
+# pybind11 headers in it wants most of that. Roughly 600 MB a job, never
+# fewer than one, never more than there are cores.
+iio_jobs() {
+    _c=$(nproc 2>/dev/null || echo 1)
+    _m=$(awk '/^MemTotal/ { print int($2 / 1024) }' /proc/meminfo 2>/dev/null || echo 0)
+    _j=$(( _m / 600 ))
+    [ "$_j" -ge 1 ] || _j=1
+    [ "$_j" -le "$_c" ] || _j=$_c
+    echo "$_j"
+}
+
+# One tarball, one build, one log.   iio_build <name> <url> <cmake|autotools> [args ...]
+#
+# The prefix is /usr, not /usr/local, and that is deliberate. gr-m2k has to
+# land where gnuradio looks for blocks, SoapyPlutoSDR where SoapySDR looks
+# for modules, and libm2k's Python module where python3 looks for modules --
+# and none of those search /usr/local on Alpine. No apk owns any of these
+# files, so nothing that apk installed is written over. The tarball is kept
+# in /usr/local/src, so a failed build re-run does not download again.
+iio_build() {
+    _n=$1; _u=$2; _style=$3; shift 3
+    _log=/var/log/iio-build-$_n.log
+    _tgz=$SRCDIR/$_n.tar.gz
+    say "Building $_n"
+    if [ -s "$_tgz" ]; then
+        note "using $_tgz, already downloaded"
+    else
+        note "downloading $_u"
+        wget -q -O "$_tgz" "$_u" \
+            || { rm -f "$_tgz"; warn "$_n: could not download $_u"; return 1; }
+    fi
+    rm -rf "$SRCDIR/$_n"; mkdir -p "$SRCDIR/$_n"
+    tar xzf "$_tgz" -C "$SRCDIR/$_n" --strip-components=1 \
+        || { warn "$_n: the archive did not unpack -- delete $_tgz and try again"
+             rm -rf "$SRCDIR/$_n"; return 1; }
+    : > "$_log"
+    # -DCMAKE_POLICY_VERSION_MINIMUM=3.5 for the same reason PianoBooster
+    # needs it: SoapyPlutoSDR still says cmake_minimum_required(2.8.9), and
+    # the CMake 4 that Alpine ships refuses anything under 3.5 without it.
+    if ! ( cd "$SRCDIR/$_n" && case "$_style" in
+            cmake)
+                mkdir -p build && cd build \
+                && cmake .. -DCMAKE_BUILD_TYPE=Release \
+                            -DCMAKE_INSTALL_PREFIX=/usr \
+                            -DCMAKE_INSTALL_LIBDIR=lib \
+                            -DCMAKE_POLICY_VERSION_MINIMUM=3.5 "$@" ;;
+            autotools)
+                { [ -x configure ] || autoreconf -fi; } \
+                && ./configure --prefix=/usr "$@" ;;
+        esac ) >> "$_log" 2>&1
+    then
+        warn "$_n: configure failed -- the last lines of $_log:"
+        tail -n 15 "$_log" | sed 's/^/    /' >&2
+        return 1
+    fi
+    _dir=$SRCDIR/$_n
+    [ "$_style" = cmake ] && _dir=$_dir/build
+    _j=$(iio_jobs)
+    note "compiling with $_j job(s) on $(nproc 2>/dev/null || echo 1) core(s) -- the log is $_log"
+    if ! make -C "$_dir" -j"$_j" >> "$_log" 2>&1; then
+        warn "$_n: the compile failed -- the last lines of $_log:"
+        tail -n 20 "$_log" | sed 's/^/    /' >&2
+        return 1
+    fi
+    make -C "$_dir" install >> "$_log" 2>&1 \
+        || { warn "$_n: make install failed -- see $_log"; return 1; }
+    note "$_n built and installed"
+    return 0
+}
+
+# iiod as a service. libiio-tools puts the daemon in /usr/bin and nothing
+# else: the aport carries no init script, and upstream only knows systemd,
+# sysvinit and upstart. So it is four lines of OpenRC here. It serves the IIO
+# devices THIS board's kernel has -- a sensor on the I2C pins, an ADC on SPI
+# -- to any libiio client on the network, on port 30431; it does not proxy an
+# instrument plugged into this board's USB, since that instrument runs its
+# own iiod and answers on its own address (see the network note below).
+iio_write_iiod_service() {
+    say "Installing /etc/init.d/iiod"
+    cat > /etc/init.d/iiod <<'IIOD'
+#!/sbin/openrc-run
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# iiod -- serve this board's IIO devices to libiio clients on the network.
+#
+# Options go in /etc/conf.d/iiod as IIOD_OPTS, e.g. IIOD_OPTS="-p 30431".
+# A client on another machine reaches it with:  iio_info -u ip:<this host>
+description="libiio network daemon (port 30431)"
+command=/usr/bin/iiod
+command_args="${IIOD_OPTS:-}"
+command_background=yes
+pidfile=/run/iiod.pid
+
+depend() {
+    need net
+    use avahi-daemon
+}
+IIOD
+    chmod 0755 /etc/init.d/iiod
+    # Advertised over mDNS if avahi is running, which is how a desktop's
+    # `iio_info -s` finds this board without being told its address. avahi is
+    # not installed for this alone -- if it is here, iiod uses it.
+    if rc-update add iiod default >/dev/null 2>&1; then
+        note "iiod starts at boot. rc-update del iiod default  to stop that."
+        rc-service iiod start >/dev/null 2>&1 || note "(not started now -- it will be at the next boot)"
+    else
+        warn "could not enable iiod -- rc-update add iiod default, by hand"
+    fi
+}
+
+# An instrument on USB, as an ordinary user. libiio opens the device through
+# libusb, which means /dev/bus/usb/BBB/DDD, and mdev creates those root:root
+# 0660 -- so out of the box every ADI tool works as root and fails as you.
+#
+# Three things fix that, and all three are needed. A 'usb' group, because
+# Alpine has none. A rule in mdev.conf that hands USB devices to that group
+# as they are plugged in -- the SUBSYSTEM=...;DEVTYPE=...; form is the one
+# Alpine's own mdev.conf uses for network interfaces, and it was tried on
+# Alpine 3.24 before being written here. And a boot-time sweep, because the
+# coldplug scan at boot (`mdev -s`) does not carry DEVTYPE and so recreates
+# whatever was plugged in before power-on as root:root; the rule only ever
+# sees a hotplug event. /etc/local.d is the same hook stage 5 uses for zram.
+iio_usb_access() {
+    say "USB access for $PI_USER"
+    getent group usb >/dev/null 2>&1 || addgroup -S usb 2>/dev/null || true
+    addgroup "$PI_USER" usb 2>/dev/null || true
+    note "'$PI_USER' is in the usb group -- log out and in again for it to count"
+
+    if ! grep -q 'DEVTYPE=usb_device' /etc/mdev.conf 2>/dev/null; then
+        printf 'SUBSYSTEM=usb;DEVTYPE=usb_device;.*\troot:usb 0660 */lib/mdev/usbdev\n' > /tmp/copal-usb-rule
+        if grep -q '^# load drivers for usb devices' /etc/mdev.conf 2>/dev/null; then
+            sed -i '/^# load drivers for usb devices/r /tmp/copal-usb-rule' /etc/mdev.conf
+        else
+            cat /tmp/copal-usb-rule >> /etc/mdev.conf
+        fi
+        rm -f /tmp/copal-usb-rule
+        note "mdev.conf: USB devices are root:usb 0660 from now on"
+    else
+        note "mdev.conf already hands USB devices to a group"
+    fi
+
+    mkdir -p /etc/local.d
+    cat > /etc/local.d/usb-group.start <<'USBGRP'
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# The mdev coldplug scan at boot recreates USB device nodes root:root; the
+# rule in /etc/mdev.conf only sees hotplug events. Hand whatever was already
+# plugged in at power-on to the usb group, so libiio can open it as a user.
+[ -d /dev/bus/usb ] || exit 0
+find /dev/bus/usb -type c -exec chgrp usb {} + -exec chmod 0660 {} + 2>/dev/null
+exit 0
+USBGRP
+    chmod +x /etc/local.d/usb-group.start
+    rc-update add local default >/dev/null 2>&1 || true
+    /etc/local.d/usb-group.start
+    # Report what actually happened rather than what was meant to.
+    _bad=$(find /dev/bus/usb -type c ! -group usb 2>/dev/null | wc -l)
+    if [ "${_bad:-0}" -eq 0 ]; then
+        note "every USB device node is now group usb"
+    else
+        warn "$_bad USB device node(s) are still not group usb -- iio-scan will say; doas works meanwhile"
+    fi
+}
+
+# pyadi-iio is pure Python and lives on PyPI only; its two dependencies,
+# numpy and libiio's bindings, come from apk -- and --no-deps is what makes
+# pip leave them alone. That matters on armv7, where PyPI has no numpy wheel
+# and pip would otherwise start compiling one.
+iio_pyadi() {
+    say "pyadi-iio (pip)"
+    add_optional py3-pip py3-numpy
+    if python3 -m pip install --break-system-packages --no-deps pyadi-iio \
+            > /var/log/iio-pyadi.log 2>&1; then
+        if python3 -c 'import adi, iio' 2>/dev/null; then
+            note "pyadi-iio installed:  python3 -c 'import adi; print(adi.__version__)'"
+        else
+            warn "pyadi-iio installed but 'import adi' fails -- see /var/log/iio-pyadi.log"
+        fi
+    else
+        warn "pip could not install pyadi-iio -- the last lines of /var/log/iio-pyadi.log:"
+        tail -n 8 /var/log/iio-pyadi.log | sed 's/^/    /' >&2
+    fi
+}
+
+# iio-scan -- what libiio can see from this board, and the usual reasons it
+# cannot. 'my instrument is not found' has four causes here and this names
+# the one you have.
+iio_write_scan_helper() {
+    say "Installing /usr/local/bin/iio-scan"
+    cat > /usr/local/bin/iio-scan <<'IIOSCAN'
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# iio-scan -- what libiio can see from here, and why it might not.
+#
+#   iio-scan              scan USB, the network and this board's own devices
+#   iio-scan URI          describe one context, e.g. usb:1.4.5 or ip:192.168.2.1
+#
+# The ADALM2000 and the Pluto are reached two ways, and both work at once:
+#   usb:      libiio talks to the instrument's own iiod over USB. Needs the
+#             /dev/bus/usb node to be group usb (stage 14 arranges that).
+#   ip:       the instrument is also a USB network adapter at 192.168.2.1.
+#             Give usb0 an address on that subnet and it answers there too:
+#                 doas ip addr add 192.168.2.10/24 dev usb0; doas ip link set usb0 up
+#             (permanently: an 'iface usb0' stanza in /etc/network/interfaces)
+set -eu
+command -v iio_info >/dev/null 2>&1 || { echo "iio-scan: libiio-tools is not installed" >&2; exit 1; }
+
+if [ $# -gt 0 ]; then exec iio_info -u "$1"; fi
+
+echo "--- libiio scan (usb, ip, local)"
+iio_info -s 2>&1 || true
+
+echo
+echo "--- USB devices from Analog Devices (vendor 0456)"
+found=0
+for d in /sys/bus/usb/devices/*; do
+    [ -f "$d/idVendor" ] || continue
+    [ "$(cat "$d/idVendor")" = 0456 ] || continue
+    found=1
+    printf '  %s  %s  ' "$(cat "$d/busnum" "$d/devnum" 2>/dev/null | tr '\n' '/' | sed 's|/$||')" \
+        "$(cat "$d/product" 2>/dev/null || echo '?')"
+    node=$(printf '/dev/bus/usb/%03d/%03d' "$(cat "$d/busnum")" "$(cat "$d/devnum")")
+    if [ -r "$node" ] && [ -w "$node" ]; then echo "(readable by you)"
+    else echo "(NOT accessible by you -- $(stat -c '%U:%G %a' "$node" 2>/dev/null); 'id' should list usb, and a re-login after stage 14)"
+    fi
+done
+[ "$found" = 1 ] || echo "  none -- is it plugged in and powered? 'lsusb' if usbutils is installed"
+
+echo
+echo "--- usb0 (the instrument as a network adapter)"
+if [ -d /sys/class/net/usb0 ]; then ip -4 addr show usb0 2>/dev/null | sed 's/^/  /'
+else echo "  no usb0 -- appears when a Pluto or M2K is plugged in and the cdc_ether/rndis_host module loads"; fi
+
+echo
+echo "--- this board's own IIO devices (what iiod serves)"
+ls /sys/bus/iio/devices/ 2>/dev/null | sed 's/^/  /' || echo "  none"
+[ -n "$(ls /sys/bus/iio/devices/ 2>/dev/null)" ] || echo "  none -- a sensor on I2C/SPI with an IIO driver would appear here"
+IIOSCAN
+    chmod 0755 /usr/local/bin/iio-scan
+    note "iio-scan            what libiio can see, and why not"
+}
+
+workshop_iio() {
+    say "Instruments: ADALM2000, ADALM-Pluto and IIO"
+    cat <<'MSG'
+
+    Analog Devices' lab stack -- what Kuiper Linux carries -- on this board.
+    Alpine packages one piece of it. The rest is compiled here, and most of
+    it is small; the two GNU Radio modules are the long part.
+
+      libiio, iiod, iio_*   edge/testing. The library, the network daemon
+                            (started at boot), and the command-line tools.
+      pyadi-iio             pip, on top of apk's numpy and py3-libiio.
+      libad9361-iio         source. Pluto transceiver helpers.
+      libm2k, m2kcli        source. The ADALM2000 API and its Python module.
+      iio-oscilloscope      source. The basic GTK debugging GUI, with the two
+                            libraries Alpine lacks (gtkdatabox, matio).
+      gr-m2k                source. ADALM2000 blocks for GNU Radio.
+      SoapyPlutoSDR         source. The Pluto through GNU Radio's Soapy
+                            blocks -- because Alpine's gnuradio is built
+                            without gr-iio, and a Pi does not rebuild
+                            GNU Radio.
+
+    NOT here, and do not go looking on this board:
+
+      Scopy         glibc-only on ARM (an AppImage from a Kuiper root), and
+                    it pins a forked GNU Radio and qwt. Run Scopy on the
+                    desktop: the instrument plugs into whichever machine has
+                    the screen, and this board serves iiod either way.
+      gr-iio        the in-tree IIO blocks. Missing from Alpine's package;
+                    gr-m2k and SoapyPlutoSDR are the answer above.
+
+    THE BUILDS ARE LONG. gtk+3.0-dev and gnuradio-dev come down first, then
+    seven compiles. An hour on a Pi 4; longer on a Zero 2 W, where 512 MB
+    means one job at a time. Every build has its own /var/log/iio-build-*.log
+    and a failed one costs only itself.
+
+MSG
+    have_space_mb 2500 "the instrument stack (GTK and GNU Radio headers, seven source trees)" \
+        || return 0
+    confirm_yes "Install the instrument stack now?" || {
+        note "Not installed. Run stage 14 again and choose the instruments bundle."
+        return 0
+    }
+
+    # --- the one packaged piece, and everything that needs only it ---
+    say "libiio, iiod and the iio_* tools (edge/testing)"
+    add_optional libiio@testing libiio-tools@testing libiio-dev@testing py3-libiio@testing
+    if ! apk info -e libiio >/dev/null 2>&1; then
+        warn "libiio did not install -- nothing else in this bundle can be built without it"
+        return 1
+    fi
+    note "iio_info -s         scan for anything libiio can reach"
+    note "iio_attr -a         read and write attributes"
+    note "iio_readdev         stream samples to stdout"
+    add_optional usbutils
+    iio_write_iiod_service
+    iio_usb_access
+    iio_write_scan_helper
+    iio_pyadi
+
+    # --- the source builds ---
+    say "Build tools"
+    add_optional build-base cmake pkgconf swig python3-dev py3-setuptools \
+                 autoconf automake libtool libusb-dev libxml2-dev
+    command -v cmake >/dev/null 2>&1 || { warn "no cmake -- cannot build the rest"; return 1; }
+    SRCDIR=/usr/local/src
+    mkdir -p "$SRCDIR"
+
+    _gh=https://github.com/analogdevicesinc
+    iio_build libad9361-iio "$_gh/libad9361-iio/archive/refs/tags/$LIBAD9361_REF.tar.gz" cmake || true
+
+    # INSTALL_UDEV_RULES is for udev, which this board does not run; the
+    # mdev rule above does that job. Tools give m2kcli.
+    if iio_build libm2k "$_gh/libm2k/archive/refs/tags/$LIBM2K_REF.tar.gz" cmake \
+            -DENABLE_PYTHON=ON -DENABLE_TOOLS=ON -DENABLE_EXCEPTIONS=ON \
+            -DINSTALL_UDEV_RULES=OFF; then
+        note "m2kcli              the ADALM2000 from the command line (m2kcli --help)"
+        note "python3 -c 'import libm2k; print(libm2k.getAllContexts())'"
+    fi
+
+    say "iio-oscilloscope and the two libraries it needs"
+    add_optional gtk+3.0-dev glib-dev fftw-dev jansson-dev curl-dev
+    _osc=1
+    iio_build gtkdatabox \
+        "https://src.fedoraproject.org/repo/pkgs/gtkdatabox/gtkdatabox-$GTKDATABOX_VER.tar.gz/sha512/$GTKDATABOX_SHA512/gtkdatabox-$GTKDATABOX_VER.tar.gz" \
+        autotools --disable-static || _osc=0
+    # No HDF5: the oscilloscope saves MAT v5 files, and HDF5 is 20 minutes
+    # of compile for a format it never writes.
+    iio_build matio "https://github.com/tbeu/matio/releases/download/v$MATIO_VER/matio-$MATIO_VER.tar.gz" \
+        autotools --disable-static --without-hdf5 || _osc=0
+    if [ "$_osc" = 1 ]; then
+        if iio_build iio-oscilloscope "$_gh/iio-oscilloscope/archive/refs/tags/$IIO_OSC_REF.tar.gz" cmake; then
+            note "osc                 the oscilloscope -- run it as $PI_USER, from the desktop"
+            note "osc -c usb:1.4.5    or -c ip:192.168.2.1, to skip the connect dialog"
+        fi
+    else
+        note "iio-oscilloscope skipped: it needs gtkdatabox and matio, and one of them did not build"
+    fi
+
+    say "GNU Radio: ADALM2000 blocks, and the Pluto through Soapy"
+    cat <<'MSG'
+
+    Alpine's gnuradio package has every component but gr-iio, so the ADI
+    instruments reach it two other ways. gr-m2k is ADI's own out-of-tree
+    module for the ADALM2000 -- Analog In/Out and Digital In/Out blocks in
+    Companion. The Pluto goes through SoapySDR: Alpine's gnuradio is built
+    with the Soapy blocks, SoapyPlutoSDR teaches SoapySDR to open a Pluto,
+    and "Soapy PlutoSDR Source / Sink" appear in Companion.
+
+MSG
+    if ! apk info -e gnuradio >/dev/null 2>&1; then
+        note "GNU Radio is not installed yet (it is in stage 12's Radio section)"
+        confirm_yes "Install gnuradio now, for the blocks?" || {
+            note "Skipping the GNU Radio modules. Re-run this bundle after installing gnuradio."
+            say "Instruments bundle complete."
+            return 0
+        }
+    fi
+    add_optional gnuradio gnuradio-dev soapy-sdr soapy-sdr-dev
+    if ! apk info -e gnuradio-dev >/dev/null 2>&1; then
+        warn "no gnuradio-dev -- the GNU Radio modules cannot be built"
+        say "Instruments bundle complete."
+        return 0
+    fi
+    if iio_build SoapyPlutoSDR "https://github.com/pothosware/SoapyPlutoSDR/archive/refs/tags/$SOAPYPLUTO_REF.tar.gz" cmake; then
+        note "SoapySDRUtil --find=driver=plutosdr     is the Pluto visible to Soapy?"
+    fi
+    if [ -f /usr/lib/cmake/libm2k/libm2kConfig.cmake ] || [ -f /usr/lib/libm2k.so ]; then
+        if iio_build gr-m2k "$_gh/gr-m2k/archive/refs/tags/$GRM2K_REF.tar.gz" cmake; then
+            note "gnuradio-companion: the M2K blocks are under 'm2k'"
+        fi
+    else
+        note "gr-m2k skipped: libm2k did not build, and it is the whole point of gr-m2k"
+    fi
+
+    say "Instruments bundle complete."
+    note "iio-scan            first thing to run with the instrument plugged in"
+    note "As $PI_USER, after logging in again: iio_info -s should list it."
+}
+
 workshop_maths() {
     say "LaTeX and mathematics"
     cat <<'MSG'
@@ -21020,13 +21453,16 @@ stage_workshop() {
     note "architecture: $(apk --print-arch 2>/dev/null || echo unknown)  (gate: $ARCH_GATE)"
     cat <<'MSG'
 
-    Five bundles. Each says what it can and cannot do on this board before
+    Seven bundles. Each says what it can and cannot do on this board before
     it installs anything.
 
       c   CAD and 3D modelling      SolveSpace, FreeCAD, Blender, Goxel
       p   3D printing (Ender 3)     CuraEngine + slice-ender3, admesh,
                                     optionally OctoPrint and the Cura GUI
       e   Electronics               ngspice, KiCad, and pcbzip for the fab
+      i   Instruments               ADALM2000, ADALM-Pluto, IIO: libiio and
+                                    iiod, pyadi-iio, libm2k, the oscilloscope,
+                                    GNU Radio blocks (mostly compiled)
       m   LaTeX and mathematics     TeX Live, Maxima, Octave, SymPy, Gnuplot
       u   Music                     trackers, SID, MIDI, Hydrogen, Audacity
       k   Learning to play piano    PianoBooster (compiles), piano-midi
@@ -21034,16 +21470,17 @@ stage_workshop() {
       q   Back to the menu
 
 MSG
-    ask "Choose [c/p/e/m/u/k/a/q]:"
+    ask "Choose [c/p/e/i/m/u/k/a/q]:"
     case "$REPLY" in
         c|C) workshop_cad ;;
         p|P) workshop_3dprint ;;
         e|E) workshop_electronics ;;
+        i|I) workshop_iio ;;
         m|M) workshop_maths ;;
         u|U) workshop_music ;;
         k|K) workshop_piano ;;
         a|A) workshop_cad; workshop_3dprint; workshop_electronics
-             workshop_maths; workshop_music; workshop_piano ;;
+             workshop_iio; workshop_maths; workshop_music; workshop_piano ;;
         *)   note "Nothing installed."; return 0 ;;
     esac
 
