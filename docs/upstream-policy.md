@@ -108,7 +108,7 @@ to happen.
 - File the wofi `--lines` stall as a report on wofi's tracker, with the
   bisection table and the exit-status probe from the lab report. Offer the
   finding, not a patch: the fix inside wofi is wofi's to design.
-- Create the Linux Antiquity fork and the `copal-alpine` branch per
+- Create the Linux Antiquity fork, its Copal `main` and the `original-fork` tag, per
   `THEME.md` §IX, so that the translations exist somewhere diinki could look
   at them without being handed them.
 - Add a line to Copal's README naming the upstreams and stating this policy

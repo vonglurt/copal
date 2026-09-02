@@ -656,10 +656,14 @@ wrapper). Stage 16 follows the same grain, which should keep future
 
 **Done, 2 September 2026.** The fork is
 [`vonglurt/linux-antiquity`](https://github.com/vonglurt/linux-antiquity),
-its branch `copal-alpine` is upstream `c0e3eac` plus one commit dropping the
-non-MIT icon set and the screenshots, and `vendor/linux-antiquity` in this
-repository is a `git subtree --squash` of that branch. The unzipped snapshot
-is gone. The design that got here, kept for the record:
+its `main` is upstream `c0e3eac` plus one commit dropping the non-MIT icon
+set and the screenshots, plus a README written for Copal, and
+`vendor/linux-antiquity` in this repository is a `git subtree --squash` of
+that branch. The tag `original-fork` marks `c0e3eac`, the theme exactly as
+forked. The work was first done on a branch called `copal-alpine`; later the
+same day `main` was fast-forwarded onto it and the branch deleted, so the
+fork's front page shows the Copal README and there is one branch to track.
+The unzipped snapshot is gone. The design that got here, kept for the record:
 
 The first state was a plain unzipped snapshot (`vendor/linux-antiquity-main`,
 no git history). The intended end state was **a GitHub fork we own, vendored
@@ -690,17 +694,18 @@ git rm -r vendor/linux-antiquity-main   # (and the .zip, already ignored)
 git subtree add --prefix vendor/linux-antiquity \
     git@github.com:<you>/linux-antiquity.git copal-alpine --squash
 
-# Day-to-day:
-#   pull upstream:  in the fork, merge diinki/main into copal-alpine, push;
-#                   then here: git subtree pull --prefix vendor/linux-antiquity … copal-alpine --squash
-#   push our edits: git subtree push --prefix vendor/linux-antiquity … copal-alpine
+# Day-to-day (the branch is main now; copal-alpine above is history):
+#   pull upstream:  in the fork, merge diinki/main into main, push;
+#                   then here: git subtree pull --prefix vendor/linux-antiquity … main --squash
+#   push our edits: git subtree push --prefix vendor/linux-antiquity … main
+#   the local clone works as the remote: ~/code/linux-antiquity main
 ```
 
 `copal-prep.sh` already looks for `vendor/linux-antiquity` first and
 `vendor/linux-antiquity-main` second, so the migration needs no script edit.
 Once the fork exists, transformations that have proven stable (the
 `.conf` translation, the hyprpaper rewrite) can *graduate* from
-generated-at-install-time into committed files on the `copal-alpine` branch
+generated-at-install-time into committed files on the fork's `main`
 — the Fedora fork's overlay layout (Table III) is the model — shrinking
 stage 16 to acquisition + packages + session.
 
