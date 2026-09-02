@@ -1935,3 +1935,10 @@ no history and no blobs. The archive, binaries and history intact, stays at
 MIT — see [`LICENSE`](LICENSE). The scope matters here: third-party material
 that the installer *downloads* is not covered by it, and some of it is not
 redistributable at all.
+
+Copal stands on other people's work and says so: diinki's *Linux Antiquity*
+(the theme, stage 16), Omarchy (the shape of the menu), Alpine, Hyprland and
+wofi. It attributes them in the code and the docs, reports defects to them
+with reproductions, keeps its own changes visible in a public fork, and sends
+a pull request only when the maintainer or their users ask for one — the
+reasoning is in [`docs/upstream-policy.md`](docs/upstream-policy.md).
