@@ -198,12 +198,13 @@ Copal's lab report on the port, with every transformation listed and the
 reasons for each, is `docs/THEME.md` in the
 [Copal repository](https://github.com/vonglurt/copal).
 
-## This branch and upstream
+## main, and upstream
 
-`copal-alpine` is upstream `main` plus the deletions in the table above, plus
-whatever has graduated here since. Copal vendors it as a git subtree, so a
-change here reaches Copal with one `git subtree pull`, and upstream's
-changes reach here with one merge of `diinki/main`.
+`main` here is diinki's `main` plus the deletions in the table above, plus
+whatever has graduated here since. The tag `original-fork` marks the theme
+exactly as forked, before any of that. Copal vendors `main` as a git
+subtree, so a change here reaches Copal with one `git subtree pull`, and
+upstream's changes reach here with one merge of `diinki/main`.
 
 Nothing is sent upstream unasked. Copal's position, written up as
 `docs/upstream-policy.md` in its repository, is to attribute always, to
