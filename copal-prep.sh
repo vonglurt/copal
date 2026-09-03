@@ -13425,6 +13425,14 @@ POL
         seed_home_if_absent .config/katerc "$_t"
     fi
 
+    # Midnight Commander: its default skin paints the panels in palette
+    # blue with cyan text, a dark island on the light terminal. sand256 is
+    # the skin mc ships for a sand ground, and it matches Copal Sand.
+    if command -v mc >/dev/null 2>&1; then
+        printf '[Midnight-Commander]\nskin=sand256\n' > "$_t"
+        seed_home_if_absent .config/mc/ini "$_t"
+    fi
+
     # Audacity 3.7 is NOT seeded, deliberately: its "Welcome to Audacity!"
     # dialog ignores /GUI/ShowSplashScreen (tested -- the key is dropped on
     # the next save) and the preference it does honour could not be found in
