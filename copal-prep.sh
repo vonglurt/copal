@@ -2352,6 +2352,26 @@ stage_rom() {  # <source file> <destination file>
     return 1
 }
 
+# The scripts and theme directories copal-init.sh installs from beside
+# itself: stage 4 takes tools/copal-terminal-theme and, through
+# copal_write_themes, tools/copal-theme and themes/*/ (theme.conf and
+# neovim.lua each). $(dirname "$0") on the target is this partition, so
+# they go next to the script. Without this the stages warn and skip them
+# -- which is what happened on the guest bench before it was noticed.
+info "Staging tools/ and themes/ on ${BOOT_LABEL}..."
+_here="$(cd "$(dirname "$0")" && pwd)"
+rm -rf "$MNT/tools" "$MNT/themes"
+mkdir -p "$MNT/tools" "$MNT/themes"
+for _t in copal-terminal-theme copal-theme; do
+    [ -f "$_here/tools/$_t" ] && cp "$_here/tools/$_t" "$MNT/tools/" || warn "tools/$_t is missing; the target will do without it"
+done
+if [ -d "$_here/themes" ]; then
+    cp -R "$_here/themes/." "$MNT/themes/"
+    info "themes staged: $(ls "$_here/themes" | tr '\n' ' ')"
+else
+    warn "themes/ is missing; the target will have the editor theme only"
+fi
+
 info "Staging Mini vMac source and ROM on ${BOOT_LABEL}..."
 mkdir -p "$MNT/minivmac"
 
@@ -4491,6 +4511,11 @@ if [ "$(id -u)" = 0 ]; then
 else
     PS1='\[\e[1;32m\]\u@\h\[\e[0m\]:\[\e[1;34m\]\w\[\e[0m\]$ '
 fi
+
+# The theme's prompt, written by copal-theme: the same shape in the current
+# theme's two colours, plus $COPAL_THEME for scripts. After the PS1 above so
+# it wins; absent until a theme has been applied, and then the above stands.
+[ -f "$HOME/.config/copal/current/shell.sh" ] && . "$HOME/.config/copal/current/shell.sh"
 
 alias ls='ls --color=auto'
 alias ll='ls -lh'
@@ -7809,6 +7834,9 @@ client.focused          #7aa2f7 #7aa2f7 #1a1b26 #7dcfff   #7aa2f7
 client.focused_inactive #292e42 #292e42 #c0caf5 #292e42   #292e42
 client.unfocused        #1a1b26 #1a1b26 #565f89 #1a1b26   #1a1b26
 client.urgent           #f7768e #f7768e #1a1b26 #f7768e   #f7768e
+# The current theme's colours, written by copal-theme; included so they win
+# over the four lines above when the theme is not this one.
+include ~/.config/copal/current/i3-colors.conf
 
 bar {
         status_command i3status
@@ -7922,6 +7950,7 @@ I3B
         printf '# The theme picker; and the two chords Omarchy uses for its system menu\n'
         printf '# and wallpaper picker, so hands that learned them there land somewhere.\n'
         printf 'bindsym $mod+Shift+t     exec --no-startup-id copal-theme --pick\n'
+        printf 'bindsym $mod+Shift+n     exec --no-startup-id copal-theme --toggle\n'
         printf 'bindsym $mod+Mod1+space  exec copal-menu --system\n'
         printf 'bindsym $mod+Ctrl+space  exec --no-startup-id copal-wallpaper --pick\n'
         printf '\n# ---- yours ---------------------------------------------------------\n'
@@ -8540,6 +8569,7 @@ have copal-desk && out "Which desk layouts exist,$TERM_EMU -e sh -c 'copal-desk 
 have copal-wallpaper && out "Wallpaper...,copal-wallpaper --pick" || true
 have copal-wallpaper && out "Get more wallpapers,$TERM_EMU -e sh -c 'copal-wallpaper --fetch; echo; echo Press Enter to close; read x'" || true
 have copal-theme && out "Theme...,copal-theme --pick" || true
+have copal-theme && out "Light or dark (toggle),copal-theme --toggle" || true
 # The desktop widgets, shown as whichever of the two things it would do next:
 # a menu entry called "toggle" makes somebody guess which way it is pointing.
 if have copal-widgets && [ -f "${XDG_CONFIG_HOME:-$HOME/.config}/waybar/desktop.json" ]; then
@@ -10933,15 +10963,17 @@ XRES
     # and --alpha 1 to go opaque.
     install -m 0755 "$(cd "$(dirname "$0")" && pwd)/tools/copal-terminal-theme" /usr/local/bin/copal-terminal-theme 2>/dev/null \
         || warn "tools/copal-terminal-theme not found beside copal-prep.sh; the terminal palette is not applied"
-    if [ -x /usr/local/bin/copal-terminal-theme ]; then
-        say "the desktop theme on every terminal: copal-terminal-theme"
-        for _h in /root "$(user_home)"; do
-            [ -n "$_h" ] && [ -d "$_h" ] || continue
-            HOME="$_h" /usr/local/bin/copal-terminal-theme >/dev/null 2>&1 || warn "copal-terminal-theme failed for $_h"
-            _own=$(stat -c '%u:%g' "$_h" 2>/dev/null) && chown -R "$_own" "$_h/.config" "$_h/.Xresources" "$_h/.local/share/qtermwidget6" 2>/dev/null || true
-        done
-        note "re-apply at any time:  copal-terminal-theme [helios|eris|priapus|eros|hades|sand]"
-    fi
+    # The terminal is one layer of the look. copal-theme switches all of
+    # them -- terminals, bar, launcher, notifications, borders, wallpaper,
+    # GTK, the prompt, mc, the editor -- from a theme directory, and it is
+    # written here rather than in stage 7 so that a machine that stops at
+    # the medium level still has the switch. tokyo-night is this desktop's
+    # (i3, i3status and .Xresources already wear it); stage 16 applies
+    # antiquity. Run last, after every file it edits has been written.
+    [ -d "$copal_theme_dir/antiquity" ] || copal_write_themes
+    copal_apply_theme tokyo-night
+    note "switch the whole look at any time:  copal-theme --toggle  (Super+Shift+N)"
+    note "                                    copal-theme --pick    (Super+Shift+T)"
 
     install_modern_browser
     configure_x_for_user
@@ -11232,11 +11264,14 @@ WAYBARCFG
     install_home_file .config/waybar/config /tmp/waybarcfg.$$
     rm -f /tmp/waybarcfg.$$
 
-    # The helios palette, read out of the theme's own Config.qml rather than
-    # invented -- see docs/THEME.md. base #181818, shadow #121212, highlight
-    # #333333, accent #fccf8a, accentDark #87704f, textLight #d0daed,
-    # warning #fcd37b, urgent/danger #ff723e / #fc5870.
+    # The colours are @define-color tokens -- base, shadow, highlight, accent,
+    # accent-dark, text-light, urgent, danger, warning, white -- imported from
+    # ~/.config/copal/current/colors.css, which copal-theme writes from the
+    # current theme's theme.conf. Antiquity's helios values (base #181818,
+    # accent #fccf8a, ...) come from the theme's own Config.qml; see
+    # docs/THEME.md. Switching theme rewrites colors.css and restarts the bar.
     cat > /tmp/waybarcss.$$ <<'WAYBARCSS'
+@import url("../copal/current/colors.css");  /* the theme's tokens; copal-theme rewrites it */
 /* Generated by copal-init.sh. Linux Antiquity's helios palette, on waybar.
    The colours come from the theme's quickshell Config.qml so the bar and the
    rest of the desktop agree; see docs/THEME.md. */
@@ -11252,16 +11287,16 @@ WAYBARCFG
 }
 
 window#waybar {
-    background: #181818;
-    color: #d0daed;
-    border-bottom: 1px solid #121212;
+    background: @base;
+    color: @text-light;
+    border-bottom: 1px solid @shadow;
 }
 
 /* One rule for every block, so adding a module does not mean adding CSS. */
 #workspaces, #submap, #taskbar, #clock, #cpu, #memory, #disk, #temperature,
 #custom-weather, #network, #wireplumber, #battery, #tray {
     padding: 0 10px;
-    color: #d0daed;
+    color: @text-light;
     background: transparent;
 }
 
@@ -11273,68 +11308,68 @@ window#waybar {
     padding: 0 14px 0 12px;
     margin-right: 2px;
     font-size: 15px;
-    color: #fccf8a;              /* accent */
+    color: @accent;              /* accent */
     background: transparent;
 }
 #custom-menu:hover {
-    background: #333333;         /* highlight, the same as a workspace hover */
-    color: #ffffff;
+    background: @highlight;         /* highlight, the same as a workspace hover */
+    color: @white;
 }
 
 /* The temperature crosses its threshold and says so in the urgent colour --
    the same one an urgent workspace uses, so the bar has one alarm colour
    rather than one per module. */
 #temperature.critical {
-    color: #ff723e;
+    color: @urgent;
 }
 
 #workspaces button {
     padding: 0 8px;
-    color: #87704f;              /* accentDark: a workspace that exists */
+    color: @accent-dark;              /* accentDark: a workspace that exists */
     background: transparent;
     border-bottom: 2px solid transparent;
 }
 #workspaces button.active {
-    color: #fccf8a;              /* accent: the one you are on */
-    border-bottom: 2px solid #fccf8a;
+    color: @accent;              /* accent: the one you are on */
+    border-bottom: 2px solid @accent;
 }
 #workspaces button.urgent {
-    color: #ff723e;
-    border-bottom: 2px solid #ff723e;
+    color: @urgent;
+    border-bottom: 2px solid @urgent;
 }
 #workspaces button:hover {
-    background: #333333;         /* highlight */
-    color: #d0daed;
+    background: @highlight;         /* highlight */
+    color: @text-light;
 }
 
 /* The window list. The focused window is the one in accent. */
 #taskbar button {
     padding: 0 8px;
-    color: #87704f;
+    color: @accent-dark;
     background: transparent;
 }
 #taskbar button.active {
-    color: #fccf8a;
-    background: #333333;
+    color: @accent;
+    background: @highlight;
 }
-#taskbar button:hover { background: #333333; }
+#taskbar button:hover { background: @highlight; }
 
 #clock {
-    color: #fccf8a;
+    color: @accent;
     font-weight: bold;
 }
 
-#submap { color: #ff723e; }
+#submap { color: @urgent; }
 
-#battery.warning  { color: #fcd37b; }
-#battery.critical { color: #fc5870; }
-#network.disconnected { color: #fc5870; }
-#wireplumber.muted    { color: #87704f; }
+#battery.warning  { color: @warning; }
+#battery.critical { color: @danger; }
+#network.disconnected { color: @danger; }
+#wireplumber.muted    { color: @accent-dark; }
 
 tooltip {
-    background: #121212;
-    border: 1px solid #87704f;
-    color: #d0daed;
+    background: @shadow;
+    border: 1px solid @accent-dark;
+    color: @text-light;
 }
 WAYBARCSS
     install_home_file .config/waybar/style.css /tmp/waybarcss.$$
@@ -11355,13 +11390,14 @@ WAYBARCSS
     # Same colours as the bar, from the theme's Config.qml.
     say "Writing ~/.config/wofi/style.css (the launcher and the menu)"
     cat > /tmp/woficss.$$ <<'WOFICSS'
+@import url("../copal/current/colors.css");  /* the theme's tokens; copal-theme rewrites it */
 /* Generated by copal-init.sh. Linux Antiquity's helios palette, on wofi.
    wofi is both the launcher (Super+D) and the menu copal-menu draws, so this
    one file styles both. Edit freely; nothing regenerates it. */
 
 window {
-    background-color: #181818;
-    border: 1px solid #87704f;      /* accentDark */
+    background-color: @base;
+    border: 1px solid @accent-dark;      /* accentDark */
     border-radius: 2px;
     font-family: "JetBrains Mono", "DejaVu Sans Mono", monospace;
     font-size: 13px;
@@ -11369,33 +11405,33 @@ window {
 
 /* The search box. It is the first thing focused, so it gets the accent. */
 #input {
-    background-color: #121212;
-    color: #d0daed;
+    background-color: @shadow;
+    color: @text-light;
     border: none;
-    border-bottom: 1px solid #333333;
+    border-bottom: 1px solid @highlight;
     padding: 8px 10px;
     margin: 0;
 }
-#input image { color: #87704f; }
+#input image { color: @accent-dark; }
 
-#inner-box, #outer-box, #scroll { background-color: #181818; border: none; }
+#inner-box, #outer-box, #scroll { background-color: @base; border: none; }
 
 #entry {
     padding: 5px 10px;
-    color: #d0daed;
+    color: @text-light;
     background-color: transparent;
 }
 
 /* The selected row. Left bar rather than a filled block: at 26px a solid
    highlight across the whole width is louder than the wallpaper behind it. */
 #entry:selected, #entry:focus {
-    background-color: #333333;       /* highlight */
-    color: #fccf8a;                  /* accent */
-    border-left: 2px solid #fccf8a;
+    background-color: @highlight;       /* highlight */
+    color: @accent;                  /* accent */
+    border-left: 2px solid @accent;
     padding-left: 8px;
     outline: none;
 }
-#text:selected { color: #fccf8a; }
+#text:selected { color: @accent; }
 
 /* The picker with pictures in it -- copal-wallpaper --pick runs wofi with
    --allow-images, and a thumbnail wants room around it. Without a height the
@@ -11524,6 +11560,7 @@ WAYBARDESK
     # is available to waybar and this is as close as CSS gets. Where the fonts
     # did not install, the fallbacks are the bar's own and it still reads.
     cat > /tmp/waybardeskcss.$$ <<'WAYBARDESKCSS'
+@import url("../copal/current/colors.css");  /* the theme's tokens; copal-theme rewrites it */
 /* Generated by copal-init.sh -- the desktop widgets' type and colour.
    Boska is the theme's own display face, installed by stage 16 and the one
    quickshell's ClockWidget.qml asks for; the rest are fallbacks so this still
@@ -11540,14 +11577,14 @@ WAYBARDESK
 window#waybar.desktopclock,
 window#waybar.desktopinfo {
     background: transparent;
-    color: #d0daed;
+    color: @text-light;
 }
 
 window#waybar.desktopclock #clock {
     font-family: "Boska", "Recia", "DejaVu Serif", serif;
     font-size: 96px;
     font-weight: 500;
-    color: #fccf8a;                  /* accent, as in ClockWidget.qml */
+    color: @accent;                  /* accent, as in ClockWidget.qml */
     /* The theme's DropShadow, in the one form CSS has. Without it the gold
        disappears into a pale wallpaper. */
     text-shadow: 0 2px 6px rgba(0, 0, 0, 0.45);
@@ -11558,13 +11595,13 @@ window#waybar.desktopinfo #custom-date,
 window#waybar.desktopinfo #custom-weather {
     font-family: "Quilon", "JetBrains Mono", "DejaVu Sans", sans-serif;
     font-size: 15px;
-    color: #d0daed;
+    color: @text-light;
     text-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
     padding: 0 6px;
 }
 
 /* The weather is the quieter of the two: the date is where the eye lands. */
-window#waybar.desktopinfo #custom-weather { color: #87704f; }
+window#waybar.desktopinfo #custom-weather { color: @accent-dark; }
 WAYBARDESKCSS
     install_home_file .config/waybar/desktop.css /tmp/waybardeskcss.$$
     rm -f /tmp/waybardeskcss.$$
@@ -11989,7 +12026,9 @@ stage_hyprland() {
     # run, an editor that is open right now repaints within three seconds
     # without being restarted. See dev_write_nvim_ui() and ~/.config/nvim/theme.lua.
     [ -d "$copal_theme_dir/antiquity" ] || copal_write_themes
-    copal_set_theme antiquity
+    # The theme itself is applied at the very end of this stage (see "Stage
+    # 16 complete"), after the bar's stylesheet, mako's config, hyprland.conf
+    # and foot.ini exist for it to edit.
 
     # Same reasoning: this desktop binds four keys to copal-clip, and stage 4
     # -- which is where the script is normally written -- may never have run
@@ -12939,6 +12978,8 @@ GUIDE
 # The theme picker. Two themes today, and a picker over two is still the
 # door that does not need a terminal.
 bind = $mainMod SHIFT, T, exec, copal-theme --pick
+# Light <-> dark, the whole desktop: the current theme's partner.
+bind = $mainMod SHIFT, N, exec, copal-theme --toggle
 # Doors from Omarchy, for hands that learned them there: its system menu is
 # Super+Alt+Space and its wallpaper picker Super+Ctrl+Space. The same one
 # implementation behind each; one more way in, which is what a door is.
@@ -12951,6 +12992,8 @@ bind = $mainMod CTRL, SPACE, exec, copal-wallpaper --pick
 # installer creates it empty once and never opens it again. A binding, a
 # monitor line, a display scale -- anything you would otherwise edit above
 # -- goes there and survives every re-run. Sourced last, so it wins.
+# The theme's borders, written by copal-theme (re-run it rather than edit).
+source = ~/.config/hypr/copal-theme.conf
 source = ~/.config/hypr/local.conf
 ANTIQDOORS
 
@@ -13004,57 +13047,38 @@ ANTIQPAPER
     # terminal you cannot read. So foreground takes #000000, which is not an
     # invention: it is hades.conf's own selection_foreground, the colour the
     # theme already puts on top of #eaeaea. Everything else is upstream's.
-    say "Writing ~/.config/foot/foot.ini (the theme's palette)"
+    say "Writing ~/.config/foot/foot.ini (font, padding, keys; the palette follows the theme)"
     cat > /tmp/footini.$$ <<'ANTIQFOOT'
 # foot.ini -- written by copal-init.sh (stage 16).
 #
-# The Linux Antiquity palette, translated from the theme's kitty/hades.conf.
 # foot is the terminal this desktop opens because it renders on the CPU:
 # where the compositor is on llvmpipe, kitty's OpenGL window does not survive.
 # 'copal-gpu' says which case this machine is.
 #
+# THE COLOURS ARE NOT HERE. copal-terminal-theme appends [colors-light] and
+# [colors-dark] (and [cursor]) for the current theme -- Antiquity's helios
+# opaque-ish at alpha 0.9, or Tokyo Night, or whichever 'copal-theme' set --
+# and rewrites them on every switch. The theme's own kitty palette is one
+# neon set for a pane of glass at 20 % opacity; opaque it is unreadable
+# (docs/THEME.md). Everything below is the theme's terminal style, kept.
+#
 # font: the theme asks for Maple Mono, which Alpine does not package.
 # JetBrains Mono is the packaged cousin, and the same substitution kitty gets.
 font=JetBrains Mono:size=11
-pad=8x8
-
-[colors]
-# alpha and background are upstream's. foreground is hades.conf's
-# selection_foreground: upstream's foreground is the same #eaeaea as the
-# background and is legible only under blur, which software rendering has not
-# got. See the note in copal-prep.sh.
-alpha=0.2
-background=eaeaea
-foreground=000000
-
-regular0=9400ff
-regular1=ff0000
-regular2=00ff5d
-regular3=AC82E9
-regular4=7b91fc
-regular5=fce40f
-regular6=8F56E1
-regular7=ff00ee
-
-bright0=92fcfa
-bright1=ff0000
-bright2=00ff5d
-bright3=AC82E9
-bright4=7b91fc
-bright5=fce40f
-bright6=8F56E1
-bright7=ff00ee
-
-selection-background=eaeaea
-selection-foreground=000000
+pad=12x12
 
 [scrollback]
 lines=3000
 
 [key-bindings]
-# The two kitty binds the theme documents, kept on the same keys.
-font-increase=Control+shift+plus
-font-decrease=Control+shift+minus
+# The two kitty binds the theme documents (ctrl+shift+plus, ctrl+shift+minus),
+# kept on the same keys. foot's spelling differs: modifier names are
+# case-sensitive, and 'plus' already means the shifted key, so naming Shift
+# as well is refused as a double shift. Control+plus is Ctrl with whatever
+# key produces '+' -- on a US layout, Ctrl+Shift+=. minus is unshifted, so
+# there Shift is spelled out.
+font-increase=Control+plus
+font-decrease=Control+Shift+minus
 ANTIQFOOT
     install_home_file .config/foot/foot.ini /tmp/footini.$$
     rm -f /tmp/footini.$$
@@ -13284,6 +13308,12 @@ CURSORENV
         [ -s /etc/copal/session ] || printf 'x11\n' > /etc/copal/session
         note "/etc/copal/session = $(cat /etc/copal/session 2>/dev/null)"
     fi
+
+    # Last: the whole look, antiquity, on every layer this stage just wrote
+    # -- and it is what adds the Themes-menu hook to Config.qml, so that
+    # switching in quickshell's own menu carries the rest of the desktop.
+    copal_apply_theme antiquity
+    note "light <-> dark at any time:  copal-theme --toggle  (Super+Shift+N)"
 
     say "Stage 16 complete."
     cat <<MSG
@@ -15630,8 +15660,9 @@ NEOVIM -- a primer, from nothing to useful
    machinery is not, because the machinery is already in the editor.
 
    THE COLOURS FOLLOW THE DESKTOP. 'copal-theme' lists the themes and switches
-   between them; a running nvim repaints within a few seconds without being
-   restarted. :Theme does the same from inside the editor.
+   the whole desktop between them -- 'copal-theme --toggle' (Super+Shift+N)
+   flips light and dark; a running nvim repaints within a few seconds without
+   being restarted. :Theme does the same from inside the editor.
 
  ---------------------------------------------------------------------------
  1. THE ONE IDEA
@@ -16173,12 +16204,14 @@ TERMINALS -- which one, and why the fast ones are not
       find the line   set $term urxvt
       change it, then Super+Shift+R to reload i3
 
-   Every terminal here wears the desktop's theme: Antiquity's helios by
-   default, faded and at alpha 0.9, each colour readable on the ground, no
-   blinking. 'copal-terminal-theme eros' (or eris, priapus, hades, sand)
-   switches all of them, '--alpha 1' makes them opaque; run it with no
-   argument to follow the desktop again, or after a program's own settings
-   dialog has overwritten it.
+   Every terminal here wears the desktop's theme, each colour readable on
+   the ground, at alpha 0.9, no blinking. 'copal-theme --toggle'
+   (Super+Shift+N) flips the whole desktop between light (Antiquity's
+   helios) and dark (Tokyo Night): terminals, bar, launcher, notifications,
+   borders, wallpaper, GTK, the prompt, mc and the editor at once.
+   'copal-terminal-theme eros' (or eris, priapus, hades, night, sand) sets
+   the terminals alone, '--alpha 1' makes them opaque; run it with no
+   argument to follow the desktop again.
 
    Fonts and colours for xterm and urxvt live in ~/.Xresources. After editing:
 
@@ -17010,234 +17043,37 @@ lsp_present() {
 # is a symlink to /usr/local/share/copal/themes/<name>/, and copal-theme moves
 # the symlink. A running editor notices within a few seconds; nothing has to
 # be restarted, and nothing has to be re-run when a new theme is added -- it
-# is a directory with a neovim.lua in it.
+# is a directory with a theme.conf and a neovim.lua in it, under themes/ in
+# the repository, copied to /usr/local/share/copal/themes/ at install (a
+# user's own go in ~/.local/share/copal/themes/ and win by name).
+#
+# Everything that cannot read through a symlink -- terminals, the bar, the
+# launcher, mako, the compositor's borders, i3, GTK, the prompt, mc -- has
+# its own file written from theme.conf by copal-theme, in its own format, and
+# is told to reload where it can be. 'copal-theme --toggle' flips between a
+# theme and its PARTNER (antiquity <-> tokyo-night): light and dark, the
+# whole desktop, one key. docs/THEME.md, "The toggle".
 copal_theme_dir=/usr/local/share/copal/themes
 
 copal_write_themes() {
     say "Writing the Copal themes"
-    mkdir -p "$copal_theme_dir/tokyo-night" "$copal_theme_dir/antiquity"
-
-    # Both files are plain Lua chunks, not plugin specs: they set a colorscheme
-    # and then correct the handful of groups that matter. Neither needs a
-    # colour scheme file on disk, because both build on habamax, which ships
-    # inside Neovim.
-    #
-    # termguicolors is asked for rather than assumed. On a Zero the console
-    # and urxvt are 256-colour, kitty is truecolour, and a config that turned
-    # 24-bit colour on unconditionally would paint the wrong thing on two of
-    # the three. vim.env.COLORTERM is what every truecolour terminal sets.
-    cat > "$copal_theme_dir/tokyo-night/neovim.lua" <<'THTOKYO'
--- Copal theme: tokyo-night. The palette stage 4 paints i3, the terminal and
--- the status bar with -- the same six values, so the editor is not a
--- different program's idea of dark.
-local p = {
-  bg = '#1a1b26', bg_dark = '#16161e', bg_hi = '#292e42',
-  fg = '#c0caf5', comment = '#565f89',
-  blue = '#7aa2f7', cyan = '#7dcfff', green = '#9ece6a',
-  yellow = '#e0af68', red = '#f7768e', magenta = '#bb9af7',
-}
-
--- After the colorscheme, not before: a colorscheme sets 'background' itself
--- and would overwrite an assignment made first. habamax already sets dark, so
--- this line changes nothing today -- it stops being a no-op the moment
--- somebody changes the base, which is exactly how the light theme broke.
-pcall(vim.cmd.colorscheme, 'habamax')
-vim.o.background = 'dark'
-
-if vim.env.COLORTERM == 'truecolor' or vim.env.COLORTERM == '24bit' then
-  vim.o.termguicolors = true
-  local hi = function(g, o) vim.api.nvim_set_hl(0, g, o) end
-  hi('Normal',       { fg = p.fg, bg = p.bg })
-  hi('NormalFloat',  { fg = p.fg, bg = p.bg_dark })
-  hi('FloatBorder',  { fg = p.blue, bg = p.bg_dark })
-  hi('LineNr',       { fg = p.comment })
-  hi('CursorLineNr', { fg = p.yellow, bold = true })
-  hi('Visual',       { bg = p.bg_hi })
-  hi('Comment',      { fg = p.comment, italic = true })
-  hi('Constant',     { fg = p.yellow })
-  hi('String',       { fg = p.green })
-  hi('Identifier',   { fg = p.magenta })
-  hi('Function',     { fg = p.blue })
-  hi('Statement',    { fg = p.magenta })
-  hi('PreProc',      { fg = p.cyan })
-  hi('Type',         { fg = p.cyan })
-  hi('Special',      { fg = p.cyan })
-  hi('Search',       { fg = p.bg, bg = p.yellow })
-  hi('IncSearch',    { fg = p.bg, bg = p.red })
-  hi('Pmenu',        { fg = p.fg, bg = p.bg_hi })
-  hi('PmenuSel',     { fg = p.bg, bg = p.blue })
-  hi('StatusLine',   { fg = p.fg, bg = p.bg_hi })
-  hi('StatusLineNC', { fg = p.comment, bg = p.bg_dark })
-  hi('DiagnosticError', { fg = p.red })
-  hi('DiagnosticWarn',  { fg = p.yellow })
-  hi('DiagnosticInfo',  { fg = p.blue })
-  hi('DiagnosticHint',  { fg = p.cyan })
-else
-  -- 256-colour fallback: the nearest cube entries to the same six colours.
-  vim.o.termguicolors = false
-  vim.cmd([[
-    highlight Normal       ctermbg=NONE ctermfg=189
-    highlight Comment      ctermfg=61
-    highlight String       ctermfg=107
-    highlight Function     ctermfg=110
-    highlight Statement    ctermfg=141
-    highlight Type         ctermfg=117
-    highlight Constant     ctermfg=179
-    highlight Search       ctermfg=234 ctermbg=179
-    highlight StatusLine   ctermfg=189 ctermbg=237
-  ]])
-end
-THTOKYO
-
-    cat > "$copal_theme_dir/antiquity/neovim.lua" <<'THANTIQ'
--- Copal theme: antiquity. Linux Antiquity's helios palette -- the light half,
--- which is the half its kitty.conf paints the terminal with. See docs/THEME.md
--- for why the terminal is light while the shell chrome is dark; the editor
--- lives in the terminal, so it follows the terminal.
-local p = {
-  bg = '#fce2ab', bg_dark = '#f2d492', bg_hi = '#e8c473',
-  fg = '#000000', comment = '#7a6636',
-  brown = '#6b4423', rust = '#a33b20', olive = '#5c6b1f',
-  ink = '#1e2a3a', wine = '#7b2d3e', gold = '#8a6a12',
-}
-
--- 'shine', not 'habamax', and the order matters -- both were bugs found by
--- actually running this.
---
--- ORDER: a colorscheme sets 'background' itself, so assigning it first is
--- pointless. habamax forces background=dark, which silently undid the
--- 'light' this theme had just asked for.
---
--- BASE: and that mattered for more than one variable. 'background' is what
--- every highlight group this file does NOT override consults -- Folded,
--- MatchParen, DiffAdd, Todo, WinSeparator and a few dozen more. Left at
--- dark, all of them keep habamax's dark-scheme colours and render on a cream
--- background, where several are unreadable. Building on a light base means
--- the groups named below are corrections rather than the only thing standing
--- between you and grey-on-cream. 'shine' is the cleanest light scheme
--- Neovim ships; Normal is overridden to the helios paper colour regardless.
-pcall(vim.cmd.colorscheme, 'shine')
-vim.o.background = 'light'
-
-if vim.env.COLORTERM == 'truecolor' or vim.env.COLORTERM == '24bit' then
-  vim.o.termguicolors = true
-  local hi = function(g, o) vim.api.nvim_set_hl(0, g, o) end
-  hi('Normal',       { fg = p.fg, bg = p.bg })
-  hi('NormalFloat',  { fg = p.fg, bg = p.bg_dark })
-  hi('FloatBorder',  { fg = p.brown, bg = p.bg_dark })
-  hi('LineNr',       { fg = p.comment })
-  hi('CursorLineNr', { fg = p.rust, bold = true })
-  hi('Visual',       { bg = p.bg_hi })
-  hi('Comment',      { fg = p.comment, italic = true })
-  hi('Constant',     { fg = p.gold })
-  hi('String',       { fg = p.olive })
-  hi('Identifier',   { fg = p.wine })
-  hi('Function',     { fg = p.ink, bold = true })
-  hi('Statement',    { fg = p.rust, bold = true })
-  hi('PreProc',      { fg = p.brown })
-  hi('Type',         { fg = p.ink })
-  hi('Special',      { fg = p.brown })
-  hi('Search',       { fg = p.bg, bg = p.brown })
-  hi('IncSearch',    { fg = p.bg, bg = p.rust })
-  hi('Pmenu',        { fg = p.fg, bg = p.bg_hi })
-  hi('PmenuSel',     { fg = p.bg, bg = p.brown })
-  hi('StatusLine',   { fg = p.bg, bg = p.brown })
-  hi('StatusLineNC', { fg = p.comment, bg = p.bg_hi })
-  hi('DiagnosticError', { fg = p.rust })
-  hi('DiagnosticWarn',  { fg = p.gold })
-  hi('DiagnosticInfo',  { fg = p.ink })
-  hi('DiagnosticHint',  { fg = p.olive })
-else
-  vim.o.termguicolors = false
-  vim.cmd([[
-    highlight Normal       ctermbg=NONE ctermfg=0
-    highlight Comment      ctermfg=94
-    highlight String       ctermfg=100
-    highlight Function     ctermfg=17
-    highlight Statement    ctermfg=124
-    highlight Type         ctermfg=23
-    highlight Constant     ctermfg=136
-    highlight StatusLine   ctermfg=230 ctermbg=94
-  ]])
-end
-THANTIQ
-
+    _src="$(cd "$(dirname "$0")" && pwd)"
+    if [ -d "$_src/themes" ]; then
+        mkdir -p "$copal_theme_dir"
+        for _t in "$_src"/themes/*/; do
+            [ -d "$_t" ] || continue
+            _n=$(basename "$_t")
+            mkdir -p "$copal_theme_dir/$_n"
+            cp "$_t"/* "$copal_theme_dir/$_n/" && chmod 0644 "$copal_theme_dir/$_n"/*
+            note "theme: $_n  ($(sed -n 's/^NAME="\(.*\)"/\1/p' "$_t/theme.conf" 2>/dev/null))"
+        done
+    else
+        warn "themes/ not found beside copal-prep.sh; the Copal themes are not installed"
+    fi
     # copal-theme: the whole of switching. Omarchy spends omarchy-theme-set on
-    # this; the job is the same one and it is a symlink.
-    cat > /usr/local/bin/copal-theme <<'COPALTHEME'
-#!/bin/sh
-# SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
-# copal-theme [NAME]  -- show, list, pick or set the system theme.
-#
-# The theme is a directory under /usr/local/share/copal/themes and the
-# "current" one is a symlink at ~/.config/copal/current/theme pointing at it.
-# Programs read files THROUGH that symlink, so moving it changes the theme
-# everywhere at once and nothing has to be regenerated. Neovim notices within
-# a few seconds without being restarted; see ~/.config/nvim/theme.lua.
-set -eu
-THEMES=/usr/local/share/copal/themes
-LINK="${XDG_CONFIG_HOME:-$HOME/.config}/copal/current/theme"
-
-list() {
-    for d in "$THEMES"/*/; do
-        [ -d "$d" ] || continue
-        n=$(basename "$d")
-        if [ "$(readlink "$LINK" 2>/dev/null || true)" = "$THEMES/$n" ]; then
-            printf '  * %s\n' "$n"
-        else
-            printf '    %s\n' "$n"
-        fi
-    done
-}
-
-case "${1:-}" in
-    ''|-l|--list|list)
-        echo
-        echo "  Themes  (* is the current one)"
-        list
-        echo
-        echo "  Set one with:  copal-theme <name>"
-        echo
-        exit 0 ;;
-    # The picker: the same wofi-or-dmenu list copal-wallpaper falls back
-    # to, and what Super+Shift+T and the Style menu run. Cancelling is not
-    # an error.
-    -p|--pick)
-        _sel=$(for d in "$THEMES"/*/; do [ -d "$d" ] && basename "$d"; done \
-               | { if [ -n "${WAYLAND_DISPLAY:-}" ] && command -v wofi >/dev/null 2>&1; then
-                       wofi --dmenu --prompt theme --lines 6
-                   elif command -v dmenu >/dev/null 2>&1; then dmenu -i -l 6 -p theme
-                   else cat; fi; }) || exit 0
-        [ -n "$_sel" ] || exit 0
-        set -- "$_sel" ;;
-    -h|--help|help)
-        echo "usage: copal-theme [NAME|--list|--pick]"
-        exit 0 ;;
-esac
-
-if [ ! -d "$THEMES/$1" ]; then
-    echo "copal-theme: no theme called '$1'. Installed:" >&2
-    list >&2
-    exit 1
-fi
-
-mkdir -p "$(dirname "$LINK")"
-# -n so that when LINK is already a symlink TO A DIRECTORY, ln replaces it
-# instead of creating a link INSIDE it. Without -n the second call to this
-# script silently makes ~/.config/copal/current/theme/theme, and the theme
-# stops changing for reasons nobody can see.
-ln -sfn "$THEMES/$1" "$LINK"
-echo "theme: $1"
-echo "Neovim follows within a few seconds. Terminals and the window manager"
-echo "take their colours at startup, so those change on the next login."
-COPALTHEME
-    chmod 0755 /usr/local/bin/copal-theme
-
-    # Point both homes at a theme now, so nothing has to run copal-theme
-    # before Neovim has colours. Stage 16 moves it to antiquity when the
-    # Hyprland desktop is installed.
-    copal_set_theme tokyo-night
+    # this; the job is the same one -- a symlink, then each program's file.
+    install -m 0755 "$_src/tools/copal-theme" /usr/local/bin/copal-theme 2>/dev/null \
+        || warn "tools/copal-theme not found beside copal-prep.sh; there is no theme switch"
 }
 
 # Set the current-theme symlink in every home this script writes to. Split
@@ -17253,6 +17089,22 @@ copal_set_theme() {  # <theme name>
         # 'user' can re-point its own symlink without doas. Not a hardcoded
         # $PI_USER: that would hand root's ~/.config/copal to the admin user.
         _own=$(stat -c '%u:%g' "$_h" 2>/dev/null) && chown -Rh "$_own" "$_h/.config/copal" 2>/dev/null || true
+    done
+    note "theme: $1"
+}
+
+# Apply a theme in every home this script writes to: the symlink and every
+# layer copal-theme knows. Falls back to the symlink alone where the tool is
+# missing. Run AFTER the files it edits are written -- last in a stage --
+# because it edits them in place (the bar's stylesheet, mako's config,
+# hyprland.conf's source line, .bashrc's prompt line).
+copal_apply_theme() {  # <theme name>
+    if [ ! -x /usr/local/bin/copal-theme ]; then copal_set_theme "$1"; return; fi
+    for _h in /root "$(user_home)"; do
+        [ -n "$_h" ] && [ -d "$_h" ] || continue
+        ensure_user_home || true
+        HOME="$_h" /usr/local/bin/copal-theme -q "$1" >/dev/null 2>&1 || warn "copal-theme $1 failed for $_h"
+        _own=$(stat -c '%u:%g' "$_h" 2>/dev/null) && chown -Rh "$_own" "$_h/.config" "$_h/.bashrc" 2>/dev/null || true
     done
     note "theme: $1"
 }

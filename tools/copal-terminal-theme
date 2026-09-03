@@ -10,7 +10,8 @@
 #   --alpha A (0.5..1)                window opacity, default 0.9; 1 is opaque
 #
 # THEME is one of the Linux Antiquity (diinki) themes -- helios, eris,
-# priapus, eros, hades -- or sand, Copal's own. With no THEME the script
+# priapus, eros, hades -- or night (Tokyo Night, the dark one stage 4's X
+# desktop already wears) or sand, Copal's own. With no THEME the script
 # follows the desktop: $COPAL_TERMINAL_THEME if set, else the currentTheme
 # in ~/.config/quickshell/settings.json (what the Themes menu writes), else
 # helios, Antiquity's default.
@@ -55,7 +56,7 @@
 # st compiles its colours in; Cool Retro Term is amber on purpose. Both are left.
 set -u
 
-THEMES="helios eris priapus eros hades sand"
+THEMES="helios eris priapus eros hades night sand"
 NAMES="black red green yellow blue magenta cyan white"
 
 usage() { sed -n '6,15p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
@@ -101,6 +102,15 @@ set_palette() {
         LABEL="Antiquity Hades"; BG=eaeaea; FG=181818; CURSOR=181818; SELBG=d1ceca; SELFG=181818
         C0=181818  C1=aa3a3a  C2=007a2d  C3=6d6c2e  C4=4c6f78  C5=8243de  C6=4a6b9c  C7=696969
         C8=5c4b4b  C9=b52a2a  C10=006625  C11=5e5c1f  C12=324a7d  C13=772ae7  C14=3a609a  C15=3d342e
+        ;;
+    night)
+        # Tokyo Night, the canonical terminal palette (folke's tokyonight.nvim,
+        # "night" style): the same values stage 4 puts on i3 and .Xresources.
+        # One departure: bright black is #565f89, the scheme's comment colour,
+        # not its #414868, which is 2:1 on the ground and vanishes as dim text.
+        LABEL="Tokyo Night"; BG=1a1b26; FG=c0caf5; CURSOR=c0caf5; SELBG=33467c; SELFG=c0caf5
+        C0=15161e  C1=f7768e  C2=9ece6a  C3=e0af68  C4=7aa2f7  C5=bb9af7  C6=7dcfff  C7=a9b1d6
+        C8=565f89  C9=f7768e  C10=9ece6a C11=e0af68 C12=7aa2f7 C13=bb9af7 C14=7dcfff C15=c0caf5
         ;;
     sand)
         # Copal Sand: sand ground, coffee text, rust, sage, ochre, oasis blue,

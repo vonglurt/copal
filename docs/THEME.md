@@ -737,3 +737,86 @@ stage 16 to acquisition + packages + session.
     BlupBlurp/linux-antiquity-plasma-widget, davimf721/linux-antiquity.
 [7] Mattahan (Paul Davey), *Buuf* icon set — CC BY-NC-SA; basis of the
     excluded `iconTheme/buuf-nestort`.
+
+---
+
+## XI. The toggle: one switch for the whole desktop (2 Sep 2026)
+
+**Problem.** §VI-F closed the GTK, gsettings, font and cursor layers, and
+the editor followed a symlink (`copal-theme`, §IV-D), but that was where
+switching stopped: "terminals and the window manager take their colours at
+startup, so those change on the next login" was the script's own last line.
+The terminal palette had meanwhile become its own tool
+(`copal-terminal-theme`, carrying Antiquity's five glass themes opaque —
+the neon kitty palette only reads on blurred glass), and the request was
+for a universal dark theme and a toggle that "sets the defaults of all the
+system prompts and colors."
+
+**Design.** A theme is a directory with two files. `theme.conf` is a
+POSIX-sh token set: variant, partner, the chrome colours (base, shadow,
+highlight, accent, accent-dark, text, text-light, urgent, danger, warning),
+which terminal palette, which wallpaper, which quickshell scheme, the GTK
+theme and colour scheme, mc's skin, Helix's theme, and the prompt's two SGR
+codes. `neovim.lua` is unchanged from §IV-D. `copal-theme NAME` moves the
+symlink, then writes each program's own file from the tokens and tells it
+to reload where it can be told:
+
+| Layer | What is written | Reload |
+|---|---|---|
+| terminals | `copal-terminal-theme TERMINAL` (foot, kitty, alacritty, wezterm, xterm, ...) | new windows |
+| waybar, wofi | `~/.config/copal/current/colors.css`, `@define-color` tokens the stylesheets `@import` | the bar is restarted through `copal-bar` |
+| mako | the colour keys in `~/.config/mako/config`, per section | `makoctl reload` |
+| Hyprland | `~/.config/hypr/copal-theme.conf` (borders), sourced before `local.conf` | `hyprctl reload` |
+| i3 | `~/.config/copal/current/i3-colors.conf`, `include`d after the client lines | `i3-msg reload` |
+| wallpaper | `copal-wallpaper set FILE` | repaints |
+| quickshell | `currentTheme` in `settings.json`; the scheme itself in `Config.qml` if it is not one of Antiquity's five; the hook (below) | quickshell's own watcher |
+| GTK 3 and 4 | `gtk-theme-name`, `gtk-application-prefer-dark-theme`; gsettings `color-scheme` | new windows |
+| the prompt | `~/.config/copal/current/shell.sh`, sourced by `.bashrc`: PS1 in the theme's two colours, `$COPAL_THEME` | new shells |
+| mc, Helix | `skin=`, `theme=` | next start |
+
+Two themes ship, each naming the other as `PARTNER`: **antiquity** (helios:
+dark chrome, cream paper, the collage) and **tokyo-night** (the palette
+stage 4's i3, i3status and `.Xresources` already wore; diinki's star chart
+`oc_the_blackboard.png` for the sky). `copal-theme --toggle` applies the
+current theme's partner; Super+Shift+N and the menu's "Light or dark" run
+it. The stylesheets stage 16 writes now use the tokens directly; a
+stylesheet written before this (the bench) is converted once, literal by
+literal, with the import line put at its top — the same map as §VI-F's
+recolouring table.
+
+**The Themes-menu hook.** Antiquity's `ThemingMenu.qml` sets
+`Config.settings.currentTheme`; `Config.qml`'s `onCurrentThemeChanged`
+logged it and did nothing else. `copal-theme` adds one line there,
+`Quickshell.execDetached(["copal-theme", "-q", "--from-shell", currentTheme])`
+(the vendored tree stays byte-identical: the edit is made on the installed
+copy, idempotently, at apply time). `--from-shell` maps quickshell's name to
+the Copal theme whose `QS_THEME` it is — helios → antiquity, night →
+tokyo-night — and applies it; eris, eros, priapus and hades, which no Copal
+theme wraps, get their terminal palette. Applying writes the same value back
+to `settings.json`, which is not a change, so the hook does not fire again.
+The `night` scheme is inserted into `Config.qml`'s theme table from the
+tokens, in the shape of Antiquity's own, so quickshell's menu lists it.
+
+**What was found.** waybar 0.15's reload signal (`SIGUSR2`) killed the bar:
+`GLib-GIO:ERROR: g_application_impl_command_line: assertion failed
+(object_id != 0)`, because the second waybar — the desktop widgets, §VI-C —
+holds the same D-Bus application name. The bar is therefore restarted
+through `copal-bar`, the entry point the session used, which brings both
+back. busybox `sed` has neither `\b` nor `\n` in replacements; the
+stylesheet conversion and the two insertions are `awk`. `gsettings` needs
+a session bus, which an install as root has not got, so it runs only where
+one is.
+
+**Verified on the bench (Hyprland, llvmpipe).** `copal-theme antiquity` then
+`--toggle`: the symlink, the bar (restarted, dark with blue accents), mako's
+keys, the blue focus border, the star chart, `settings.json` and the `night`
+scheme in `Config.qml`, GTK's two `settings.ini` and `color-scheme`, mc's
+skin, the prompt in a new foot window — all as photographed. quickshell
+itself is not installed here (Table I), so the hook is in place and untested
+live; it is one line, and its target exits at once when nothing changes.
+
+**Where it lives.** `tools/copal-theme`, `themes/antiquity/`,
+`themes/tokyo-night/` (the Neovim files moved out of the installer's
+heredocs), `copal_write_themes` (copies them), `copal_apply_theme` (runs the
+switch in every home, last in stages 4 and 16). Backups of everything it
+touched on the bench: `~/copal-theme-backups/20260902-194345/`.

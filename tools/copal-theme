@@ -1,0 +1,352 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+#
+# copal-theme -- one switch for the whole desktop's look.
+#
+#   copal-theme                list the themes (* is the current one)
+#   copal-theme NAME           switch everything to NAME
+#   copal-theme --toggle       light <-> dark: the current theme's partner
+#   copal-theme --pick         choose from a menu (Super+Shift+T, the Style menu)
+#   copal-theme --show [NAME]  the theme's tokens
+#   copal-theme --from-shell QS   what quickshell's Themes menu runs (see below)
+#   -q, --quiet                say nothing that is not an error
+#
+# A THEME IS A DIRECTORY, under ~/.local/share/copal/themes/ (yours) or
+# /usr/local/share/copal/themes/ (installed), holding
+#   theme.conf   the tokens: variant, partner, the chrome colours, which
+#                terminal palette, wallpaper, GTK theme, mc skin, prompt
+#   neovim.lua   the editor's half; ~/.config/nvim/theme.lua watches it
+# The "current" one is a symlink at ~/.config/copal/current/theme. Programs
+# that can read through a symlink do (Neovim); the rest have their own
+# config written, in their own format, from theme.conf, and are told to
+# reload where they can be told:
+#   terminals     copal-terminal-theme TERMINAL (foot, kitty, alacritty, ...)
+#   waybar, wofi  ~/.config/copal/current/colors.css (@define-color tokens),
+#                 imported by their stylesheets; the bar is restarted
+#   mako          the colour keys in ~/.config/mako/config; makoctl reload
+#   Hyprland      ~/.config/hypr/copal-theme.conf (borders), sourced from
+#                 hyprland.conf; hyprctl reload
+#   i3            ~/.config/copal/current/i3-colors.conf, included from the
+#                 i3 config; i3-msg reload
+#   wallpaper     copal-wallpaper set FILE, which repaints
+#   quickshell    currentTheme in settings.json (Antiquity's own switch),
+#                 plus the scheme itself in Config.qml if it is not one of
+#                 Antiquity's five, and the hook below
+#   GTK 3/4       gtk-theme-name and prefer-dark in settings.ini; gsettings
+#                 color-scheme for libadwaita
+#   the prompt    ~/.config/copal/current/shell.sh, sourced by ~/.bashrc:
+#                 PS1 in the theme's two colours, $COPAL_THEME
+#   mc, helix     skin= and theme= in their own files, where the files exist
+# Every step is skipped when its program has no config here, and every
+# write is idempotent, so running it twice is the same as once.
+#
+# THE HOOK. Antiquity's Themes menu writes currentTheme to settings.json.
+# copal-theme adds one line to Config.qml's onCurrentThemeChanged that runs
+# `copal-theme --from-shell NAME`: the Copal theme whose QS_THEME is NAME
+# is applied (helios -> antiquity, night -> tokyo-night), and any other of
+# Antiquity's five gets its terminal palette only. Applying a theme writes
+# the same value back to settings.json, which is not a change, so the hook
+# does not fire again.
+set -u
+have() { command -v "$1" >/dev/null 2>&1; }
+CFG="${XDG_CONFIG_HOME:-$HOME/.config}"
+DATA="${XDG_DATA_HOME:-$HOME/.local/share}"
+CUR="$CFG/copal/current"
+LINK="$CUR/theme"
+QUIET=
+say() { [ -n "$QUIET" ] || printf '  %s\n' "$*"; }
+die() { printf 'copal-theme: %s\n' "$*" >&2; exit 1; }
+
+theme_dirs() { printf '%s\n' "$DATA/copal/themes" /usr/local/share/copal/themes /usr/share/copal/themes; }
+find_theme() {  # NAME -> directory, the user's copy first
+    for _d in $(theme_dirs); do [ -f "$_d/$1/theme.conf" ] || [ -f "$_d/$1/neovim.lua" ] && { printf '%s' "$_d/$1"; return 0; }; done
+    return 1
+}
+names() { for _d in $(theme_dirs); do [ -d "$_d" ] && ls "$_d"; done | sort -u; }
+current() { [ -L "$LINK" ] && basename "$(readlink "$LINK")"; }
+load() {  # NAME: source its theme.conf into the environment
+    DIR=$(find_theme "$1") || die "no theme called '$1'. Installed: $(names | tr '\n' ' ')"
+    THEME="$1"; NAME="$1"; VARIANT=dark; PARTNER=""; TERMINAL=""; QS_THEME=""; WALLPAPER=""
+    BASE=1a1b26; SHADOW=16161e; HIGHLIGHT=292e42; ACCENT=7aa2f7; ACCENT_DARK=565f89
+    TEXT=1a1b26; TEXT_LIGHT=c0caf5; WHITE=c0caf5; URGENT=f7768e; DANGER=f7768e; WARNING=e0af68
+    BORDER_ACTIVE=7aa2f7; BORDER_INACTIVE=1a1b26; GTK_THEME=""; COLOR_SCHEME=""; MC_SKIN=""; HELIX_THEME=""
+    PROMPT_USER_SGR="1;32"; PROMPT_PATH_SGR="1;34"
+    # shellcheck disable=SC1090
+    [ -f "$DIR/theme.conf" ] && . "$DIR/theme.conf"
+}
+list() {
+    _c=$(current)
+    for _n in $(names); do
+        if [ "$_n" = "$_c" ]; then printf '  * %s' "$_n"; else printf '    %s' "$_n"; fi
+        ( load "$_n" 2>/dev/null && printf '   %s, %s' "$NAME" "$VARIANT" ); echo
+    done
+}
+# key=value in an INI-ish file: replace the key's line where it exists in
+# SECTION ("" = anywhere), else add it under SECTION (or at the end).
+set_kv() {  # FILE SECTION key=value...
+    _f="$1"; _sec="$2"; shift 2
+    for _kv in "$@"; do
+        _k=${_kv%%=*}
+        if [ -z "$_sec" ]; then
+            if grep -q "^$_k *=" "$_f"; then sed -i "s|^$_k *=.*|$_kv|" "$_f"; else printf '%s\n' "$_kv" >> "$_f"; fi
+        else
+            awk -v sec="$_sec" -v k="$_k" -v kv="$_kv" '
+                /^\[/ { if (insec && !done) { print kv; done = 1 }; insec = ($0 == sec) }
+                insec && index($0, k) == 1 && $0 ~ ("^" k " *=") { if (!done) print kv; done = 1; next }
+                { print }
+                END { if (!done) { if (!insec) print sec; print kv } }' "$_f" > "$_f.tmp" && mv "$_f.tmp" "$_f"
+        fi
+    done
+}
+
+# ---------------------------------------------------------------- steps --
+step_link() {
+    mkdir -p "$CUR"
+    ln -sfn "$DIR" "$LINK"      # -n: replace the link, never descend into it
+    say "theme: $THEME ($NAME) -> $DIR"
+}
+step_terminal() {
+    [ -n "$TERMINAL" ] && have copal-terminal-theme || return 0
+    copal-terminal-theme "$TERMINAL" >/dev/null 2>&1 && say "terminals: $TERMINAL (new windows)" \
+        || say "terminals: copal-terminal-theme $TERMINAL failed"
+}
+# The bar and the launcher: GTK CSS, which knows @define-color. The tokens
+# go in one file; the stylesheets import it. A stylesheet stage 16 wrote
+# before this existed carries helios's colours as literals, so it is
+# converted once, literal by literal, and the import line put at its top.
+CSS_TOKENS="181818:base 121212:shadow 333333:highlight 2a2a2a:highlight fccf8a:accent 87704f:accent-dark d0daed:text-light ff723e:urgent fc5870:danger fcd37b:warning ffffff:white"
+step_css() {
+    mkdir -p "$CUR"
+    {
+        printf '/* written by copal-theme: %s. The bar and launcher stylesheets import this. */\n' "$NAME"
+        for _p in "base $BASE" "shadow $SHADOW" "highlight $HIGHLIGHT" "accent $ACCENT" "accent-dark $ACCENT_DARK" \
+                  "text $TEXT" "text-light $TEXT_LIGHT" "white $WHITE" "urgent $URGENT" "danger $DANGER" "warning $WARNING"; do
+            printf '@define-color %s #%s;\n' "${_p% *}" "${_p#* }"
+        done
+    } > "$CUR/colors.css"
+    for _f in "$CFG/waybar/style.css" "$CFG/waybar/desktop.css" "$CFG/wofi/style.css"; do
+        [ -f "$_f" ] || continue
+        if ! grep -q 'copal/current/colors.css' "$_f"; then
+            for _t in $CSS_TOKENS; do sed -i "s/#${_t%%:*}\([^0-9a-fA-F]\)/@${_t#*:}\1/g; s/#${_t%%:*}\$/@${_t#*:}/" "$_f"; done
+            { printf '@import url("../copal/current/colors.css");  /* the theme; copal-theme rewrites it */\n'; cat "$_f"; } > "$_f.tmp" && mv "$_f.tmp" "$_f"
+        fi
+    done
+    # waybar is restarted, not signalled: SIGUSR2 (its reload) trips a GLib
+    # D-Bus assertion in 0.15 while the second waybar -- the desktop widgets
+    # -- holds the application name, and the bar dies. copal-bar is what the
+    # session started, so it is what comes back, both bars included.
+    if pgrep -x waybar >/dev/null 2>&1 && have copal-bar; then
+        pkill -x waybar 2>/dev/null; (setsid copal-bar >/dev/null 2>&1 </dev/null &)
+        say "bar: restarted (copal-bar)"
+    else
+        say "bar and launcher: colors.css"
+    fi
+}
+step_mako() {
+    _m="$CFG/mako/config"; [ -f "$_m" ] || return 0
+    set_kv "$_m" "" "background-color=#${BASE}f0" "text-color=#$TEXT_LIGHT" "border-color=#$SHADOW" "progress-color=over #$ACCENT"
+    # The per-urgency sections: the first key=value under each header.
+    awk -v u="$URGENT" -v a="$ACCENT" -v d="$ACCENT_DARK" '
+        /^\[/ { sec = $0 }
+        sec == "[urgency=high]" && /^border-color=/ { print "border-color=#" u; next }
+        sec == "[urgency=high]" && /^text-color=/   { print "text-color=#" a; next }
+        sec == "[urgency=low]"  && /^text-color=/   { print "text-color=#" d; next }
+        { print }' "$_m" > "$_m.tmp" && mv "$_m.tmp" "$_m"
+    # The main section is everything before the first header, so set_kv's
+    # "first occurrence anywhere" was the right one for the four keys above.
+    have makoctl && makoctl reload >/dev/null 2>&1; say "mako: $_m"
+}
+step_hyprland() {
+    [ -d "$CFG/hypr" ] || return 0
+    _t="$CFG/hypr/copal-theme.conf"
+    {
+        printf '# written by copal-theme: %s. Sourced from hyprland.conf; re-run copal-theme rather than edit.\n' "$NAME"
+        printf 'general {\n    col.active_border = rgb(%s)\n    col.inactive_border = rgb(%s)\n}\n' "$BORDER_ACTIVE" "$BORDER_INACTIVE"
+    } > "$_t"
+    _h="$CFG/hypr/hyprland.conf"
+    if [ -f "$_h" ] && ! grep -q 'copal-theme.conf' "$_h"; then
+        if grep -q '^source = ~/.config/hypr/local.conf' "$_h"; then
+            awk '/^source = ~\/.config\/hypr\/local.conf/ { print "# The theme'"'"'s borders, written by copal-theme."; print "source = ~/.config/hypr/copal-theme.conf" } { print }' "$_h" > "$_h.tmp" && mv "$_h.tmp" "$_h"
+        else
+            printf '\nsource = ~/.config/hypr/copal-theme.conf\n' >> "$_h"
+        fi
+    fi
+    [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ] && have hyprctl && hyprctl reload >/dev/null 2>&1 && say "Hyprland: reloaded" || say "Hyprland: $_t"
+}
+step_i3() {
+    _i="$CFG/i3/config"; [ -f "$_i" ] || return 0
+    mkdir -p "$CUR"
+    {
+        printf '# written by copal-theme: %s. Included from ~/.config/i3/config.\n' "$NAME"
+        printf '# class                 border  bg      text    indicator child_border\n'
+        printf 'client.focused          #%s #%s #%s #%s   #%s\n' "$ACCENT" "$ACCENT" "$BASE" "$ACCENT" "$ACCENT"
+        printf 'client.focused_inactive #%s #%s #%s #%s   #%s\n' "$HIGHLIGHT" "$HIGHLIGHT" "$TEXT_LIGHT" "$HIGHLIGHT" "$HIGHLIGHT"
+        printf 'client.unfocused        #%s #%s #%s #%s   #%s\n' "$BASE" "$BASE" "$ACCENT_DARK" "$BASE" "$BASE"
+        printf 'client.urgent           #%s #%s #%s #%s   #%s\n' "$URGENT" "$URGENT" "$BASE" "$URGENT" "$URGENT"
+    } > "$CUR/i3-colors.conf"
+    if ! grep -q 'copal/current/i3-colors.conf' "$_i"; then
+        printf '\n# The theme'"'"'s colours, written by copal-theme; included so they win over the block above.\ninclude ~/.config/copal/current/i3-colors.conf\n' >> "$_i"
+    fi
+    [ -n "${I3SOCK:-}" ] && have i3-msg && i3-msg reload >/dev/null 2>&1 && say "i3: reloaded" || say "i3: $CUR/i3-colors.conf"
+}
+step_wallpaper() {
+    [ -n "$WALLPAPER" ] && have copal-wallpaper || return 0
+    case "$WALLPAPER" in /*) _w="$WALLPAPER" ;; *) _w="$CFG/hypr/wallpapers_bundled/$WALLPAPER" ;; esac
+    [ -f "$_w" ] || { say "wallpaper: $_w is not here; left alone"; return 0; }
+    copal-wallpaper set "$_w" >/dev/null 2>&1 && say "wallpaper: $(basename "$_w")" || say "wallpaper: copal-wallpaper set failed"
+}
+# quickshell: Antiquity's own switch is currentTheme in settings.json, and
+# its Config.qml must know the scheme. Both edits are idempotent.
+step_quickshell() {
+    _q="$CFG/quickshell"; [ -d "$_q" ] || return 0
+    _c="$_q/Config.qml"
+    if [ -f "$_c" ] && ! grep -q '"--from-shell"' "$_c"; then
+        awk '{ print } /console.info\("Updated theme to: " \+ currentTheme\);/ {
+                 ind = $0; sub(/[^ ].*$/, "", ind)
+                 print ind "// Copal: the rest of the desktop follows (terminals, bar, mako, GTK, wallpaper)."
+                 print ind "Quickshell.execDetached([\"copal-theme\", \"-q\", \"--from-shell\", currentTheme]);" }' "$_c" > "$_c.tmp" && mv "$_c.tmp" "$_c"
+        grep -q '"--from-shell"' "$_c" && say "quickshell: hook added to Config.qml"
+    fi
+    if [ -n "$QS_THEME" ] && [ -f "$_c" ] && ! grep -q "^        \"$QS_THEME\": {" "$_c"; then
+        # A scheme built from this theme's tokens, in the shape of Antiquity's
+        # own, inserted before the first one so the menu lists it.
+        _ins=$(cat <<QML
+        "$QS_THEME": {
+            "base": "#$BASE",
+            "shadow": "#$SHADOW",
+            "highlight": "#$HIGHLIGHT",
+            "urgent": "#$URGENT",
+            "accent": "#$ACCENT",
+            "accentDark": "#$ACCENT_DARK",
+            "text": "#$TEXT",
+            "textLight": "#$TEXT_LIGHT",
+            "outline": "#$SHADOW",
+            "danger": "#$DANGER",
+            "warning": "#$WARNING",
+            "cbodyBackground": "#$BASE",
+            "cbodyBackgroundShadow": "#$SHADOW",
+            "cbodyMoonBackground": "#484a5e",
+            "cbodyMoonBackgroundShadow": "#5e5e5e",
+            "cbodyStroke": "#$TEXT_LIGHT",
+            "cbodyPowerMenu": "#$BASE",
+            "cbodyThemingMenu": "#$BASE",
+            "cbodyFavoriteApps": "#$BASE",
+            "cbodyMainMenu": "#$BASE",
+            "glassTintColor": "#$BASE",
+            "appLauncherBackground": "#$SHADOW",
+            "patternLineColor": "#$ACCENT_DARK",
+            "humorWet": "#425682",
+            "humorDry": "#$WARNING",
+            "humorCold": "#$ACCENT",
+            "humorHot": "#$URGENT",
+            "elementAir": "#$TEXT_LIGHT",
+            "elementWater": "#$ACCENT",
+            "elementEarth": "#$HIGHLIGHT",
+            "elementFire": "#$URGENT"
+        },
+QML
+)
+        awk -v ins="$_ins" '!done && /^        "[a-z]+": \{$/ { print ins; done = 1 } { print }' "$_c" > "$_c.tmp" && mv "$_c.tmp" "$_c"
+        say "quickshell: scheme '$QS_THEME' added to Config.qml"
+    fi
+    if [ -n "$QS_THEME" ]; then
+        _s="$_q/settings.json"
+        if [ -f "$_s" ]; then
+            grep -q "\"currentTheme\" *: *\"$QS_THEME\"" "$_s" || sed -i "s|\"currentTheme\" *: *\"[^\"]*\"|\"currentTheme\": \"$QS_THEME\"|" "$_s"
+        else
+            printf '{\n    "currentTheme": "%s"\n}\n' "$QS_THEME" > "$_s"
+        fi
+        say "quickshell: currentTheme $QS_THEME"
+    fi
+}
+step_gtk() {
+    [ -n "$GTK_THEME" ] || return 0
+    _dark=0; [ "$VARIANT" = dark ] && _dark=1
+    for _v in gtk-3.0 gtk-4.0; do
+        _f="$CFG/$_v/settings.ini"; mkdir -p "$CFG/$_v"
+        [ -f "$_f" ] || printf '[Settings]\n' > "$_f"
+        set_kv "$_f" "[Settings]" "gtk-theme-name=$GTK_THEME" "gtk-application-prefer-dark-theme=$_dark"
+    done
+    # gsettings needs a session bus: during an install, as root, there is
+    # none, and settings.ini above is what GTK reads there anyway.
+    if have gsettings && [ -n "${DBUS_SESSION_BUS_ADDRESS:-}${WAYLAND_DISPLAY:-}${DISPLAY:-}" ]; then
+        gsettings set org.gnome.desktop.interface gtk-theme "$GTK_THEME" 2>/dev/null
+        [ -n "$COLOR_SCHEME" ] && gsettings set org.gnome.desktop.interface color-scheme "$COLOR_SCHEME" 2>/dev/null
+    fi
+    say "GTK: $GTK_THEME, ${COLOR_SCHEME:-default} (new windows)"
+}
+step_shell() {
+    mkdir -p "$CUR"
+    {
+        printf '# written by copal-theme: %s. Sourced by ~/.bashrc; re-run copal-theme rather than edit.\n' "$NAME"
+        printf 'COPAL_THEME=%s; COPAL_THEME_VARIANT=%s; export COPAL_THEME COPAL_THEME_VARIANT\n' "$THEME" "$VARIANT"
+        printf '# user@host:dir$ in the theme'"'"'s two colours; root stays red so it is visible without reading.\n'
+        printf 'if [ -n "${BASH_VERSION:-}" ]; then\n'
+        printf '    if [ "$(id -u)" = 0 ]; then PS1='"'"'\\[\\e[1;31m\\]\\u@\\h\\[\\e[0m\\]:\\[\\e[%sm\\]\\w\\[\\e[0m\\]# '"'"'\n' "$PROMPT_PATH_SGR"
+        printf '    else PS1='"'"'\\[\\e[%sm\\]\\u@\\h\\[\\e[0m\\]:\\[\\e[%sm\\]\\w\\[\\e[0m\\]$ '"'"'; fi\n' "$PROMPT_USER_SGR" "$PROMPT_PATH_SGR"
+        printf 'fi\n'
+    } > "$CUR/shell.sh"
+    _b="$HOME/.bashrc"
+    if [ -f "$_b" ] && ! grep -q 'copal/current/shell.sh' "$_b"; then
+        printf '\n# The theme'"'"'s prompt, written by copal-theme. After the PS1 above so it wins.\n[ -f "$HOME/.config/copal/current/shell.sh" ] && . "$HOME/.config/copal/current/shell.sh"\n' >> "$_b"
+    fi
+    say "prompt: $CUR/shell.sh (new shells)"
+}
+step_apps() {
+    _mc="$CFG/mc/ini"
+    [ -n "$MC_SKIN" ] && [ -f "$_mc" ] && { set_kv "$_mc" "[Midnight-Commander]" "skin=$MC_SKIN"; say "mc: skin $MC_SKIN"; }
+    _hx="$CFG/helix/config.toml"
+    [ -n "$HELIX_THEME" ] && [ -f "$_hx" ] && {
+        if grep -q '^theme *=' "$_hx"; then sed -i "s|^theme *=.*|theme = \"$HELIX_THEME\"|" "$_hx"
+        else { printf 'theme = "%s"\n' "$HELIX_THEME"; cat "$_hx"; } > "$_hx.tmp" && mv "$_hx.tmp" "$_hx"; fi
+        say "helix: $HELIX_THEME"
+    }
+    return 0
+}
+apply() {
+    load "$1"
+    step_link; step_terminal; step_css; step_mako; step_hyprland; step_i3
+    step_wallpaper; step_quickshell; step_gtk; step_shell; step_apps
+    say "done. Neovim follows within seconds; terminals, GTK windows and shells on their next start."
+}
+
+# ------------------------------------------------------------- commands --
+[ "${1:-}" = "-q" ] || [ "${1:-}" = "--quiet" ] && { QUIET=1; shift; }
+case "${1:-}" in
+    ''|-l|--list|list)
+        echo; echo "  Themes  (* is the current one)"; list; echo
+        echo "  copal-theme NAME     switch everything      copal-theme --toggle   light <-> dark"; echo; exit 0 ;;
+    -h|--help|help) sed -n '5,14p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    --show) load "${2:-$(current)}"; printf '%s (%s), %s; partner %s; terminal %s; wallpaper %s\n' "$NAME" "$THEME" "$VARIANT" "$PARTNER" "$TERMINAL" "$WALLPAPER"
+            printf '  base #%s shadow #%s highlight #%s accent #%s accent-dark #%s\n  text #%s text-light #%s urgent #%s danger #%s warning #%s\n  gtk %s mc %s helix %s prompt %s / %s\n' \
+                "$BASE" "$SHADOW" "$HIGHLIGHT" "$ACCENT" "$ACCENT_DARK" "$TEXT" "$TEXT_LIGHT" "$URGENT" "$DANGER" "$WARNING" "$GTK_THEME" "$MC_SKIN" "$HELIX_THEME" "$PROMPT_USER_SGR" "$PROMPT_PATH_SGR"; exit 0 ;;
+    -t|--toggle)
+        _c=$(current); [ -n "$_c" ] || _c=$(names | head -1)
+        load "$_c"; _to="$PARTNER"
+        if [ -z "$_to" ]; then   # no partner named: the first theme of the other variant
+            _want=dark; [ "$VARIANT" = dark ] && _want=light
+            for _n in $(names); do ( load "$_n" && [ "$VARIANT" = "$_want" ] ) && { _to="$_n"; break; }; done
+        fi
+        [ -n "$_to" ] || die "nothing to toggle to: $_c names no partner and no theme has the other variant"
+        apply "$_to"; exit 0 ;;
+    -p|--pick)
+        _sel=$(names | { if [ -n "${WAYLAND_DISPLAY:-}" ] && have wofi; then wofi --dmenu --prompt theme --lines 6
+                         elif have dmenu; then dmenu -i -l 6 -p theme; else cat; fi; }) || exit 0
+        [ -n "$_sel" ] || exit 0
+        apply "$_sel"; exit 0 ;;
+    --from-shell)
+        _qs="${2:-}"; [ -n "$_qs" ] || die "--from-shell wants quickshell's theme name"
+        for _n in $(names); do
+            if ( load "$_n" 2>/dev/null && [ "$QS_THEME" = "$_qs" ] ); then
+                [ "$(current)" = "$_n" ] && exit 0      # already there: the write-back, not a switch
+                apply "$_n"; exit 0
+            fi
+        done
+        # One of Antiquity's own five with no Copal theme around it: the
+        # terminal palette is the part of it that exists opaque.
+        have copal-terminal-theme && copal-terminal-theme "$_qs" >/dev/null 2>&1 && say "terminals: $_qs (no Copal theme wraps it)"
+        exit 0 ;;
+    -*) die "unknown option $1 (try --help)" ;;
+    *) apply "$1" ;;
+esac

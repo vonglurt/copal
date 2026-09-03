@@ -1947,8 +1947,32 @@ It writes foot, kitty, Alacritty, WezTerm, xterm and urxvt (`~/.Xresources`),
 Sakura, LXTerminal, Xfce Terminal, Terminator, Tilda and QTerminal, in each
 one's own format, and can be run again after a terminal's own settings dialog
 has changed things. `st` compiles its colours in and Cool Retro Term is amber
-on purpose, so those two keep their own. Switching in the Themes menu does not
-yet re-run the script; that is a one-line hook for Antiquity's `Config.qml`.
+on purpose, so those two keep their own.
+
+**The toggle: light and dark, the whole desktop.** `copal-theme` is the switch
+above the terminal one. A theme is a directory (`themes/` in the repository,
+`/usr/local/share/copal/themes/` installed, `~/.local/share/copal/themes/` for
+your own) holding `theme.conf`, the tokens, and `neovim.lua`, the editor's half.
+Two ship: **antiquity**, Linux Antiquity's helios (dark chrome, cream paper,
+the collage wallpaper) and **tokyo-night**, the universal dark one (the palette
+stage 4's i3 already wears, diinki's star chart for the wallpaper). Each names
+the other as its partner, so `copal-theme --toggle`, Super+Shift+N, or "Light
+or dark" in the menu flips between them. One switch sets: the terminals
+(through `copal-terminal-theme`), the bar and launcher (a `@define-color` token
+file their stylesheets import; the bar restarts), mako, Hyprland's borders (a
+sourced file), i3's client colours (an included file), the wallpaper, GTK 3 and
+4 with the libadwaita colour scheme, the shell prompt (the same shape in the
+theme's two colours, plus `$COPAL_THEME`), mc's skin, Helix's theme, and the
+symlink Neovim watches. Antiquity's own Themes menu in quickshell is hooked as
+well: choosing helios there applies antiquity everywhere, night applies
+tokyo-night, and the other three of the five set the terminal palette. Every
+write is idempotent and every layer is skipped where its program has no
+config, so running it twice is the same as once.
+
+    copal-theme                  # list, * marks the current one
+    copal-theme --toggle         # light <-> dark
+    copal-theme tokyo-night      # by name
+    copal-theme --show           # the tokens
 
 ## Instruments, radio, and learning the keyboard
 
