@@ -260,6 +260,10 @@ tools/copal-app-probe.sh --keep NAME                 # leaves it open for you
 tail -3 ~/copal-apps/log.txt
 ```
 
+The full method — workspaces, the first-action script, the gallery sweep,
+and the rule about never closing windows by class — is in
+`docs/app-probe-guide.md`.
+
 **Check the extras after a clean install:** copal's menu, entry `v`.
 
 **Ask the guest whether a sound card is drivable:**

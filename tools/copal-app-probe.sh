@@ -12,11 +12,15 @@
 #   copal-app-probe.sh --gallery DIR NAME ...       quarter-size, hard-compressed JPEG
 #                                                   in DIR, every window moved to the
 #                                                   probe workspace first (the gallery)
+#   copal-app-probe.sh --act 'CMD' NAME ...         once the window is up and focused,
+#                                                   run CMD (a first action: type a line,
+#                                                   draw a stroke) before the picture
 #
 # WORKSPACE 2. The program is launched on its own workspace and the session
-# doing the testing stays on workspace 1, so the screenshot holds the program
-# and nothing else, and a fullscreen game does not land on the terminal
-# driving it. Hyprland only; elsewhere it runs where it runs.
+# doing the testing stays where it was (the probe switches back at the end),
+# so the screenshot holds the program and nothing else, a fullscreen game
+# does not land on the terminal driving it, and a typed first action cannot
+# reach that terminal. Hyprland only; elsewhere it runs where it runs.
 #
 # The integration test for a desktop program is dull and has to be done a
 # hundred times: start it, see whether a window appears, see whether that
@@ -36,7 +40,7 @@
 # "Account", "First", "Wizard", "Assistant"), because a wizard on first launch
 # is precisely the thing this exercise exists to find and then design away.
 set -u
-KEEP=0; WAIT=30; WS="${COPAL_PROBE_WORKSPACE:-2}"; DOC=""; GAL=""
+KEEP=0; WAIT=30; WS="${COPAL_PROBE_WORKSPACE:-2}"; DOC=""; GAL=""; ACT=""; ACTED=""
 while [ $# -gt 0 ]; do
     case "$1" in
         --keep) KEEP=1; shift ;;
@@ -44,6 +48,7 @@ while [ $# -gt 0 ]; do
         --workspace) WS="${2:?--workspace needs a number}"; shift 2 ;;
         --doc) DOC="${2:?--doc needs a directory}"; shift 2 ;;
         --gallery) GAL="${2:?--gallery needs a directory}"; shift 2 ;;
+        --act) ACT="${2:?--act needs a command}"; shift 2 ;;
         --) shift; break ;;
         -*) echo "copal-app-probe: unknown option $1" >&2; exit 2 ;;
         *) break ;;
@@ -57,6 +62,16 @@ LOG="$OUT/$NAME.log"; PNG="$OUT/$NAME.png"
 command -v "$1" >/dev/null 2>&1 || {
     printf '%s  %-18s NOT INSTALLED (%s)\n' "$(date +%H:%M)" "$NAME" "$1" | tee -a "$OUT/log.txt"; exit 3; }
 
+# The pids above us -- the shell, the terminal it sits in, the compositor.
+# A window owned by one of those is never the program's, is never counted
+# as "new", and is never closed: on 2 Sep 2026 a clean-up by window class
+# ("every foot window") closed the terminal the testing session lived in.
+# Close by address or pid from the probe's own list, never by class.
+PROTECT=" "; _p=$$
+while [ "${_p:-1}" -gt 1 ] 2>/dev/null; do
+    PROTECT="$PROTECT$_p "; _p=$(ps -o ppid= -p "$_p" 2>/dev/null | tr -d ' ')
+done
+
 # Every pid under ours, for matching windows to the program. Programs fork
 # (electron, flatpak, java) and the window's pid is rarely the one we started.
 descendants() {  # <pid>
@@ -68,13 +83,14 @@ my_windows() {  # prints "pid|class|title" for our windows
     if command -v hyprctl >/dev/null 2>&1 && [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]; then
         hyprctl clients -j 2>/dev/null | python3 -c '
 import json, sys
-pids = sys.argv[1].split()
+pids = sys.argv[1].split(); keep_out = sys.argv[2].split()
 for c in json.load(sys.stdin):
-    if str(c.get("pid")) in pids:
-        print("%s|%s|%s|%s" % (c.get("pid"), c.get("class",""), c.get("title",""), c.get("address","")))' "$_pids"
+    if str(c.get("pid")) in pids and str(c.get("pid")) not in keep_out:
+        print("%s|%s|%s|%s" % (c.get("pid"), c.get("class",""), c.get("title",""), c.get("address","")))' "$_pids" "$PROTECT"
     elif command -v xdotool >/dev/null 2>&1; then
         for _w in $(xdotool search --onlyvisible --name '' 2>/dev/null); do
             _wp=$(xdotool getwindowpid "$_w" 2>/dev/null) || continue
+            case "$PROTECT" in *" $_wp "*) continue ;; esac
             case "$_pids" in *" $_wp "*) echo "$_wp|$(xdotool getwindowclassname "$_w" 2>/dev/null)|$(xdotool getwindowname "$_w" 2>/dev/null)|" ;; esac
         done
     fi
@@ -87,8 +103,10 @@ all_windows() {
     if command -v hyprctl >/dev/null 2>&1 && [ -n "${HYPRLAND_INSTANCE_SIGNATURE:-}" ]; then
         hyprctl clients -j 2>/dev/null | python3 -c '
 import json, sys
+keep_out = sys.argv[1].split()
 for c in json.load(sys.stdin):
-    print("%s|%s|%s|%s" % (c.get("pid"), c.get("class",""), c.get("title",""), c.get("address","")))'
+    if str(c.get("pid")) not in keep_out:
+        print("%s|%s|%s|%s" % (c.get("pid"), c.get("class",""), c.get("title",""), c.get("address","")))' "$PROTECT"
     fi
 }
 HYPR=0
@@ -140,6 +158,30 @@ if [ -n "$WIN" ]; then
         done
         sleep 1
     fi
+    # The first action, if one was asked for: the program's largest window
+    # is focused and its place on screen handed to the command, which types
+    # or draws into it. Whatever it prints joins the program's log.
+    if [ -n "$ACT" ]; then
+        if [ "$HYPR" -eq 1 ]; then
+            eval "$(hyprctl clients -j 2>/dev/null | python3 -c '
+import json, sys
+ours = sys.argv[1].split(); best = None
+for c in json.load(sys.stdin):
+    if c.get("address") in ours:
+        a = c["size"][0] * c["size"][1]
+        if best is None or a > best[0]: best = (a, c)
+if best:
+    c = best[1]
+    print("COPAL_WIN_ADDR=%s COPAL_WIN_X=%d COPAL_WIN_Y=%d COPAL_WIN_W=%d COPAL_WIN_H=%d"
+          % (c["address"], c["at"][0], c["at"][1], c["size"][0], c["size"][1]))' \
+                "$(printf '%s' "$WIN" | cut -d'|' -f4 | tr '\n' ' ')")"
+            [ -n "${COPAL_WIN_ADDR:-}" ] && hyprctl dispatch focuswindow "address:$COPAL_WIN_ADDR" >/dev/null 2>&1
+            export COPAL_WIN_ADDR COPAL_WIN_X COPAL_WIN_Y COPAL_WIN_W COPAL_WIN_H
+        fi
+        sleep 1
+        sh -c "$ACT" >>"$LOG" 2>&1 && ACTED=", acted" || ACTED=", act failed"
+        sleep 2
+    fi
 fi
 
 if command -v grim >/dev/null 2>&1 && [ -n "${WAYLAND_DISPLAY:-}" ]; then
@@ -172,6 +214,7 @@ FIRST=$(grep -i -m1 'error\|fail\|cannot\|not found' "$LOG" 2>/dev/null | cut -c
 if [ "$KEEP" -eq 0 ]; then
     if command -v hyprctl >/dev/null 2>&1; then
         for _p in $(printf '%s' "$WIN" | cut -d'|' -f1 | sort -u); do
+            case "$PROTECT" in *" $_p "*) continue ;; esac
             hyprctl dispatch closewindow "pid:$_p" >/dev/null 2>&1
         done
     fi
@@ -188,9 +231,9 @@ fi
 if [ -z "$WIN" ]; then
     VERDICT="NO WINDOW in ${WAIT}s, process $ALIVE"
 elif [ "$WIZ" -gt 0 ]; then
-    VERDICT="WIZARD ${TWIN}s ($NWIN window$( [ "$NWIN" -ne 1 ] && echo s))"
+    VERDICT="WIZARD ${TWIN}s ($NWIN window$( [ "$NWIN" -ne 1 ] && echo s))$ACTED"
 else
-    VERDICT="ok ${TWIN}s ($NWIN window$( [ "$NWIN" -ne 1 ] && echo s))$( [ "$DETACHED" -eq 1 ] && echo ', detached')"
+    VERDICT="ok ${TWIN}s ($NWIN window$( [ "$NWIN" -ne 1 ] && echo s))$( [ "$DETACHED" -eq 1 ] && echo ', detached')$ACTED"
 fi
 LINE=$(printf '%s  %-18s %-28s stderr:%-3s %s%s' "$(date +%H:%M)" "$NAME" "$VERDICT" "$ERRS" \
         "$( [ -n "$TITLES" ] && printf '[%s] ' "$TITLES")" "$( [ -n "$FIRST" ] && printf -- '-- %s' "$FIRST")")
