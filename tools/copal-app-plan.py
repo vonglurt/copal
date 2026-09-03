@@ -24,7 +24,7 @@ if "--log" in sys.argv:
 # the configuration step that spares the wizard or the error, or the reason
 # to leave it alone. Add to it as the passes go on.
 NOTES = {
-    "endless-sky": "not packaged; built from source by stage 12's offer (LTO off, tests off). Title screen rendered here; audio waits on the sound card",
+    "endless-sky": "not packaged; built from source by stage 12's offer (LTO off, tests off). Title screen rendered here. Run from outside its source tree it aborts with 'Unable to find the resource directories': the launcher must pass --resources SRCDIR or run inside it",
     "winebox": "Wine in bubblewrap boxes, stage 14 bundle w. Verified on this aarch64 bench with Notepad++'s ARM64 portable build; x86 programs need the x86_64 port",
     "streamripper": "not packaged; built from source by stage 12's offer (four musl/GCC 15 fixes). Command-line; prints its usage",
     "gzdoom": "opened a 'Fatal error' box: no game data. RESOLVED: the row installs freedoom with it; verified with DOOMWADDIR pointed at Freedoom's WADs -- GZDoom starts into the game",
@@ -43,12 +43,12 @@ NOTES = {
     "zutty": "SIGSEGV: wants DRI3 under Xwayland and this guest has none. A software-GL guest problem",
     "guake": "process stays alive with no window: it is a drop-down terminal, hidden until its hotkey. Expected. Logs a GSettings schema warning",
     "scrot": "a command-line screenshot tool that was catalogued as graphical; mode corrected to 'h'",
-    "minuet": "SIGSEGV with 'cannot find card 0' -- retest after the sound card fix; if it still dies it is a Qt Quick program too (try QT_QUICK_BACKEND=software)",
+    "minuet": "SIGSEGV on start. With the virtio sound card present it dies later, in the Qt Quick renderer. RESOLVED by QT_QUICK_BACKEND=software (verified 2 Sep: opens its window; ALSA still grumbles about cards.pcm.front etc., harmless)",
     "yakuake": "SIGSEGV on start (exit 139). A KDE drop-down terminal that expects KWin/X11 window management; under Hyprland it does not survive. Leave, or drop from the Wayland desktop's menu",
     "mgba-qt": "the catalogue installed 'mgba', which is the SDL binary and needs a ROM on its command line -- a GUI entry with no GUI. RESOLVED: the row now installs mgba-qt, the Qt front end",
     "fs-uae": "the sweep's window was closed by a concurrent test; re-probe by hand. Needs a Kickstart ROM to do anything, which is its own first-run dialog",
     "gitk": "probed from a home directory that is not a repository; 'not a git repository' is the expected answer. Run it inside a checkout",
-    "gqrx": "opens an 'Audio Error' (PulseAudio connection refused) before its device dialog -- the audio stack question",
+    "gqrx": "opens an 'Audio Error' (PulseAudio connection refused) before its device dialog: the same missing sound server as Hydrogen",
     "kate": "opened its Welcome view. RESOLVED: 'Show welcome view for new window=false' in the katerc stage 7 writes, and seeded by stage 12 where stage 7 did not run; verified",
     "zim": "first window is 'Add Notebook'. RESOLVED: stage 12 seeds ~/Notebooks/Notes as the default notebook; verified -- opens on 'Home - Notes'",
     "qbittorrent": "first start shows a Legal Notice, then minimises to the tray. RESOLVED: stage 12 seeds the notice as accepted and turns off close/minimise-to-tray; the i3 bar now has a tray (tray_output primary) for the applets that need one",
@@ -69,7 +69,8 @@ NOTES = {
     "firefox-esr": "first run opens 'Welcome to Firefox'. RESOLVED in stage 12: policies.json in the distribution directory (root; verify on the clean install)",
     "mscore": "SIGSEGV on start in the QML renderer under llvmpipe. RESOLVED: stage 1 exports QT_QUICK_BACKEND=software on virtio-gpu guests; with it MuseScore starts (its 'Getting started' tour is the expected first run)",
     "lapce": "re-launches itself detached ('lapce --wait') and exits 0, so the first probe saw no window; the probe now catches detached windows. Starts fine",
-    "hydrogen": "starts, but cannot open an audio driver (JACK, then ALSA) -- the sound card question",
+    "milkytracker": "aborts (SIGABRT) when the ALSA sequencer is absent: /dev/snd/seq needs the snd-seq module loaded (root: modprobe snd-seq, and /etc/modules). Opened fine before the sound card arrived, because RtMidi then had no card to try",
+    "hydrogen": "starts, but cannot open an audio driver. With the virtio-snd card present it tries JACK, then PulseAudio, and both are refused: no sound server runs on the guest -- wireplumber is installed but pipewire, pipewire-pulse and pipewire-alsa are not, and nothing starts one. THE PACKAGE GAP for audio; see the audio note",
     "tuxpaint": "starts; ALSA 'cannot find card' -- the sound card question",
     "kmail": "already configured here (Akonadi resources present); a fresh account needs the KDE wizard or kmail-account-wizard's ISPDB lookup — hard to seed, leave the wizard",
     "brave": "Flatpak; first run shows the welcome tour; same policies.json mechanism inside the Flatpak's /etc/brave/policies path (to verify)",

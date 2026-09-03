@@ -24,6 +24,7 @@ EXTRAS = [  # name in the log/gallery, label, section
     ("endless-sky", "Endless Sky (built from source)", "Games"), ("wxmaxima", "wxMaxima (built from source)", "Science"),
     ("ytq", "ytq download queue", "Media"), ("streamripper", "streamripper (built from source)", "Radio"),
     ("winecfg", "winecfg", "Windows"),
+    ("urfinkel", "UR FINKEL (Plus/4, make run in xplus4)", "Retro"),
 ]
 
 
@@ -72,8 +73,9 @@ def main():
            "size, with every window the program opened moved there first, saved as a",
            "hard-compressed JPEG. Terminal programs run inside `foot`. The verdict line",
            "is the launch probe's (`tools/copal-app-probe.sh --gallery`). The bench is",
-           "an aarch64 Copal guest under UTM with software OpenGL and, at the time of",
-           "these pictures, no sound card — so anything that plays sound was silent.\n"]
+           "an aarch64 Copal guest under UTM with software OpenGL and a virtio sound",
+           "card but no sound server — so anything that wants PulseAudio or JACK was",
+           "refused, and anything that plays sound was silent.\n"]
     total = sum(len(x) for x in by_section.values())
     total_bytes = sum(b for x in by_section.values() for _, _, b in x)
     out.append("**%d programs pictured, %.1f MB of pictures.**\n" % (total, total_bytes / 1e6))

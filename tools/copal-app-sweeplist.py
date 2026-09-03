@@ -38,6 +38,7 @@ X_CMD = {
  "mypaint": "env GDK_BACKEND=x11 mypaint", "pinta": "env GDK_BACKEND=x11 pinta",
  "tuxpaint": "env SDL_VIDEODRIVER=x11 tuxpaint", "libresprite": "env SDL_VIDEODRIVER=x11 libresprite",
  "mscore": "env QT_QUICK_BACKEND=software mscore", "welle-io": "env QT_QUICK_BACKEND=software welle-io",
+ "minuet": "env QT_QUICK_BACKEND=software minuet",
  "gzdoom": f"env DOOMWADDIR={H}/.cache/freedoom/usr/share/games/doom gzdoom",
 }
 X_ACT = {
@@ -45,7 +46,7 @@ X_ACT = {
  "geany": "keys ctrl+n wait 1 " + HELLO, "kate": "keys ctrl+n wait 1 " + HELLO,
  "emacs": "keys ctrl+x type b wait 0.5 ret wait 0.5 " + HELLO,
  "gnumeric": HELLO + " ret",
- "inkscape": "wait 2 type p wait 0.5 xline", "drawing": "xline", "mypaint": "xline", "pinta": "xline",
+ "drawing": "xline",  # inkscape: neither xdotool nor wlrctl strokes reach its canvas; no action "mypaint": "xline", "pinta": "xline",
  "tuxpaint": "wait 2 xline", "libresprite": "keys ctrl+n wait 1 ret wait 1 xline",
  "qalculate-gtk": CALC, "galculator": CALC, "speedcrunch": CALC,
  "gnome-mines": "click", "wxmaxima": """type 'print("hello copal");' ret""",
@@ -70,11 +71,15 @@ for sec, label, pkg, b, mode, _ in rows:
         out.append((b, X_CMD.get(b, b), X_ACT.get(b, "")))
 WB = f"env WINEBOX_ROOT={H}/.cache/winebox-test WINE={H}/.cache/wine/root/usr/bin/wine WINE_TREE={H}/.cache/wine/root {H}/.cache/winebox"
 extras = [("kicad", "kicad"), ("kmail", "kmail"), ("brave", "brave"), ("x64sc", "x64sc"),
- ("endless-sky", f"{H}/.cache/copal-build/es/build/endless-sky"),
+ ("endless-sky", f"{H}/.cache/copal-build/es/build/endless-sky --resources {H}/.cache/copal-build/es/endless-sky-0.11.2"),
  ("wxmaxima", f"{H}/.cache/copal-build/stage/bin/wxmaxima"),
- ("ytq", f"{H}/.cache/copal-bin/ytq"),
+ ("ytq", f"foot -e sh -c '{H}/.cache/copal-bin/ytq; sleep 25'"),
  ("streamripper", f"foot -e sh -c '{H}/.cache/copal-build/sr/streamripper-1.64.6/streamripper http://ice1.somafm.com/groovesalad-128-mp3 -d {H}/.cache/copal-build/sr/out -l 20; sleep 5'"),
- ("winebox-notepad++", f"{WB} run notepad++"), ("winecfg", f"{WB} cfg notepad++")]
+ ("winebox-notepad++", f"{WB} run notepad++"), ("winecfg", f"{WB} cfg notepad++"),
+ # UR FINKEL, Paul's Plus/4 game: `make run` builds the disk and boots it in
+ # xplus4. cc65 unpacked from its apk into ~/.cache/cc65 (see docs/app-probe-guide.md).
+ ("urfinkel", f"sh -c 'cd {H}/code/urfinkel && CC65_HOME={H}/.cache/cc65/root/usr/share/cc65 make run CL65={H}/.cache/cc65/root/usr/bin/cl65'")]
+X_ACT["urfinkel"] = "wait 20"  # the Plus/4 loads the game from disk; picture the menu, not LOADING
 for n, c in extras:
     if n not in seen: out.append((n, c, X_ACT.get(n, ""))); seen.add(n)
 os.makedirs(f"{H}/.cache/copal-gallery", exist_ok=True)
