@@ -1388,26 +1388,32 @@ Stage 7 installs `st`, `sakura`, `xfce4-terminal`, `terminator` and
 **foot is deliberately absent from the catalogue**: it is Wayland-only, and this
 is an X11 desktop, so it would install and never open a window.
 
-**The desktop's theme, every terminal, opaque.** Linux Antiquity draws its
+**The desktop's theme, every terminal.** Linux Antiquity draws its
 terminal as a pane of glass: a window at 20 % opacity over a blurred wallpaper,
 tinted per theme, with one neon palette shared by all five themes whose "black"
 is a purple and whose selection colour is its background. That only reads on
 the glass, and the glass costs a blur pass per frame, which on a CPU renderer
 is the dearest thing on the screen. `copal-terminal-theme` carries each theme
-opaque instead: helios (gold), eris (slate), priapus (sage), eros (indigo, the
-dark one) and hades (grey), the ground being the theme's own glass tint and the
+as a solid colour instead: helios (cream), eris (slate), priapus (sage), eros
+(indigo, the dark one) and hades (grey), the ground being the theme's own glass
+tint (helios's faded toward white, the tint alone being too yellow) and the
 sixteen colours derived from the theme's own design tokens, each moved along
 its hue until it clears 4.5:1 on that ground. `ls`, `htop`, `mc` and a bold
 prompt are readable rather than decorative. The rest of the theme's terminal
 style comes along: 12 px padding, an 11 pt font, 3000 lines, a block cursor,
-Ctrl+Shift+plus and minus to zoom. Nothing is translucent and nothing blinks, so
-an idle terminal costs nothing. Copal Sand, the sand-and-rust palette, stays as
+Ctrl+Shift+plus and minus to zoom, and a hint of the glass at alpha 0.9. That
+last was measured before it was allowed: a foot window redrawing ten times a
+second cost Hyprland on llvmpipe the same CPU at 0.9 as at 1.0, because the
+compositor blurs the screen once per frame for the bars whether or not a window
+shares it. `--alpha 1` makes everything opaque. Nothing blinks, so an idle
+terminal costs nothing. Copal Sand, the sand-and-rust palette, stays as
 a sixth choice. With no argument the script follows the theme the desktop is
 set to (Antiquity's Themes menu writes it to
 `~/.config/quickshell/settings.json`; helios until then); with a name it
 switches every terminal at once:
 
-    copal-terminal-theme eros        # all terminals, opaque indigo
+    copal-terminal-theme eros        # all terminals, indigo
+    copal-terminal-theme --alpha 1   # opaque
     copal-terminal-theme --show      # the numbers for the current theme
     copal-terminal-theme             # back to following the desktop
 

@@ -50,12 +50,14 @@ def fit(seed, ground, target=WCAG, sat_boost=0.0, extra_l=0.0):
     return rgbhex(colorsys.hls_to_rgb(h, l, s))
 
 # Antiquity's tokens (configs/quickshell/Config.qml) and the kitty grounds.
+# helios's ground is its tint #fce2ab faded 60 % toward white: opaque, the
+# tint itself was too yellow (Paul, 2 Sep 2026); the glass showed it paler.
 # Each entry: ground, text, cursor-candidate (accent), selection, then the
 # eight hue seeds: black red green yellow blue magenta cyan white.
 PURPLE = '#AC82E9'      # the rice's signature purple, kitty color3/color6
 GREEN  = '#00ff5d'      # kitty color2, the only green the design has
 THEMES = {
-  'helios': dict(ground='fce2ab', text='121212', accent='fccf8a', sel='fccf8a',
+  'helios': dict(ground='fdf2da', text='121212', accent='fccf8a', sel='fccf8a',
     seeds=['181818','fc5870',GREEN,'fcd37b','6f8ebc',PURPLE,'92bbcc','87704f'],
     brights=['87704f','ff723e','a7b777','fcd37b','425682',PURPLE,'92bbcc','473e39']),
   'eris': dict(ground='b9c5c9', text='121212', accent='c7cfe5', sel='d2dddc',

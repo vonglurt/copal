@@ -8233,14 +8233,17 @@ XRES
     # tint) with sixteen colours derived from the theme's own design tokens,
     # every one at 4.5:1 or better, plus Copal Sand. With no argument it
     # follows the theme the desktop is set to (helios until the Themes menu
-    # says otherwise). Nothing is translucent and nothing blinks: no blur
-    # pass, no idle redraws, which matters where the compositor is on
-    # llvmpipe. The script writes each terminal's own format and can be
-    # re-run by hand any time, with a theme name to switch.
+    # says otherwise). helios's tint is faded toward white (the tint itself
+    # was too yellow opaque). Alpha is 0.9, a hint of wallpaper: measured on
+    # the bench, a redrawing foot at 0.9 cost Hyprland on llvmpipe the same
+    # CPU as at 1.0, since blur is drawn once per frame for the bars anyway.
+    # Nothing blinks: no idle redraws. The script writes each terminal's own
+    # format and can be re-run by hand any time, with a theme name to switch
+    # and --alpha 1 to go opaque.
     install -m 0755 "$(cd "$(dirname "$0")" && pwd)/tools/copal-terminal-theme" /usr/local/bin/copal-terminal-theme 2>/dev/null \
         || warn "tools/copal-terminal-theme not found beside copal-prep.sh; the terminal palette is not applied"
     if [ -x /usr/local/bin/copal-terminal-theme ]; then
-        say "the desktop theme on every terminal, opaque: copal-terminal-theme"
+        say "the desktop theme on every terminal: copal-terminal-theme"
         for _h in /root "$(user_home)"; do
             [ -n "$_h" ] && [ -d "$_h" ] || continue
             HOME="$_h" /usr/local/bin/copal-terminal-theme >/dev/null 2>&1 || warn "copal-terminal-theme failed for $_h"
@@ -9644,11 +9647,12 @@ TERMINALS -- which one, and why the fast ones are not
       find the line   set $term urxvt
       change it, then Super+Shift+R to reload i3
 
-   Every terminal here wears the desktop's theme, opaque: Antiquity's
-   helios by default, each colour readable on the ground, no blur and no
+   Every terminal here wears the desktop's theme: Antiquity's helios by
+   default, faded and at alpha 0.9, each colour readable on the ground, no
    blinking. 'copal-terminal-theme eros' (or eris, priapus, hades, sand)
-   switches all of them; run it with no argument to follow the desktop
-   again, or after a program's own settings dialog has overwritten it.
+   switches all of them, '--alpha 1' makes them opaque; run it with no
+   argument to follow the desktop again, or after a program's own settings
+   dialog has overwritten it.
 
    Fonts and colours for xterm and urxvt live in ~/.Xresources. After editing:
 

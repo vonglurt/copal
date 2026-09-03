@@ -7,6 +7,7 @@
 #   copal-terminal-theme [THEME]      write THEME into $HOME's terminal configs
 #   copal-terminal-theme --show [THEME]   print the palette and stop
 #   copal-terminal-theme --list       the theme names
+#   --alpha A (0.5..1)                window opacity, default 0.9; 1 is opaque
 #
 # THEME is one of the Linux Antiquity (diinki) themes -- helios, eris,
 # priapus, eros, hades -- or sand, Copal's own. With no THEME the script
@@ -27,8 +28,14 @@
 # quickshell/Config.qml) become the sixteen colours, each moved along its
 # hue until it reads at 4.5:1 (WCAG AA) on that ground. Nothing else of the
 # theme is lost: the padding, the block cursor, the 3000 lines, the zoom
-# keys. Nothing is translucent and nothing blinks, so the terminal costs
-# what its text costs. The tables come from tools/copal-terminal-palettes.py.
+# keys, and a little of the glass: alpha 0.9 by default, a hint of the
+# wallpaper through the ground. Measured on the bench (2 Sep 2026, foot
+# redrawing ten times a second for six seconds, Hyprland on llvmpipe with
+# blur on): the compositor's CPU time was the same at 0.9 as at 1.0, under
+# 1 %. Blur is computed once per frame for the bars anyway, so a window that
+# shares it costs nothing more. The theme's own 0.2 is a different matter:
+# black text over 80 % wallpaper. Nothing blinks. --alpha 1 makes it opaque.
+# The tables come from tools/copal-terminal-palettes.py.
 #
 # WHAT IT WRITES. Each terminal's own format, idempotently, leaving the rest
 # of the file alone where the file already exists; running it again with a
@@ -71,9 +78,9 @@ pick_theme() {
 set_palette() {
     case "$1" in
     helios)
-        LABEL="Antiquity Helios"; BG=fce2ab; FG=121212; CURSOR=121212; SELBG=fccf8a; SELFG=121212
-        C0=181818  C1=ce0421  C2=00752b  C3=875d03  C4=476798  C5=7f3fdd  C6=3c6b7f  C7=776346
-        C8=6f5734  C9=a92e00  C10=505e28  C11=755000  C12=324a7d  C13=7526e7  C14=2b6076  C15=41332b
+        LABEL="Antiquity Helios"; BG=fdf2da; FG=121212; CURSOR=121212; SELBG=fccf8a; SELFG=121212
+        C0=181818  C1=dd0424  C2=007f2e  C3=936603  C4=4c70a4  C5=884cdf  C6=41768b  C7=816b4b
+        C8=795f39  C9=b83200  C10=58672b  C11=805700  C12=324a7d  C13=7d33e8  C14=2f6981  C15=41332b
         ;;
     eris)
         LABEL="Antiquity Eris"; BG=b9c5c9; FG=121212; CURSOR=121212; SELBG=d2dddc; SELFG=121212
@@ -107,6 +114,11 @@ set_palette() {
     esac
 }
 
+ALPHA="${COPAL_TERMINAL_ALPHA:-0.9}"
+if [ "${1:-}" = "--alpha" ]; then
+    ALPHA="${2:-}"; shift 2 2>/dev/null || usage 2
+    case "$ALPHA" in 1|1.0|0.[5-9]|0.[5-9][0-9]) ;; *) printf 'copal-terminal-theme: --alpha wants 0.5..1, not "%s"\n' "$ALPHA" >&2; exit 2 ;; esac
+fi
 case "${1:-}" in
     -h|--help) usage 0 ;;
     --list) for t in $THEMES; do printf '%s\n' "$t"; done; exit 0 ;;
@@ -126,7 +138,7 @@ rgb16() {  # hex -> "r,g,b" in 16-bit, for tilda
 say() { printf '  %s\n' "$*"; }
 
 if [ -n "$SHOW" ]; then
-    printf '%s (%s): background #%s foreground #%s cursor #%s selection #%s on #%s\n' "$LABEL" "$THEME" "$BG" "$FG" "$CURSOR" "$SELFG" "$SELBG"
+    printf '%s (%s): background #%s alpha %s foreground #%s cursor #%s selection #%s on #%s\n' "$LABEL" "$THEME" "$BG" "$ALPHA" "$FG" "$CURSOR" "$SELFG" "$SELBG"
     i=0; for n in $NAMES; do printf '  %2d %-8s #%s   %2d bright %-8s #%s\n' $i "$n" "$(col $i)" $((i+8)) "$n" "$(col $((i+8)))"; i=$((i+1)); done
     exit 0
 fi
@@ -186,7 +198,7 @@ awk '
 sed -i "s/^pad=.*/pad=${PAD}x${PAD}/" "$f"     # the theme's padding, where a pad line exists
 foot_colors() {
     printf '\n[%s]\n# %s\n' "$1" "$STAMP"
-    printf 'alpha=1.0\nbackground=%s\nforeground=%s\n' "$BG" "$FG"
+    printf 'alpha=%s\nbackground=%s\nforeground=%s\n' "$ALPHA" "$BG" "$FG"
     i=0; while [ $i -lt 8 ]; do printf 'regular%d=%s\n' $i "$(col $i)"; i=$((i+1)); done
     i=0; while [ $i -lt 8 ]; do printf 'bright%d=%s\n' $i "$(col $((i+8)))"; i=$((i+1)); done
     printf 'selection-background=%s\nselection-foreground=%s\ncursor=%s %s\n' "$SELBG" "$SELFG" "$BG" "$CURSOR"
@@ -201,7 +213,7 @@ d="$HOME/.config/kitty"; mkdir -p "$d"
 {
     printf '# %s\n' "$STAMP"
     printf 'font_family %s\nfont_size %s\nwindow_padding_width %s\nscrollback_lines %s\n' "$FONT" "$SIZE" "$PAD" "$LINES"
-    printf 'cursor_shape block\ncursor_blink_interval 0\nshell_integration no-cursor\nbackground_opacity 1.0\n'
+    printf 'cursor_shape block\ncursor_blink_interval 0\nshell_integration no-cursor\nbackground_opacity %s\n' "$ALPHA"
     printf 'map ctrl+shift+plus change_font_size all +1.0\nmap ctrl+shift+minus change_font_size all -1.0\n'
     printf 'background #%s\nforeground #%s\ncursor #%s\ncursor_text_color #%s\n' "$BG" "$FG" "$CURSOR" "$BG"
     printf 'selection_background #%s\nselection_foreground #%s\n' "$SELBG" "$SELFG"
@@ -225,7 +237,7 @@ say "$k"
 d="$HOME/.config/alacritty"; mkdir -p "$d"
 {
     printf '# %s\n' "$STAMP"
-    printf '[window]\npadding = { x = %s, y = %s }\nopacity = 1.0\n' "$PAD" "$PAD"
+    printf '[window]\npadding = { x = %s, y = %s }\nopacity = %s\n' "$PAD" "$PAD" "$ALPHA"
     printf '[font]\nnormal = { family = "%s" }\nsize = %s\n' "$FONT" "$SIZE"
     printf '[scrolling]\nhistory = %s\n[cursor]\nstyle = { shape = "Block", blinking = "Never" }\n' "$LINES"
     printf '[colors.primary]\nbackground = "#%s"\nforeground = "#%s"\n' "$BG" "$FG"
@@ -258,11 +270,11 @@ d="$HOME/.config/wezterm/colors"; mkdir -p "$d"
 } > "$d/copal-terminal.toml"
 rm -f "$d/copal-sand.toml"
 w="$HOME/.config/wezterm/wezterm.lua"
-if [ ! -f "$w" ] || grep -q 'color_scheme = "Copal Sand"' "$w"; then
+if [ ! -f "$w" ] || grep -q 'color_scheme = "Copal Sand"\|written by copal-terminal-theme' "$w"; then
     {
         printf -- '-- %s\nlocal wezterm = require("wezterm")\nreturn {\n  color_scheme = "Copal Terminal",\n' "$STAMP"
         printf '  font = wezterm.font("%s"), font_size = %s,\n  window_padding = { left = %s, right = %s, top = %s, bottom = %s },\n' "$FONT" "$SIZE" "$PAD" "$PAD" "$PAD" "$PAD"
-        printf '  scrollback_lines = %s, window_background_opacity = 1.0,\n  default_cursor_style = "SteadyBlock",\n}\n' "$LINES"
+        printf '  scrollback_lines = %s, window_background_opacity = %s,\n  default_cursor_style = "SteadyBlock",\n}\n' "$LINES" "$ALPHA"
     } > "$w"
 elif ! grep -q 'color_scheme' "$w"; then
     say "$w exists without a color_scheme line; add:  color_scheme = \"Copal Terminal\""
@@ -310,7 +322,8 @@ t="$HOME/.config/xfce4/terminal/terminalrc"; mkdir -p "$(dirname "$t")"
 pal=""; i=0; while [ $i -lt 16 ]; do pal="$pal#$(col $i);"; i=$((i+1)); done
 set_kv "$t" "[Configuration]" "ColorForeground=#$FG" "ColorBackground=#$BG" "ColorCursor=#$CURSOR" "ColorCursorUseDefault=FALSE" \
     "ColorSelection=#$SELFG" "ColorSelectionBackground=#$SELBG" "ColorSelectionUseDefault=FALSE" "ColorPalette=${pal%;}" \
-    "MiscCursorBlinks=FALSE" "MiscCursorShape=TERMINAL_CURSOR_SHAPE_BLOCK" "ScrollingLines=$LINES" "BackgroundMode=TERMINAL_BACKGROUND_SOLID"
+    "MiscCursorBlinks=FALSE" "MiscCursorShape=TERMINAL_CURSOR_SHAPE_BLOCK" "ScrollingLines=$LINES" \
+    "BackgroundMode=$([ "$ALPHA" = 1 ] || [ "$ALPHA" = 1.0 ] && printf TERMINAL_BACKGROUND_SOLID || printf TERMINAL_BACKGROUND_TRANSPARENT)" "BackgroundDarkness=$ALPHA"
 say "$t"
 
 # --- terminator ------------------------------------------------------------
@@ -336,7 +349,7 @@ fi
 for c in "$HOME"/.config/tilda/config_*; do
     [ -f "$c" ] || continue
     pal=""; i=0; while [ $i -lt 16 ]; do pal="$pal$(rgb16 "$(col $i)"),"; i=$((i+1)); done
-    for kv in "background_color=\"#$BG\"" "foreground_color=\"#$FG\"" "palette_scheme=0" "palette = {${pal%,}}" "blinks=false" "enable_transparency=false"; do
+    for kv in "background_color=\"#$BG\"" "foreground_color=\"#$FG\"" "palette_scheme=0" "palette = {${pal%,}}" "blinks=false" "enable_transparency=$([ "$ALPHA" = 1 ] || [ "$ALPHA" = 1.0 ] && printf false || printf true)" "transparency=$(awk -v a="$ALPHA" 'BEGIN{printf "%d", (1-a)*100}')"; do
         key=$(printf '%s' "$kv" | sed 's/ *=.*//')
         if grep -q "^$key *=" "$c"; then sed -i "s|^$key *=.*|$kv|" "$c"; else printf '%s\n' "$kv" >> "$c"; fi
     done
@@ -353,14 +366,14 @@ for v in qtermwidget6 qtermwidget5; do
             printf '[Color%d]\nColor=%s\n[Color%dIntense]\nColor=%s\n' $i "$(rgb "$(col $i)")" $i "$(rgb "$(col $((i+8)))")"
             i=$((i+1))
         done
-        printf '[General]\nDescription=%s\nOpacity=1\n' "$LABEL"
+        printf '[General]\nDescription=%s\nOpacity=%s\n' "$LABEL" "$ALPHA"
     } > "$d/CopalTerminal.colorscheme"
     rm -f "$d/CopalSand.colorscheme"
 done
 q="$HOME/.config/qterminal.org/qterminal.ini"
 [ -f "$q" ] || { mkdir -p "$(dirname "$q")"; printf '[General]\n' > "$q"; }
-set_kv "$q" "[General]" "colorScheme=CopalTerminal" "ApplicationTransparency=0" "TerminalTransparency=0" "FlowControl=false" "HistoryLimited=true" "HistoryLimitedTo=$LINES"
+set_kv "$q" "[General]" "colorScheme=CopalTerminal" "ApplicationTransparency=0" "TerminalTransparency=$(awk -v a="$ALPHA" 'BEGIN{printf "%d", (1-a)*100}')" "FlowControl=false" "HistoryLimited=true" "HistoryLimitedTo=$LINES"
 say "$q"
 
-say "done: $LABEL on every terminal that has a config file, opaque. New windows pick it up."
+say "done: $LABEL, alpha $ALPHA, on every terminal that has a config file. New windows pick it up."
 exit 0

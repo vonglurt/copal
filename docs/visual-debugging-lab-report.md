@@ -449,7 +449,7 @@ All three config files are the user-owned copies; stage 16 will regenerate
 until the same changes are made in `copal-prep.sh` (§V). `local.conf`
 survives stage 16 by design.
 
-## XI. The terminal in the desktop's theme, opaque (2 Sep 2026, evening)
+## XI. The terminal in the desktop's theme (2 Sep 2026, evening)
 
 **Question.** §IV found foot drawn as glass: `alpha=0.2` from the theme's
 kitty file, Hyprland blurring the wallpaper behind it, black text over a pale
@@ -477,18 +477,35 @@ The tables are pasted into `tools/copal-terminal-theme`, which now takes a
 theme name and, with none, follows `currentTheme` in
 `~/.config/quickshell/settings.json` (helios until the Themes menu writes it).
 
-**Cost.** Everything the script writes is opaque (`alpha=1.0`,
-`background_opacity 1.0`, `Opacity=1`) and nothing blinks (`[cursor] blink=no`
-in foot, `cursor_blink_interval 0` in kitty, and the equivalents in the rest):
-no blur pass for the terminal, no half-second redraws in an idle window. The
-bar's own blur rules (§V) are unchanged and remain the bar's cost.
+**Cost.** The first cut was opaque everywhere. Paul found helios too yellow
+and asked for a lighter ground "and maybe alpha", so alpha was measured
+rather than assumed: foot redrawing a line ten times a second for six seconds,
+Hyprland's utime+stime from `/proc/<pid>/stat` before and after, blur on as
+configured.
+
+| foot window | Hyprland CPU ticks in 6 s (100/s) |
+|---|---|
+| alpha 1.0 | 4 |
+| alpha 0.9 | 4 |
+| alpha 1.0, repeat | 2 |
+| alpha 0.8 | 0 |
+
+Noise, all of it: under 1 % of one core either way. With
+`blur.new_optimizations` the compositor blurs the screen once per frame for
+the bars' layer rules (§V) whether or not a window shares the result, so a
+translucent terminal adds a blend, not a pass. The script now writes alpha 0.9
+by default (`--alpha 1` for opaque) and helios's ground faded 60 % toward
+white, `#fdf2da`. Nothing blinks (`[cursor] blink=no` in foot,
+`cursor_blink_interval 0` in kitty, and the equivalents in the rest), so an
+idle window never asks for a frame. The theme's own 0.2 stays out: that is
+black text over 80 % wallpaper, §IV's finding.
 
 **Result.** Two new foot windows, photographed with `grim` from inside each:
 
 | | |
 |---|---|
 | ![helios](img/gfx-terminal-helios.png) | ![eros](img/gfx-terminal-eros.png) |
-| `copal-terminal-theme helios`: gold ground, every colour and bright legible, black-on-white and white-on-black both readable | `copal-terminal-theme eros`: the dark one, colour 0 a panel shade, gold cursor from the theme's accent |
+| `copal-terminal-theme helios` at alpha 0.9: cream ground with the wallpaper faintly through it, every colour and bright legible, black-on-white and white-on-black both readable | `copal-terminal-theme eros`: the dark one, colour 0 a panel shade, gold cursor from the theme's accent |
 
 Applied to the bench with the default (helios). Backups:
 `~/.config/foot/foot.ini.sand-bak`, `~/.Xresources.sand-bak`; the hades
