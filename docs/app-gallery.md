@@ -42,7 +42,7 @@ refused, and anything that plays sound was silent.
 
 | | | |
 |---|---|---|
-| ![cgdb (GDB with a source window)](img/gallery/cgdb.jpg)<br>**cgdb (GDB with a source window)**<br>`cgdb` · terminal · ok 1s (1 window), acted | ![Code::Blocks (IDE - GDB breakpoints)](img/gallery/codeblocks.jpg)<br>**Code::Blocks (IDE - GDB breakpoints)**<br>`codeblocks` · graphical · ok 1s (1 window) | ![GDB (the debugger everything uses)](img/gallery/gdb.jpg)<br>**GDB (the debugger everything uses)**<br>`gdb` · terminal · ok 1s (1 window), acted |
+| ![cgdb (GDB with a source window)](img/gallery/cgdb.jpg)<br>**cgdb (GDB with a source window)**<br>`cgdb` · terminal · ok 2s (1 window), acted | ![Code::Blocks (IDE - GDB breakpoints)](img/gallery/codeblocks.jpg)<br>**Code::Blocks (IDE - GDB breakpoints)**<br>`codeblocks` · graphical · ok 1s (1 window) | ![GDB (the debugger everything uses)](img/gallery/gdb.jpg)<br>**GDB (the debugger everything uses)**<br>`gdb` · terminal · ok 1s (1 window), acted |
 | ![KDevelop (IDE - GDB breakpoints)](img/gallery/kdevelop.jpg)<br>**KDevelop (IDE - GDB breakpoints)**<br>`kdevelop` · graphical · ok 1s (1 window) | ![Lapce (modern GUI editor, Rust)](img/gallery/lapce.jpg)<br>**Lapce (modern GUI editor, Rust)**<br>`lapce` · graphical · ok 1s (1 window), detached | ![LLDB (the Clang debugger)](img/gallery/lldb.jpg)<br>**LLDB (the Clang debugger)**<br>`lldb` · terminal · ok 1s (1 window), acted |
 
 ## Discs (2)
@@ -65,7 +65,7 @@ refused, and anything that plays sound was silent.
 |---|---|---|
 | ![Emacs (Eglot LSP built in; -nw for terminal)](img/gallery/emacs.jpg)<br>**Emacs (Eglot LSP built in; -nw for terminal)**<br>`emacs` · graphical · ok 1s (1 window), acted | ![Geany (programmer's editor)](img/gallery/geany.jpg)<br>**Geany (programmer's editor)**<br>`geany` · graphical · ok 1s (1 window), acted | ![gedit (GNOME editor)](img/gallery/gedit.jpg)<br>**gedit (GNOME editor)**<br>`gedit` · graphical · ok 1s (1 window), acted |
 | ![Helix (terminal - modal, batteries in)](img/gallery/hx.jpg)<br>**Helix (terminal - modal, batteries in)**<br>`hx` · terminal · ok 1s (1 window), acted | ![Kate (KDE - LSP client built in)](img/gallery/kate.jpg)<br>**Kate (KDE - LSP client built in)**<br>`kate` · graphical · ok 2s (1 window), detached, acted | ![micro (terminal - modeless)](img/gallery/micro.jpg)<br>**micro (terminal - modeless)**<br>`micro` · terminal · ok 1s (1 window), acted |
-| ![Mousepad (small GUI editor)](img/gallery/mousepad.jpg)<br>**Mousepad (small GUI editor)**<br>`mousepad` · graphical · ok 1s (1 window), acted | ![nano (terminal - simplest)](img/gallery/nano.jpg)<br>**nano (terminal - simplest)**<br>`nano` · terminal · ok 1s (1 window), acted | ![vis (terminal - vi keys)](img/gallery/vis.jpg)<br>**vis (terminal - vi keys)**<br>`vis` · terminal · ok 1s (1 window), acted |
+| ![Mousepad (small GUI editor)](img/gallery/mousepad.jpg)<br>**Mousepad (small GUI editor)**<br>`mousepad` · graphical · ok 1s (1 window), acted | ![nano (terminal - simplest)](img/gallery/nano.jpg)<br>**nano (terminal - simplest)**<br>`nano` · terminal · ok 2s (1 window), acted | ![vis (terminal - vi keys)](img/gallery/vis.jpg)<br>**vis (terminal - vi keys)**<br>`vis` · terminal · ok 1s (1 window), acted |
 
 ## Engineering (3)
 
@@ -85,7 +85,7 @@ refused, and anything that plays sound was silent.
 
 | | | |
 |---|---|---|
-| ![Air Traffic Control](img/gallery/atc.jpg)<br>**Air Traffic Control**<br>`atc` · terminal · ok 1s (1 window) | ![Angband (roguelike)](img/gallery/angband.jpg)<br>**Angband (roguelike)**<br>`angband` · terminal · ok 1s (2 windows) | ![Asciiquarium](img/gallery/asciiquarium.jpg)<br>**Asciiquarium**<br>`asciiquarium` · terminal · ok 1s (1 window) |
+| ![Air Traffic Control](img/gallery/atc.jpg)<br>**Air Traffic Control**<br>`atc` · terminal · ok 1s (1 window) | ![Angband (roguelike)](img/gallery/angband.jpg)<br>**Angband (roguelike)**<br>`angband` · terminal · ok 1s (2 windows) | ![Asciiquarium](img/gallery/asciiquarium.jpg)<br>**Asciiquarium**<br>`asciiquarium` · terminal · ok 2s (1 window) |
 | ![Brogue (roguelike)](img/gallery/brogue.jpg)<br>**Brogue (roguelike)**<br>`brogue` · terminal · ok 1s (2 windows) | ![Cataclysm DDA (survival roguelike)](img/gallery/cataclysm-tiles.jpg)<br>**Cataclysm DDA (survival roguelike)**<br>`cataclysm-tiles` · graphical · ok 1s (1 window) | ![Chess (XBoard + GNU Chess)](img/gallery/xboard.jpg)<br>**Chess (XBoard + GNU Chess)**<br>`xboard` · graphical · ok 1s (1 window) |
 | ![Chocolate Doom (faithful Doom, with Freedoom)](img/gallery/chocolate-doom.jpg)<br>**Chocolate Doom (faithful Doom, with Freedoom)**<br>`chocolate-doom` · graphical · ok 1s (1 window) | ![cmatrix](img/gallery/cmatrix.jpg)<br>**cmatrix**<br>`cmatrix` · terminal · ok 1s (1 window) | ![Colossal Cave Adventure](img/gallery/adventure.jpg)<br>**Colossal Cave Adventure**<br>`adventure` · terminal · ok 1s (1 window), acted |
 | ![Endless Sky (built from source)](img/gallery/endless-sky.jpg)<br>**Endless Sky (built from source)**<br>`endless-sky` · graphical · ok 1s (1 window) | ![Freeciv (SDL client - slow)](img/gallery/freeciv-sdl2.jpg)<br>**Freeciv (SDL client - slow)**<br>`freeciv-sdl2` · graphical · ok 1s (1 window) | ![GZDoom (Doom engine, with Freedoom)](img/gallery/gzdoom.jpg)<br>**GZDoom (Doom engine, with Freedoom)**<br>`gzdoom` · graphical · ok 2s (1 window) |
@@ -115,7 +115,7 @@ refused, and anything that plays sound was silent.
 | | | |
 |---|---|---|
 | ![Brave (Flatpak)](img/gallery/brave.jpg)<br>**Brave (Flatpak)**<br>`brave` · graphical · ok 2s (1 window), acted | ![ELinks (text web + gopher)](img/gallery/elinks.jpg)<br>**ELinks (text web + gopher)**<br>`elinks` · terminal · ok 1s (1 window) | ![Firefox ESR (full browser)](img/gallery/firefox-esr.jpg)<br>**Firefox ESR (full browser)**<br>`firefox-esr` · graphical · ok 1s (1 window), acted |
-| ![lftp (FTP - terminal)](img/gallery/lftp.jpg)<br>**lftp (FTP - terminal)**<br>`lftp` · terminal · ok 1s (1 window), acted | ![Links (text/graphics web)](img/gallery/links.jpg)<br>**Links (text/graphics web)**<br>`links` · terminal · ok 1s (1 window) | ![Lynx (text web + gopher)](img/gallery/lynx.jpg)<br>**Lynx (text web + gopher)**<br>`lynx` · terminal · ok 1s (1 window) |
+| ![lftp (FTP - terminal)](img/gallery/lftp.jpg)<br>**lftp (FTP - terminal)**<br>`lftp` · terminal · ok 1s (1 window), acted | ![Links (text/graphics web)](img/gallery/links.jpg)<br>**Links (text/graphics web)**<br>`links` · terminal · ok 2s (1 window) | ![Lynx (text web + gopher)](img/gallery/lynx.jpg)<br>**Lynx (text web + gopher)**<br>`lynx` · terminal · ok 1s (1 window) |
 | ![qBittorrent (torrents)](img/gallery/qbittorrent.jpg)<br>**qBittorrent (torrents)**<br>`qbittorrent` · graphical · ok 1s (1 window) | ![retawq (tiny text browser)](img/gallery/retawq.jpg)<br>**retawq (tiny text browser)**<br>`retawq` · terminal · ok 1s (1 window) | ![Transmission (torrents)](img/gallery/transmission-gtk.jpg)<br>**Transmission (torrents)**<br>`transmission-gtk` · graphical · ok 1s (1 window) |
 | ![w3m (text web)](img/gallery/w3m.jpg)<br>**w3m (text web)**<br>`w3m` · terminal · ok 1s (1 window) |  |  |
 
@@ -124,7 +124,7 @@ refused, and anything that plays sound was silent.
 | | | |
 |---|---|---|
 | ![CHICKEN (Scheme to C)](img/gallery/csi.jpg)<br>**CHICKEN (Scheme to C)**<br>`csi` · terminal · ok 1s (1 window), acted | ![Elixir](img/gallery/elixir.jpg)<br>**Elixir**<br>`elixir` · terminal · ok 1s (1 window), acted | ![Guile (Scheme)](img/gallery/guile.jpg)<br>**Guile (Scheme)**<br>`guile` · terminal · ok 1s (1 window), acted |
-| ![Lua 5.4 + LuaJIT](img/gallery/lua5.4.jpg)<br>**Lua 5.4 + LuaJIT**<br>`lua5.4` · terminal · ok 2s (1 window), acted | ![OCaml](img/gallery/ocaml.jpg)<br>**OCaml**<br>`ocaml` · terminal · ok 1s (1 window), acted | ![Racket](img/gallery/racket.jpg)<br>**Racket**<br>`racket` · terminal · ok 1s (1 window), acted |
+| ![Lua 5.4 + LuaJIT](img/gallery/lua5.4.jpg)<br>**Lua 5.4 + LuaJIT**<br>`lua5.4` · terminal · ok 1s (1 window), acted | ![OCaml](img/gallery/ocaml.jpg)<br>**OCaml**<br>`ocaml` · terminal · ok 2s (1 window), acted | ![Racket](img/gallery/racket.jpg)<br>**Racket**<br>`racket` · terminal · ok 1s (1 window), acted |
 | ![RetroForth (the Forth family)](img/gallery/retro.jpg)<br>**RetroForth (the Forth family)**<br>`retro` · terminal · ok 1s (1 window), acted | ![Ruby](img/gallery/ruby.jpg)<br>**Ruby**<br>`ruby` · terminal · ok 1s (1 window), acted | ![SBCL (Common Lisp)](img/gallery/sbcl.jpg)<br>**SBCL (Common Lisp)**<br>`sbcl` · terminal · ok 1s (1 window), acted |
 
 ## Learn (3)
@@ -180,8 +180,8 @@ refused, and anything that plays sound was silent.
 
 | | | |
 |---|---|---|
-| ![LyX (LaTeX with a document view)](img/gallery/lyx.jpg)<br>**LyX (LaTeX with a document view)**<br>`lyx` · graphical · ok 1s (1 window), acted | ![Maxima (computer algebra, solves systems)](img/gallery/maxima.jpg)<br>**Maxima (computer algebra, solves systems)**<br>`maxima` · terminal · ok 1s (1 window), acted | ![Octave (MATLAB-compatible maths)](img/gallery/octave.jpg)<br>**Octave (MATLAB-compatible maths)**<br>`octave` · terminal · ok 1s (1 window), acted |
-| ![PARI/GP (number theory)](img/gallery/gp.jpg)<br>**PARI/GP (number theory)**<br>`gp` · terminal · ok 2s (1 window), acted | ![Qalculate (unit-aware calculator)](img/gallery/qalculate-gtk.jpg)<br>**Qalculate (unit-aware calculator)**<br>`qalculate-gtk` · graphical · ok 1s (1 window), acted | ![R (statistics)](img/gallery/R.jpg)<br>**R (statistics)**<br>`R` · terminal · ok 1s (1 window), acted |
+| ![LyX (LaTeX with a document view)](img/gallery/lyx.jpg)<br>**LyX (LaTeX with a document view)**<br>`lyx` · graphical · ok 1s (1 window), acted | ![Maxima (computer algebra, solves systems)](img/gallery/maxima.jpg)<br>**Maxima (computer algebra, solves systems)**<br>`maxima` · terminal · ok 2s (1 window), acted | ![Octave (MATLAB-compatible maths)](img/gallery/octave.jpg)<br>**Octave (MATLAB-compatible maths)**<br>`octave` · terminal · ok 1s (1 window), acted |
+| ![PARI/GP (number theory)](img/gallery/gp.jpg)<br>**PARI/GP (number theory)**<br>`gp` · terminal · ok 1s (1 window), acted | ![Qalculate (unit-aware calculator)](img/gallery/qalculate-gtk.jpg)<br>**Qalculate (unit-aware calculator)**<br>`qalculate-gtk` · graphical · ok 1s (1 window), acted | ![R (statistics)](img/gallery/R.jpg)<br>**R (statistics)**<br>`R` · terminal · ok 1s (1 window), acted |
 | ![Singular (polynomial algebra)](img/gallery/Singular.jpg)<br>**Singular (polynomial algebra)**<br>`Singular` · terminal · ok 1s (1 window), acted | ![wxMaxima (built from source)](img/gallery/wxmaxima.jpg)<br>**wxMaxima (built from source)**<br>`wxmaxima` · graphical · ok 2s (2 windows), acted |  |
 
 ## Security (2)
@@ -194,7 +194,7 @@ refused, and anything that plays sound was silent.
 
 | | | |
 |---|---|---|
-| ![Amfora (gemini browser)](img/gallery/amfora.jpg)<br>**Amfora (gemini browser)**<br>`amfora` · terminal · ok 1s (1 window) | ![Bombadillo (gopher + gemini + finger)](img/gallery/bombadillo.jpg)<br>**Bombadillo (gopher + gemini + finger)**<br>`bombadillo` · terminal · ok 1s (1 window) | ![gmnlm (gemini line mode)](img/gallery/gmnlm.jpg)<br>**gmnlm (gemini line mode)**<br>`gmnlm` · terminal · ok 1s (1 window) |
+| ![Amfora (gemini browser)](img/gallery/amfora.jpg)<br>**Amfora (gemini browser)**<br>`amfora` · terminal · ok 2s (1 window) | ![Bombadillo (gopher + gemini + finger)](img/gallery/bombadillo.jpg)<br>**Bombadillo (gopher + gemini + finger)**<br>`bombadillo` · terminal · ok 1s (1 window) | ![gmnlm (gemini line mode)](img/gallery/gmnlm.jpg)<br>**gmnlm (gemini line mode)**<br>`gmnlm` · terminal · ok 1s (1 window) |
 | ![Lagrange (gemini - terminal)](img/gallery/clagrange.jpg)<br>**Lagrange (gemini - terminal)**<br>`clagrange` · terminal · ok 1s (1 window) | ![Lagrange (gemini - window)](img/gallery/lagrange.jpg)<br>**Lagrange (gemini - window)**<br>`lagrange` · graphical · ok 1s (1 window) |  |
 
 ## System (9)
@@ -202,7 +202,7 @@ refused, and anything that plays sound was silent.
 | | | |
 |---|---|---|
 | ![Disk usage (Baobab)](img/gallery/baobab.jpg)<br>**Disk usage (Baobab)**<br>`baobab` · graphical · ok 1s (1 window) | ![Disk utility (format, image, SMART)](img/gallery/gnome-disks.jpg)<br>**Disk utility (format, image, SMART)**<br>`gnome-disks` · graphical · ok 1s (1 window) | ![git-gui + gitk](img/gallery/gitk.jpg)<br>**git-gui + gitk**<br>`gitk` · graphical · ok 1s (1 window) |
-| ![gitui (git TUI)](img/gallery/gitui.jpg)<br>**gitui (git TUI)**<br>`gitui` · terminal · ok 1s (1 window) | ![htop (process viewer)](img/gallery/htop.jpg)<br>**htop (process viewer)**<br>`htop` · terminal · ok 2s (1 window) | ![lazygit (git TUI)](img/gallery/lazygit.jpg)<br>**lazygit (git TUI)**<br>`lazygit` · terminal · ok 1s (1 window) |
+| ![gitui (git TUI)](img/gallery/gitui.jpg)<br>**gitui (git TUI)**<br>`gitui` · terminal · ok 1s (1 window) | ![htop (process viewer)](img/gallery/htop.jpg)<br>**htop (process viewer)**<br>`htop` · terminal · ok 1s (1 window) | ![lazygit (git TUI)](img/gallery/lazygit.jpg)<br>**lazygit (git TUI)**<br>`lazygit` · terminal · ok 1s (1 window) |
 | ![Meld (compare files and folders)](img/gallery/meld.jpg)<br>**Meld (compare files and folders)**<br>`meld` · graphical · ok 2s (1 window) | ![Task manager (Xfce)](img/gallery/xfce4-taskmanager.jpg)<br>**Task manager (Xfce)**<br>`xfce4-taskmanager` · graphical · ok 2s (1 window) | ![tig (git history TUI)](img/gallery/tig.jpg)<br>**tig (git history TUI)**<br>`tig` · terminal · ok 1s (1 window) |
 
 ## Terminals (15)
@@ -212,7 +212,7 @@ refused, and anything that plays sound was silent.
 | ![Alacritty (GPU - fast, needs OpenGL)](img/gallery/alacritty.jpg)<br>**Alacritty (GPU - fast, needs OpenGL)**<br>`alacritty` · graphical · ok 1s (1 window), acted | ![Byobu (tmux with a status line set up)](img/gallery/byobu.jpg)<br>**Byobu (tmux with a status line set up)**<br>`byobu` · terminal · ok 1s (1 window), acted | ![Cool Retro Term (a CRT, convincingly)](img/gallery/cool-retro-term.jpg)<br>**Cool Retro Term (a CRT, convincingly)**<br>`cool-retro-term` · graphical · ok 1s (1 window), acted |
 | ![dvtm (tiling in a terminal)](img/gallery/dvtm.jpg)<br>**dvtm (tiling in a terminal)**<br>`dvtm` · terminal · ok 1s (1 window), acted | ![GNU screen (multiplexer - the classic)](img/gallery/screen.jpg)<br>**GNU screen (multiplexer - the classic)**<br>`screen` · terminal · ok 1s (1 window), acted | ![LXTerminal (light GTK, tabs)](img/gallery/lxterminal.jpg)<br>**LXTerminal (light GTK, tabs)**<br>`lxterminal` · graphical · ok 1s (1 window), acted |
 | ![QTerminal (Qt, drop-down mode)](img/gallery/qterminal.jpg)<br>**QTerminal (Qt, drop-down mode)**<br>`qterminal` · graphical · ok 1s (1 window), acted | ![rxvt-unicode (light, the Copal default)](img/gallery/urxvt.jpg)<br>**rxvt-unicode (light, the Copal default)**<br>`urxvt` · graphical · ok 1s (1 window), acted | ![Sakura (small GTK, tabs)](img/gallery/sakura.jpg)<br>**Sakura (small GTK, tabs)**<br>`sakura` · graphical · ok 1s (1 window), acted |
-| ![st (suckless - smallest and quickest)](img/gallery/st.jpg)<br>**st (suckless - smallest and quickest)**<br>`st` · graphical · ok 1s (1 window), acted | ![Terminator (split panes in a grid)](img/gallery/terminator.jpg)<br>**Terminator (split panes in a grid)**<br>`terminator` · graphical · ok 1s (1 window), acted | ![Tilda (drop-down, F1 - light)](img/gallery/tilda.jpg)<br>**Tilda (drop-down, F1 - light)**<br>`tilda` · graphical · ok 1s (2 windows), acted |
+| ![st (suckless - smallest and quickest)](img/gallery/st.jpg)<br>**st (suckless - smallest and quickest)**<br>`st` · graphical · ok 1s (1 window), acted | ![Terminator (split panes in a grid)](img/gallery/terminator.jpg)<br>**Terminator (split panes in a grid)**<br>`terminator` · graphical · ok 1s (1 window), acted | ![Tilda (drop-down, F1 - light)](img/gallery/tilda.jpg)<br>**Tilda (drop-down, F1 - light)**<br>`tilda` · graphical · ok 1s (1 window), acted |
 | ![Xfce Terminal (featureful GTK)](img/gallery/xfce4-terminal.jpg)<br>**Xfce Terminal (featureful GTK)**<br>`xfce4-terminal` · graphical · ok 1s (1 window), acted | ![xterm (the original, always works)](img/gallery/xterm.jpg)<br>**xterm (the original, always works)**<br>`xterm` · graphical · ok 1s (1 window), acted | ![Zellij (multiplexer, discoverable keys)](img/gallery/zellij.jpg)<br>**Zellij (multiplexer, discoverable keys)**<br>`zellij` · terminal · ok 1s (1 window), acted |
 
 ## Tools (5)
@@ -250,4 +250,4 @@ refused, and anything that plays sound was silent.
 | Yakuake (drop-down, F12 - KDE) | `yakuake` | NO WINDOW in 30s, process no (exit 139) |
 | Zutty (X11-native, very fast) | `zutty` | NO WINDOW in 30s, process no (exit 139) |
 
-*Generated 2026-09-02 18:14.*
+*Generated 2026-09-02 19:05.*

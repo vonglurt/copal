@@ -149,11 +149,11 @@ are probed one by one with a person watching.
 | Terminals | kitty (GPU - featureful, needs OpenGL) | `kitty` | NO WINDOW in 30s, process no (exit 1) stderr:4   -- libEGL warning: egl: failed to create dri2 screen | exits 1: needs OpenGL 3.3 through EGL and this guest's llvmpipe/virtio-gpu EGL path fails to create a screen. A software-GL guest problem; fine on hardware. foot is the terminal here |
 | Terminals | LXTerminal (light GTK, tabs) | `lxterminal` | ok 1s (1 window), acted      stderr:0   [LXTerminal;] |  |
 | Terminals | QTerminal (Qt, drop-down mode) | `qterminal` | ok 1s (1 window), acted      stderr:1   [Shell No. 1;] -- qt.qpa.services: Failed to register with host portal QDBusError("org.freedesktop.DBus.Error.ServiceU |  |
-| Terminals | rxvt-unicode (light, the Copal default) | `urxvt` | ok 1s (1 window), acted      stderr:1   [urxvt;] |  |
+| Terminals | rxvt-unicode (light, the Copal default) | `urxvt` | ok 1s (1 window), acted      stderr:0   [urxvt;] |  |
 | Terminals | Sakura (small GTK, tabs) | `sakura` | ok 1s (1 window), acted      stderr:0   [sakura;] |  |
 | Terminals | st (suckless - smallest and quickest) | `st` | ok 1s (1 window), acted      stderr:0   [st;] |  |
-| Terminals | Terminator (split panes in a grid) | `terminator` | ok 1s (1 window), acted      stderr:2   [/bin/bash;] |  |
-| Terminals | Tilda (drop-down, F1 - light) | `tilda` | ok 1s (2 windows), acted     stderr:0   [tilda;Tilda 0 Config;] |  |
+| Terminals | Terminator (split panes in a grid) | `terminator` | ok 1s (1 window), acted      stderr:0   [/bin/bash;] |  |
+| Terminals | Tilda (drop-down, F1 - light) | `tilda` | ok 1s (1 window), acted      stderr:1   [;] |  |
 | Terminals | WezTerm (GPU - multiplexer built in) | `wezterm` | NO WINDOW in 30s, process yes stderr:2   -- libEGL warning: egl: failed to create dri2 screen | no window in 45 s, process alive, EGL cannot create a screen: a GPU terminal on a software-GL guest. Fine on hardware; foot is the terminal here |
 | Terminals | Xfce Terminal (featureful GTK) | `xfce4-terminal` | ok 1s (1 window), acted      stderr:0   [Terminal;] |  |
 | Terminals | xterm (the original, always works) | `xterm` | ok 1s (1 window), acted      stderr:0   [xterm;] |  |
@@ -300,4 +300,4 @@ declarative seed. The honest plan is to let the wizard run, or to use
 `kmail-account-wizard` with its ISPDB lookup, which is three fields.
 
 
-*Generated 2026-09-02 18:31.*
+*Generated 2026-09-02 19:05.*
