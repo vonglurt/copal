@@ -1,0 +1,46 @@
+#!/bin/sh
+# SPDX-License-Identifier: MIT
+# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+#
+# copal-act -- a first action for copal-app-probe.sh --act. A little script
+# of words, run in order, against the focused window (COPAL_WIN_* from the probe):
+#   type 'text'   type it            ret / esc / tab   press that key
+#   keys ctrl+n   press a chord      wait 2            seconds
+#   line          drag a stroke across the middle of the window (a drawn line)
+#   click         click the middle of the window
+# wtype and wlrctl: on PATH, or extracted from their apks (no root needed)
+# into ~/.cache/copal-gallery/root by the bench notes in docs/app-probe-guide.md.
+PATH="$HOME/.cache/copal-gallery/root/usr/bin:$PATH"
+cx=$(( ${COPAL_WIN_X:-0} + ${COPAL_WIN_W:-1280} / 2 )); cy=$(( ${COPAL_WIN_Y:-0} + ${COPAL_WIN_H:-800} / 2 ))
+chord() {  # ctrl+shift+n -> wtype -M ctrl -M shift -k n -m shift -m ctrl
+    _mods=""; _key="$1"
+    while case "$_key" in *+*) true ;; *) false ;; esac; do
+        _mods="$_mods ${_key%%+*}"; _key="${_key#*+}"
+    done
+    set --; for _m in $_mods; do set -- "$@" -M "$_m"; done
+    set -- "$@" -k "$_key"
+    for _m in $(echo $_mods | tr ' ' '\n' | sed '1!G;h;$!d'); do set -- "$@" -m "$_m"; done
+    wtype "$@"
+}
+while [ $# -gt 0 ]; do
+    case "$1" in
+        type)  wtype -d 15 -- "$2"; shift 2 ;;
+        ret)   wtype -k Return; shift ;;
+        esc)   wtype -k Escape; shift ;;
+        tab)   wtype -k Tab; shift ;;
+        keys)  chord "$2"; shift 2 ;;
+        wait)  sleep "$2"; shift 2 ;;
+        click) hyprctl dispatch movecursor "$cx" "$cy" >/dev/null; sleep 0.3; wlrctl pointer click left; shift ;;
+        xline)
+            xdotool mousemove $((cx - 160)) $((cy - 40)) mousedown 1; sleep 0.2
+            _i=0; while [ $_i -lt 16 ]; do xdotool mousemove_relative -- 20 5; sleep 0.04; _i=$((_i + 1)); done
+            xdotool mouseup 1; shift ;;
+        line)
+            hyprctl dispatch movecursor $((cx - 160)) $((cy - 40)) >/dev/null; sleep 0.4
+            wlrctl pointer button left press; sleep 0.1
+            _i=0; while [ $_i -lt 16 ]; do wlrctl pointer move 20 5; sleep 0.04; _i=$((_i + 1)); done
+            wlrctl pointer button left release; shift ;;
+        *) echo "copal-act: unknown word '$1'" >&2; exit 2 ;;
+    esac
+    sleep 0.3
+done

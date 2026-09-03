@@ -426,7 +426,7 @@ is missing, and the installer degrades to a warning rather than failing.
   fail with "no such package". `!v6` entries (Firefox, Krita, FreeCAD, LMMS,
   MuseScore, mGBA, Krusader, Foliate) exist everywhere but ARMv6; `64` entries
   (Blender, KiCad, OpenMW, GZDoom, Calibre, KOReader, Cura, Cataclysm DDA,
-  Ghostwriter, GHC, Zig, OpenJDK, VSCodium) need a 64-bit port; and a row can
+  Ghostwriter, GHC, Zig, OpenJDK, VSCodium, KMail) need a 64-bit port; and a row can
   carry more than one exclusion — Chromium is `!v6,!x32`.
 - **A few things come from `edge/testing`,** written `name@testing` in the
   catalogue. That is apk's own syntax for taking one package from a tagged
@@ -438,6 +438,8 @@ is missing, and the installer degrades to a warning rather than failing.
   will help: Endless Sky, 0 A.D., Teeworlds, Hedgewars, Frozen Bubble, OpenRA,
   ADOM, ToME4, Fuse, PrusaSlicer, Slic3r, OpenSCAD, LibreCAD, QCAD, MeshLab,
   Fritzing, gEDA, gerbv, Qucs, Joplin, Obsidian, `hfsutils`, and kdegames.
+  wxMaxima, Endless Sky and streamripper are in that group too, and are
+  compiled instead — the maths bundle and the end of stage 12 offer them.
 - **No usable OpenGL on a Zero.** X here renders on the CPU through `fbdev`, so
   anything expecting a GPU falls back to a software rasteriser. Xonotic,
   SuperTux and SuperTuxKart are packaged for every port here and unplayable on a
@@ -544,6 +546,16 @@ This is how changes to `copal-init.sh` reach a running system. **You do not need
 to start over to pick up script changes.**
 
 ### Configuration
+
+`make answers` also asks, optionally, for a mail address with its display
+name and IMAP and SMTP hosts. Given those, stage 12 writes the account into
+Thunderbird (`profiles.ini` + `user.js`) and Claws Mail (`accountrc` +
+`folderlist.xml`) before either has run, so the first start opens on the
+Inbox rather than the account wizard; the password is asked once by the
+client and never stored by Copal. The same step drops a `policies.json` for
+Firefox ESR that turns off its welcome tab and default-browser nag. Which
+programs show a first-run dialog, and what was done about each, is the table
+in [docs/app-integration-plan.md](app-integration-plan.md).
 
 Set these in the environment to override the defaults baked into `answers.txt`:
 
@@ -945,11 +957,11 @@ copal --auto      # also starts it, and is what the resume hook calls
 | 7 | Development environment: **gcc and clang, Rust, Go, Fortran, PHP+Composer+Xdebug, Forth, and a dozen more**; Neovim as an IDE via its built-in LSP (no plugins); gdb/cgdb/lldb/valgrind; terminals and multiplexers; the morse trainer; eight guides; and the git identity from stage 1, written to `user`'s `~/.gitconfig`; the `~/code` checkouts from stage 1, cloned (`copal-code`) and then compiled onto `PATH` (`copal-build`) — birdshot, the camera, among them | 3, network |
 | 8 | Grows `COPALROOT` into any unallocated space after it. Non-destructive, works on a mounted root | network |
 | 9 | Retro emulators: Mini vMac (Macintosh Plus — fast, and the one that works) and VICE (C64, now a package rather than an overnight build). Both get a directory under your home with disk images and launchers | 7, network |
-| 10 | Peripherals and media: wifi, bluetooth, HDMI audio, tcpdump/tshark, hex editors, HFS and disk-image tools | 3, network |
+| 10 | Peripherals and media: wifi, bluetooth, HDMI audio, the PipeWire sound server, tcpdump/tshark, hex editors, HFS and disk-image tools | 3, network |
 | 11 | Snapshots: rsync snapshots on a third partition, and Timeshift if you want it. **Offers to repartition** | 3, network |
 | 12 | Applications: the 316-program catalogue, as a minimal set, by section, or all of it | 3, network |
 | 13 | Hands over root: locks the root password, `PermitRootLogin no`, leaving `user` + `doas`. Verifies the admin account first and declines if it is not ready | 1 |
-| 14 | The workshop: CAD and 3D printing for the Ender 3, KiCad and gerber export, ngspice, the ADI instrument stack (libiio and iiod, pyadi-iio, libm2k, the IIO oscilloscope, GNU Radio blocks — mostly compiled), LaTeX and maths, trackers and SID, and a piano tutor built from source. Seven bundles, each stating what this port lacks before it installs | 3, network |
+| 14 | The workshop: CAD and 3D printing for the Ender 3, KiCad with its templates, demos and plugin set, gerber export, ngspice, the ADI instrument stack (libiio and iiod, pyadi-iio, libm2k, the IIO oscilloscope, GNU Radio blocks — mostly compiled), LaTeX and maths (wxMaxima compiled from source), trackers and SID, a piano tutor built from source, and Windows programs under Wine in sandboxed boxes (`winebox`). Eight bundles, each stating what this port lacks before it installs | 3, network |
 | 15 | SD card and logs: log policy, syslog caps, and a genuinely read-only root via `overlaytmpfs`. **Not run unattended** — read-only root would discard everything the later stages did | 3 |
 
 > **Stage 3 reboots the machine**, and must — `/` does not actually become
@@ -1024,7 +1036,7 @@ The 28 sections, and the shape of each:
 | Section | What is in it |
 |---|---|
 | **Internet** | Dillo, NetSurf, BadWolf (WebKit), Firefox ESR, Chromium, links/elinks/w3m/lynx, Transmission, qBittorrent |
-| **Mail** | Thunderbird, Claws Mail, alpine, mutt, aerc, irssi, WeeChat, Profanity |
+| **Mail** | Thunderbird, KMail, Claws Mail, alpine, mutt, aerc, irssi, WeeChat, Profanity |
 | **News** | Newsboat, Newsraft, Liferea, sfeed, Ticker |
 | **Notes** | Zim, Gnote, CherryTree, Ghostwriter, vim+spell, mdBook, Hugo, Zola |
 | **Documents** | Zathura, MuPDF, Evince, AbiWord, Gnumeric, LibreOffice, sc-im, Foliate, KOReader, Calibre, poppler, qpdf |
@@ -1036,7 +1048,7 @@ The 28 sections, and the shape of each:
 | **Games** | NetHack, Brogue, Angband, Cataclysm DDA, Solitaire, Chess, OpenTTD, Freeciv, Widelands, Wesnoth, Luanti, the 18 `bsd-games`, Frotz |
 | **Retro** | ScummVM, DOSBox Staging, VICE, FS-UAE, mGBA, RetroArch, Mednafen |
 | **Engineering** | SolveSpace, FreeCAD, Blender, KiCad, ngspice, Cura, admesh |
-| **Science** | TeX Live, LyX, Octave, Maxima, SymPy, SciPy, Qalculate, Gnuplot, PARI/GP, Singular, R |
+| **Science** | TeX Live, LyX, Octave, Maxima, wxMaxima (built), SymPy, SciPy, Qalculate, Gnuplot, PARI/GP, Singular, R |
 | **Security** | Wireshark, tshark, Termshark, tcpdump, ClamAV, Lynis, nmap, Suricata, fail2ban, ufw, John, Aircrack-ng |
 | **Sharing** | FileZilla, Syncthing, croc, darkhttpd, Samba, sshfs, rsync, Unison |
 | **Files** | PCManFM, Thunar, Xfe, Krusader, Xarchiver, mc, nnn, ranger |
@@ -1826,6 +1838,12 @@ prompt:
   language — but it is *not* ANS Forth, so a textbook's examples will not all
   run.
 
+**The 6502.** `cc65` is in the Devtools rows: a C compiler, assembler and
+linker for the Commodore 64, Plus/4, VIC-20, Atari and NES, with VICE from
+stage 9 to run what it builds (`c1541` writes the disk image, `xplus4` or
+`x64sc` boots it). A `make run` in a cc65 project is the whole loop: compile,
+write the disk, start the emulator with it autostarted.
+
 ### Language servers, debuggers and analysis
 
 `clangd` and `clang-format` come from **`clang22-extra-tools`** — not from the
@@ -1895,6 +1913,42 @@ Stage 7 installs `st`, `sakura`, `xfce4-terminal`, `terminator` and
 
 **foot is deliberately absent from the catalogue**: it is Wayland-only, and this
 is an X11 desktop, so it would install and never open a window.
+
+**The desktop's theme, every terminal.** Linux Antiquity draws its
+terminal as a pane of glass: a window at 20 % opacity over a blurred wallpaper,
+tinted per theme, with one neon palette shared by all five themes whose "black"
+is a purple and whose selection colour is its background. That only reads on
+the glass, and the glass costs a blur pass per frame, which on a CPU renderer
+is the dearest thing on the screen. `copal-terminal-theme` carries each theme
+as a solid colour instead: helios (cream), eris (slate), priapus (sage), eros
+(indigo, the dark one) and hades (grey), the ground being the theme's own glass
+tint (helios's faded toward white, the tint alone being too yellow) and the
+sixteen colours derived from the theme's own design tokens, each moved along
+its hue until it clears 4.5:1 on that ground. `ls`, `htop`, `mc` and a bold
+prompt are readable rather than decorative. The rest of the theme's terminal
+style comes along: 12 px padding, an 11 pt font, 3000 lines, a block cursor,
+Ctrl+Shift+plus and minus to zoom, and a hint of the glass at alpha 0.9. That
+last was measured before it was allowed: a foot window redrawing ten times a
+second cost Hyprland on llvmpipe the same CPU at 0.9 as at 1.0, because the
+compositor blurs the screen once per frame for the bars whether or not a window
+shares it. `--alpha 1` makes everything opaque. Nothing blinks, so an idle
+terminal costs nothing. Copal Sand, the sand-and-rust palette, stays as
+a sixth choice. With no argument the script follows the theme the desktop is
+set to (Antiquity's Themes menu writes it to
+`~/.config/quickshell/settings.json`; helios until then); with a name it
+switches every terminal at once:
+
+    copal-terminal-theme eros        # all terminals, indigo
+    copal-terminal-theme --alpha 1   # opaque
+    copal-terminal-theme --show      # the numbers for the current theme
+    copal-terminal-theme             # back to following the desktop
+
+It writes foot, kitty, Alacritty, WezTerm, xterm and urxvt (`~/.Xresources`),
+Sakura, LXTerminal, Xfce Terminal, Terminator, Tilda and QTerminal, in each
+one's own format, and can be run again after a terminal's own settings dialog
+has changed things. `st` compiles its colours in and Cool Retro Term is amber
+on purpose, so those two keep their own. Switching in the Themes menu does not
+yet re-run the script; that is a one-line hook for Antiquity's `Config.qml`.
 
 ## Instruments, radio, and learning the keyboard
 
@@ -2182,11 +2236,36 @@ two files to fetch and where to put them rather than failing with a stack
 trace. OctoPrint (edge/testing, all ports) is offered if you would rather drive
 the printer over USB than walk SD cards about.
 
-**Electronics.** `ngspice` everywhere; KiCad on `aarch64` only. PSpice is a
-proprietary Cadence product with no Linux/ARM build in any form — ngspice is
-the thing to learn. `pcbzip` packages gerbers and drill files the way PCBWay,
-JLCPCB, OSH Park and Aisler all want them — one flat zip, no directories —
-and warns if the drill file is missing, which is the expensive mistake:
+**Electronics.** `ngspice` everywhere; KiCad on the 64-bit ports. PSpice is
+a proprietary Cadence product with no Linux/ARM build in any form — ngspice is
+the thing to learn.
+
+Alpine's `kicad` package is the editors and nothing else, so the bundle adds
+what makes it usable, and the lab report on how each gap was found is
+[docs/kicad-lab-report.md](kicad-lab-report.md):
+
+- **Libraries** — `kicad-library` and `kicad-library-3d`, and a seeded global
+  table per account so the first-run "configure library tables" dialog never
+  appears. The stock tables say `${KICAD9_*}` under a KiCad 10; that is not a
+  fault, KiCad 10 resolves the old names itself, and the report shows the trace.
+- **Templates and drawing sheets** — upstream's `kicad-templates` release
+  matching the installed major.minor (20 project templates: Arduino shields,
+  Pi HATs, Nucleo, LaunchPad, Eurocard; 36 ISO/ANSI/GOST title-block sheets),
+  which Alpine does not package. They land in `/usr/share/kicad/template/`,
+  under *System Templates* and the Drawing Sheet Editor's file dialog.
+- **Demos** — `kicad-demos`, a package that is merely not a dependency.
+- **The design-block table** — KiCad 10 points every new account at a stock
+  file the 9.0.7 library package does not ship; an empty one is written.
+- **Plugins** — the Plugin and Content Manager is a dialog with no `kicad-cli`
+  equivalent, so `kicad-addon` does what it does from a script: Interactive
+  HTML BOM, Freerouting (with `openjdk21-jre`), Fabrication Toolkit for JLCPCB,
+  Replicate Layout, Board2Pdf, KiBuzzard, and two colour themes, recorded in
+  the same `installed_packages.json` the dialog reads. `kicad-addon list`
+  shows the hundred-odd others; `guide` has the KiCad page.
+
+`pcbzip` packages gerbers and drill files the way PCBWay, JLCPCB, OSH Park and
+Aisler all want them — one flat zip, no directories — and warns if the drill
+file is missing, which is the expensive mistake:
 
 ```sh
 kicad-cli pcb export gerbers --output gerbers/ board.kicad_pcb
@@ -2247,7 +2326,11 @@ SoapySDRUtil --find=driver=plutosdr
 
 **Maths and LaTeX.** All available on every port — this is the one area where
 ARMv6 costs nothing but time. TeX Live (basic or full), LyX, Maxima, Octave,
-SymPy, Gnuplot, Qalculate, PARI/GP, Singular, R. Solving a system three ways:
+SymPy, Gnuplot, Qalculate, PARI/GP, Singular, R. wxMaxima, the notebook front
+end for Maxima, is packaged by Alpine on no port at all, so the bundle offers
+to compile it against Alpine's wxWidgets — a CMake project that built first
+time in four and a half minutes on a four-core aarch64 guest. Solving a
+system three ways:
 
 ```
 maxima:  solve([x+y=10, x-y=2], [x,y]);
@@ -2261,6 +2344,17 @@ Audacity, and LMMS/MuseScore on `armv7`/`aarch64`. For the C64 SID chip, stage 9
 installs VICE, whose `vsid` emulates the 6581/8580 and the 6510 driving it —
 far cheaper than a whole emulated C64 just to play music. The High Voltage SID
 Collection is ~60 MB and fits on the card.
+
+**The sound server.** ALSA is the card; it is not what most of these programs
+ask for. Hydrogen wants JACK and then PulseAudio, gqrx and Firefox want
+PulseAudio, and with nothing answering they show an error box or play nothing
+— which is how the bench behaved the day it first had a sound card. Stage 10
+installs PipeWire with the three faces those programs expect (`pipewire-pulse`,
+`pipewire-jack`, `pipewire-alsa`) and wireplumber to manage it, and
+`copal-audio-start` brings it up per user from `.xinitrc` (or `exec-once` in a
+Hyprland config). `wpctl status` shows what it sees. The ALSA sequencer module
+`snd-seq` is loaded too, because MilkyTracker aborts without a MIDI port to
+open.
 
 **Learning to play piano.** The catalogue had two typing tutors and nothing that
 did the same job for a keyboard you play with both hands — and Alpine packages

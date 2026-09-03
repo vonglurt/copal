@@ -106,3 +106,4 @@ vendor/linux-antiquity-main/iconTheme/
 vendor/linux-antiquity-main/screenshots/
 vendor/linux-antiquity/iconTheme/
 vendor/linux-antiquity/screenshots/
+__pycache__/
