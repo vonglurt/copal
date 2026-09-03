@@ -70,6 +70,7 @@ NOTES = {
     "mscore": "SIGSEGV on start in the QML renderer under llvmpipe. RESOLVED: stage 1 exports QT_QUICK_BACKEND=software on virtio-gpu guests; with it MuseScore starts (its 'Getting started' tour is the expected first run)",
     "lapce": "re-launches itself detached ('lapce --wait') and exits 0, so the first probe saw no window; the probe now catches detached windows. Starts fine",
     "milkytracker": "aborts (SIGABRT) when the ALSA sequencer is absent: /dev/snd/seq needs the snd-seq module loaded (root: modprobe snd-seq, and /etc/modules). Opened fine before the sound card arrived, because RtMidi then had no card to try",
+    "hangman": "prints 'unable to open dictionary file /usr/share/dict/words' and quits: no word list on the guest. RESOLVED in the catalogue: the Hangman row now pulls words-en, and stage 12 links /usr/share/dict/words to american-english (Alpine's words-en does not make that link). Same file feeds look(1) and the other word games",
     "hydrogen": "starts, but cannot open an audio driver. With the virtio-snd card present it tries JACK, then PulseAudio, and both are refused: no sound server runs on the guest -- wireplumber is installed but pipewire, pipewire-pulse and pipewire-alsa are not, and nothing starts one. THE PACKAGE GAP for audio; see the audio note",
     "tuxpaint": "starts; ALSA 'cannot find card' -- the sound card question",
     "kmail": "already configured here (Akonadi resources present); a fresh account needs the KDE wizard or kmail-account-wizard's ISPDB lookup — hard to seed, leave the wizard",

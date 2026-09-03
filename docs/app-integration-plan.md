@@ -300,4 +300,4 @@ declarative seed. The honest plan is to let the wizard run, or to use
 `kmail-account-wizard` with its ISPDB lookup, which is three fields.
 
 
-*Generated 2026-09-02 18:14.*
+*Generated 2026-09-02 18:17.*

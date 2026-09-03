@@ -3538,7 +3538,7 @@ Games|GZDoom (Doom engine, with Freedoom)|gzdoom freedoom|gzdoom|x|64
 Games|Chocolate Doom (faithful Doom, with Freedoom)|chocolate-doom@testing freedoom|chocolate-doom|x|*
 Games|Colossal Cave Adventure|bsd-games|adventure|t|*
 Games|Robots|bsd-games|robots|t|*
-Games|Hangman|bsd-games|hangman|t|*
+Games|Hangman|bsd-games words-en|hangman|t|*
 Games|Snake|bsd-games|snake|t|*
 Games|Klondike (cards)|bsd-games|klondike|t|*
 Games|Air Traffic Control|bsd-games|atc|t|*
@@ -13311,6 +13311,14 @@ seed_home_if_absent() {  # <relative path> <source file>  -- root and the user
 seed_app_configs() {
     say "First-run dialogs: seeding what a file can answer"
     _t=$(mktemp /tmp/copal-seed.XXXXXX)
+
+    # The system word list. words-en installs /usr/share/dict/american-english
+    # and nothing named "words", which is the file hangman, look(1) and the
+    # other word games open (verified on the bench: "unable to open
+    # dictionary file /usr/share/dict/words"). Link it, once.
+    if [ -f /usr/share/dict/american-english ] && [ ! -e /usr/share/dict/words ]; then
+        ln -s american-english /usr/share/dict/words
+    fi
 
     # Firefox ESR: no welcome tab, no "make me the default", no telemetry.
     # A policies file in the distribution directory; read on every start.
