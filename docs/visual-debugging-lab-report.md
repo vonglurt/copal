@@ -448,3 +448,54 @@ All three config files are the user-owned copies; stage 16 will regenerate
 `~/.config/waybar/config` and `~/.config/foot/foot.ini` from the installer
 until the same changes are made in `copal-prep.sh` (§V). `local.conf`
 survives stage 16 by design.
+
+## XI. The terminal in the desktop's theme, opaque (2 Sep 2026, evening)
+
+**Question.** §IV found foot drawn as glass: `alpha=0.2` from the theme's
+kitty file, Hyprland blurring the wallpaper behind it, black text over a pale
+collage. The stop-gap was `alpha=1.0` on a `#eaeaea` ground, then Copal Sand
+(one light palette). Both threw the theme away. Could the terminal keep the
+Linux Antiquity look, per theme, without the blur?
+
+**What the theme actually specifies.** Each of the five themes (helios, eris,
+priapus, eros, hades) is one *glass tint* (`glassTintColor` in
+`quickshell/Config.qml`, the kitty `background`) at 20 % opacity, plus one
+neon palette shared by all five: `color0 #9400ff`, `color7 #ff00ee`,
+`color2 #00ff5d`. Opaque, that palette is what §IV's purple text was. Measured
+on this wallpaper (`georges_riom_collage.png`, mean `#889170`), the glass as
+seen is 20 % tint over 80 % wallpaper: `#9fa17c` for helios, `#797d6e` for
+eros, a muddy olive for all five. So the *tint* is the theme's stated colour,
+and the blend is an accident of the wallpaper.
+
+**Method.** `tools/copal-terminal-palettes.py` takes each theme's tokens
+(text, accent, danger, warning, the humours and elements) as hue seeds and
+moves each along its own hue, lightness only, until it reads at 4.5:1 on the
+opaque tint; brights go one step further and 10 % more saturated. Colour 0 on
+the one dark ground (eros) is left at the theme's highlight shade because TUI
+programs paint panels with it; bright black, the dim-text colour, meets 4.5:1.
+The tables are pasted into `tools/copal-terminal-theme`, which now takes a
+theme name and, with none, follows `currentTheme` in
+`~/.config/quickshell/settings.json` (helios until the Themes menu writes it).
+
+**Cost.** Everything the script writes is opaque (`alpha=1.0`,
+`background_opacity 1.0`, `Opacity=1`) and nothing blinks (`[cursor] blink=no`
+in foot, `cursor_blink_interval 0` in kitty, and the equivalents in the rest):
+no blur pass for the terminal, no half-second redraws in an idle window. The
+bar's own blur rules (§V) are unchanged and remain the bar's cost.
+
+**Result.** Two new foot windows, photographed with `grim` from inside each:
+
+| | |
+|---|---|
+| ![helios](img/gfx-terminal-helios.png) | ![eros](img/gfx-terminal-eros.png) |
+| `copal-terminal-theme helios`: gold ground, every colour and bright legible, black-on-white and white-on-black both readable | `copal-terminal-theme eros`: the dark one, colour 0 a panel shade, gold cursor from the theme's accent |
+
+Applied to the bench with the default (helios). Backups:
+`~/.config/foot/foot.ini.sand-bak`, `~/.Xresources.sand-bak`; the hades
+originals from §IV are still beside them.
+
+**Open.** Switching a theme in Antiquity's Themes menu writes `settings.json`
+but does not re-run the script; `onCurrentThemeChanged` in `Config.qml` is
+where a one-line `Process` would do it, on the antiquity-desktop branch, where
+stage 16 also still writes the hades foot.ini and should call
+`copal-terminal-theme` instead.

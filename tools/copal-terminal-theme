@@ -2,47 +2,119 @@
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
 #
-# copal-terminal-theme -- one light palette, Copal Sand, on every terminal.
+# copal-terminal-theme -- the desktop's theme on every terminal, opaque.
 #
-#   copal-terminal-theme            write it into $HOME's terminal configs
-#   copal-terminal-theme --show     print the palette and stop
+#   copal-terminal-theme [THEME]      write THEME into $HOME's terminal configs
+#   copal-terminal-theme --show [THEME]   print the palette and stop
+#   copal-terminal-theme --list       the theme names
 #
-# WHY. The desktop's terminal palette had been copied from a theme designed
-# for a translucent, blurred window on a GPU: its "black" (colour 0) was
-# #9400ff and its "white" (colour 7) #ff00ee, so any program printing in
-# black, bold or dim came out purple on the light ground, and its selection
-# colours equalled its background, so a selection was invisible. Half the
-# bench's pictures showed it (docs/app-gallery.md, 2 Sep 2026).
+# THEME is one of the Linux Antiquity (diinki) themes -- helios, eris,
+# priapus, eros, hades -- or sand, Copal's own. With no THEME the script
+# follows the desktop: $COPAL_TERMINAL_THEME if set, else the currentTheme
+# in ~/.config/quickshell/settings.json (what the Themes menu writes), else
+# helios, Antiquity's default.
 #
-# THE PALETTE. Sand ground, coffee text; rust for red, sage for green, ochre
-# for yellow, oasis blue, terracotta for magenta, turquoise for cyan, dune for
-# "white". Every one of the eighteen colours reads at 4.5:1 or better against
-# the ground (WCAG AA for text), the selection is a gold you can see, and the
-# cursor is rust. Bright variants are a shade darker, not lighter: on a light
-# ground "bright" has to mean "more saturated" or it disappears.
+# WHY. Antiquity's terminal is a pane of glass: kitty at 20 % opacity over
+# a blurred wallpaper, tinted per theme, and one neon palette shared by all
+# five (black #9400ff, white #ff00ee) that only reads on that glass. Blur
+# and blending are a GPU's job; on this desktop the compositor draws on the
+# CPU (llvmpipe) and the terminal is foot, which renders on the CPU too, so
+# a translucent terminal costs a blur pass per frame and shows black text
+# over a pale wallpaper (docs/visual-debugging-lab-report.md, 2 Sep 2026).
+#
+# THE ANSWER. Each theme's glass tint becomes an opaque ground, and its own
+# design tokens (text, accent, danger, warning, the humours and elements in
+# quickshell/Config.qml) become the sixteen colours, each moved along its
+# hue until it reads at 4.5:1 (WCAG AA) on that ground. Nothing else of the
+# theme is lost: the padding, the block cursor, the 3000 lines, the zoom
+# keys. Nothing is translucent and nothing blinks, so the terminal costs
+# what its text costs. The tables come from tools/copal-terminal-palettes.py.
 #
 # WHAT IT WRITES. Each terminal's own format, idempotently, leaving the rest
-# of the file alone where the file already exists:
-#   foot          ~/.config/foot/foot.ini              [colors-light]/[colors-dark] replaced
-#   kitty         ~/.config/kitty/copal-sand.conf      + the include in kitty.conf
-#   alacritty     ~/.config/alacritty/copal-sand.toml  + import in alacritty.toml
-#   wezterm       ~/.config/wezterm/colors/copal-sand.toml + wezterm.lua if absent
+# of the file alone where the file already exists; running it again with a
+# different THEME swaps the palette in place:
+#   foot          ~/.config/foot/foot.ini              [colors-light]/[colors-dark]/[cursor]
+#   kitty         ~/.config/kitty/copal-terminal.conf  + the include in kitty.conf
+#   alacritty     ~/.config/alacritty/copal-terminal.toml + import in alacritty.toml
+#   wezterm       ~/.config/wezterm/colors/copal-terminal.toml + wezterm.lua if absent
 #   xterm, urxvt  ~/.Xresources                        a marked block, merged with xrdb
 #   sakura        ~/.config/sakura/sakura.conf         colorset 1 fore/back/cursor
 #   lxterminal    ~/.config/lxterminal/lxterminal.conf fg/bg/palette keys
 #   xfce4-term    ~/.config/xfce4/terminal/terminalrc  Color* keys
 #   terminator    ~/.config/terminator/config          default profile colours
 #   tilda         ~/.config/tilda/config_0             colours (if the file exists)
-#   qterminal     ~/.local/share/qtermwidget6/color-schemes/CopalSand.colorscheme
-#                 + colorScheme=CopalSand in qterminal.ini
+#   qterminal     ~/.local/share/qtermwidget6/color-schemes/CopalTerminal.colorscheme
+#                 + colorScheme=CopalTerminal in qterminal.ini
 # st compiles its colours in; Cool Retro Term is amber on purpose. Both are left.
 set -u
 
-BG=f4ead6; FG=3a2c20; CURSOR=b7410e; SELBG=e6c98c; SELFG=2b2118
-# 0..15: black red green yellow blue magenta cyan white, then the brights
-C0=3b2f2f;  C1=b7410e;  C2=4f6a2a;  C3=8a5a00;  C4=2f6f8f;  C5=9a4a6a;  C6=1d7361;  C7=75634f
-C8=6b5b4b;  C9=a83a0a;  C10=526f28; C11=8c5f04; C12=256f8c; C13=8f3f66; C14=1f7866; C15=5a4a3c
+THEMES="helios eris priapus eros hades sand"
 NAMES="black red green yellow blue magenta cyan white"
+
+usage() { sed -n '6,15p' "$0" | sed 's/^# \{0,1\}//'; exit "${1:-0}"; }
+
+pick_theme() {
+    [ -n "${COPAL_TERMINAL_THEME:-}" ] && { printf '%s' "$COPAL_TERMINAL_THEME"; return; }
+    _s="$HOME/.config/quickshell/settings.json"
+    if [ -f "$_s" ]; then
+        _t=$(tr -d '\n' < "$_s" | sed -n 's/.*"currentTheme" *: *"\([A-Za-z0-9_-]*\)".*/\1/p')
+        [ -n "$_t" ] && { printf '%s' "$_t"; return; }
+    fi
+    printf 'helios'
+}
+
+# Ground, text, cursor, selection, then 0..15: black red green yellow blue
+# magenta cyan white and the brights. Every colour reads at 4.5:1 or better
+# on its ground (colour 0 on the dark eros ground excepted: there black is
+# the theme's highlight shade, a panel colour, and bright black is the dim
+# text colour that does meet 4.5:1).
+set_palette() {
+    case "$1" in
+    helios)
+        LABEL="Antiquity Helios"; BG=fce2ab; FG=121212; CURSOR=121212; SELBG=fccf8a; SELFG=121212
+        C0=181818  C1=ce0421  C2=00752b  C3=875d03  C4=476798  C5=7f3fdd  C6=3c6b7f  C7=776346
+        C8=6f5734  C9=a92e00  C10=505e28  C11=755000  C12=324a7d  C13=7526e7  C14=2b6076  C15=41332b
+        ;;
+    eris)
+        LABEL="Antiquity Eris"; BG=b9c5c9; FG=121212; CURSOR=121212; SELBG=d2dddc; SELFG=121212
+        C0=1b1c1e  C1=a4031a  C2=005e22  C3=6b4a02  C4=375177  C5=6523c6  C6=2f5565  C7=4c5152
+        C8=3f415d  C9=842525  C10=2e4942  C11=573b00  C12=304778  C13=4b2fb5  C14=21495a  C15=304949
+        ;;
+    priapus)
+        LABEL="Antiquity Priapus"; BG=a6bf85; FG=121212; CURSOR=121212; SELBG=f2efb3; SELFG=121212
+        C0=1f211e  C1=950318  C2=404c3b  C3=5b440b  C4=32496b  C5=5b1fb3  C6=2d4d4b  C7=454a37
+        C8=343f21  C9=762121  C10=343d1a  C11=3b3b14  C12=2a3e69  C13=5213ad  C14=1d4150  C15=363822
+        ;;
+    eros)
+        LABEL="Antiquity Eros"; BG=3c2d66; FG=d0daed; CURSOR=fccb7b; SELBG=53475e; SELFG=d0daed
+        C0=2c243d  C1=eda1a6  C2=a7b777  C3=eece89  C4=87a1c7  C5=b38deb  C6=92bbcc  C7=d0daed
+        C8=bca3c8  C9=f1ae9c  C10=b4c77b  C11=f1d09b  C12=99c7d9  C13=d29dac  C14=d6e7ec  C15=dde5f5
+        ;;
+    hades)
+        LABEL="Antiquity Hades"; BG=eaeaea; FG=181818; CURSOR=181818; SELBG=d1ceca; SELFG=181818
+        C0=181818  C1=aa3a3a  C2=007a2d  C3=6d6c2e  C4=4c6f78  C5=8243de  C6=4a6b9c  C7=696969
+        C8=5c4b4b  C9=b52a2a  C10=006625  C11=5e5c1f  C12=324a7d  C13=772ae7  C14=3a609a  C15=3d342e
+        ;;
+    sand)
+        # Copal Sand: sand ground, coffee text, rust, sage, ochre, oasis blue,
+        # terracotta, turquoise, dune. Brights a shade darker, not lighter.
+        LABEL="Copal Sand"; BG=f4ead6; FG=3a2c20; CURSOR=b7410e; SELBG=e6c98c; SELFG=2b2118
+        C0=3b2f2f  C1=b7410e  C2=4f6a2a  C3=8a5a00  C4=2f6f8f  C5=9a4a6a  C6=1d7361  C7=75634f
+        C8=6b5b4b  C9=a83a0a  C10=526f28 C11=8c5f04 C12=256f8c C13=8f3f66 C14=1f7866 C15=5a4a3c
+        ;;
+    *)
+        printf 'copal-terminal-theme: no theme "%s"; one of: %s\n' "$1" "$THEMES" >&2; exit 2 ;;
+    esac
+}
+
+case "${1:-}" in
+    -h|--help) usage 0 ;;
+    --list) for t in $THEMES; do printf '%s\n' "$t"; done; exit 0 ;;
+    --show) THEME="${2:-$(pick_theme)}"; SHOW=1 ;;
+    -*) usage 2 ;;
+    *) THEME="${1:-$(pick_theme)}"; SHOW= ;;
+esac
+set_palette "$THEME"
 
 col() { eval "printf '%s' \"\$C$1\""; }
 rgb() {  # hex -> "r,g,b" decimal
@@ -53,11 +125,20 @@ rgb16() {  # hex -> "r,g,b" in 16-bit, for tilda
 }
 say() { printf '  %s\n' "$*"; }
 
-if [ "${1:-}" = "--show" ]; then
-    printf 'Copal Sand: background #%s foreground #%s cursor #%s selection #%s on #%s\n' "$BG" "$FG" "$CURSOR" "$SELFG" "$SELBG"
+if [ -n "$SHOW" ]; then
+    printf '%s (%s): background #%s foreground #%s cursor #%s selection #%s on #%s\n' "$LABEL" "$THEME" "$BG" "$FG" "$CURSOR" "$SELFG" "$SELBG"
     i=0; for n in $NAMES; do printf '  %2d %-8s #%s   %2d bright %-8s #%s\n' $i "$n" "$(col $i)" $((i+8)) "$n" "$(col $((i+8)))"; i=$((i+1)); done
     exit 0
 fi
+
+# The styles the theme specifies for its terminal, kept on every terminal
+# that has a setting for them: 12 px of padding, an 11 pt font, 3000 lines
+# of scrollback, a block cursor. Blinking is off: a blinking cursor is a
+# redraw twice a second in every idle terminal, and this desktop draws on
+# the CPU. Maple Mono, the theme's font, is not packaged; JetBrains Mono is
+# the substitute stage 16 already made.
+PAD=12; FONT="JetBrains Mono"; SIZE=11; LINES=3000
+STAMP="$LABEL -- written by copal-terminal-theme; re-run it (with a theme name) rather than edit"
 
 # Replace the text between two marker lines in a file, or append the block.
 # $1 file, $2 begin marker, $3 end marker, stdin the new body (markers included).
@@ -73,99 +154,136 @@ replace_block() {
         { [ -f "$_f" ] && cat "$_f"; printf '%s\n' "$_new"; } > "$_f.tmp" && mv "$_f.tmp" "$_f"
     fi
 }
+# Set key=value in an INI-ish file: the key's line is replaced where it
+# exists; otherwise the pair goes under the [section] named first, so a file
+# with several sections gets it in the right one, not at the end.
+set_kv() {  # $1 file, $2 section header ("[General]") or "", $3.. "key=value" (sed-safe values only)
+    _f="$1"; _sec="$2"; shift 2
+    for _kv in "$@"; do
+        _k=${_kv%%=*}
+        if grep -q "^$_k *=" "$_f"; then sed -i "s|^$_k *=.*|$_kv|" "$_f"
+        elif [ -n "$_sec" ] && grep -qF "$_sec" "$_f"; then sed -i "/^$(printf '%s' "$_sec" | sed 's/[][]/\\&/g')/a\\
+$_kv" "$_f"
+        else printf '%s\n' "$_kv" >> "$_f"; fi
+    done
+}
 
 # --- foot ------------------------------------------------------------------
-# The [colors] section is replaced whole; anything else (font, pad, bindings)
-# stays. foot's own light/dark switch is pointed at it.
+# The [colors*] and [cursor] sections are replaced whole; anything else
+# (font, pad, bindings) stays. foot's own light/dark switch is pointed at it.
 f="$HOME/.config/foot/foot.ini"
 mkdir -p "$(dirname "$f")"
-[ -f "$f" ] || printf 'font=JetBrains Mono:size=11\npad=8x8\n\n[scrollback]\nlines=3000\n' > "$f"
+[ -f "$f" ] || printf 'font=%s:size=%s\npad=%sx%s\n\n[scrollback]\nlines=%s\n\n[key-bindings]\nfont-increase=Control+plus\nfont-decrease=Control+Shift+minus\n' "$FONT" "$SIZE" "$PAD" "$PAD" "$LINES" > "$f"
 awk '
-    /^\[/ { insec = ($0 ~ /^\[colors(-light|-dark)?\]/) }
+    /^\[/ { insec = ($0 ~ /^\[(colors(-light|-dark)?|cursor)\]/) }
     /^initial-color-theme=/ { next }
     !insec { print }' "$f" | sed -e :a -e '/^\n*$/{$d;N;ba' -e '}' > "$f.tmp" && mv "$f.tmp" "$f"
 # foot 1.20+ keeps a light and a dark palette and picks one with
 # initial-color-theme (in the top-level section, so it goes first). Both get
-# Sand: the toggle then changes nothing, which is the point of one palette.
+# the same theme: the toggle then changes nothing, which is the point of
+# following the desktop.
 { printf 'initial-color-theme=light\n'; cat "$f"; } > "$f.tmp" && mv "$f.tmp" "$f"
+sed -i "s/^pad=.*/pad=${PAD}x${PAD}/" "$f"     # the theme's padding, where a pad line exists
 foot_colors() {
-    printf '\n[%s]\n# Copal Sand -- written by copal-terminal-theme; re-run it rather than edit.\n' "$1"
+    printf '\n[%s]\n# %s\n' "$1" "$STAMP"
     printf 'alpha=1.0\nbackground=%s\nforeground=%s\n' "$BG" "$FG"
     i=0; while [ $i -lt 8 ]; do printf 'regular%d=%s\n' $i "$(col $i)"; i=$((i+1)); done
     i=0; while [ $i -lt 8 ]; do printf 'bright%d=%s\n' $i "$(col $((i+8)))"; i=$((i+1)); done
     printf 'selection-background=%s\nselection-foreground=%s\ncursor=%s %s\n' "$SELBG" "$SELFG" "$BG" "$CURSOR"
 }
-{ foot_colors colors-light; foot_colors colors-dark; } >> "$f"
+{ foot_colors colors-light; foot_colors colors-dark; printf '\n[cursor]\n# %s\nstyle=block\nblink=no\n' "$STAMP"; } >> "$f"
 say "$f"
 
 # --- kitty -----------------------------------------------------------------
+# One file, copal-terminal.conf, included from kitty.conf's theme block; the
+# older copal-sand.conf include is renamed if found.
 d="$HOME/.config/kitty"; mkdir -p "$d"
 {
-    printf '# Copal Sand -- written by copal-terminal-theme\n'
+    printf '# %s\n' "$STAMP"
+    printf 'font_family %s\nfont_size %s\nwindow_padding_width %s\nscrollback_lines %s\n' "$FONT" "$SIZE" "$PAD" "$LINES"
+    printf 'cursor_shape block\ncursor_blink_interval 0\nshell_integration no-cursor\nbackground_opacity 1.0\n'
+    printf 'map ctrl+shift+plus change_font_size all +1.0\nmap ctrl+shift+minus change_font_size all -1.0\n'
     printf 'background #%s\nforeground #%s\ncursor #%s\ncursor_text_color #%s\n' "$BG" "$FG" "$CURSOR" "$BG"
-    printf 'selection_background #%s\nselection_foreground #%s\nbackground_opacity 1.0\n' "$SELBG" "$SELFG"
+    printf 'selection_background #%s\nselection_foreground #%s\n' "$SELBG" "$SELFG"
     i=0; while [ $i -lt 16 ]; do printf 'color%d #%s\n' $i "$(col $i)"; i=$((i+1)); done
-} > "$d/copal-sand.conf"
+} > "$d/copal-terminal.conf"
+rm -f "$d/copal-sand.conf"
 k="$d/kitty.conf"
+[ -f "$k" ] && sed -i 's/^include copal-sand\.conf$/include copal-terminal.conf/' "$k"
 if [ -f "$k" ] && grep -q '^# BEGIN_KITTY_THEME' "$k"; then
     replace_block "$k" '# BEGIN_KITTY_THEME' '# END_KITTY_THEME' <<EOF
 # BEGIN_KITTY_THEME
-include copal-sand.conf
+include copal-terminal.conf
 # END_KITTY_THEME
 EOF
 else
-    grep -q 'include copal-sand.conf' "$k" 2>/dev/null || printf '# BEGIN_KITTY_THEME\ninclude copal-sand.conf\n# END_KITTY_THEME\n' >> "$k"
+    grep -q 'include copal-terminal.conf' "$k" 2>/dev/null || printf '# BEGIN_KITTY_THEME\ninclude copal-terminal.conf\n# END_KITTY_THEME\n' >> "$k"
 fi
 say "$k"
 
 # --- alacritty -------------------------------------------------------------
 d="$HOME/.config/alacritty"; mkdir -p "$d"
 {
-    printf '# Copal Sand -- written by copal-terminal-theme\n[colors.primary]\nbackground = "#%s"\nforeground = "#%s"\n' "$BG" "$FG"
+    printf '# %s\n' "$STAMP"
+    printf '[window]\npadding = { x = %s, y = %s }\nopacity = 1.0\n' "$PAD" "$PAD"
+    printf '[font]\nnormal = { family = "%s" }\nsize = %s\n' "$FONT" "$SIZE"
+    printf '[scrolling]\nhistory = %s\n[cursor]\nstyle = { shape = "Block", blinking = "Never" }\n' "$LINES"
+    printf '[colors.primary]\nbackground = "#%s"\nforeground = "#%s"\n' "$BG" "$FG"
     printf '[colors.cursor]\ntext = "#%s"\ncursor = "#%s"\n' "$BG" "$CURSOR"
     printf '[colors.selection]\ntext = "#%s"\nbackground = "#%s"\n' "$SELFG" "$SELBG"
     printf '[colors.normal]\n'; i=0; for n in $NAMES; do printf '%s = "#%s"\n' "$n" "$(col $i)"; i=$((i+1)); done
     printf '[colors.bright]\n'; i=8; for n in $NAMES; do printf '%s = "#%s"\n' "$n" "$(col $i)"; i=$((i+1)); done
-} > "$d/copal-sand.toml"
+} > "$d/copal-terminal.toml"
+rm -f "$d/copal-sand.toml"
 a="$d/alacritty.toml"
+[ -f "$a" ] && sed -i 's|copal-sand\.toml|copal-terminal.toml|' "$a"
 if [ ! -f "$a" ]; then
-    printf '[general]\nimport = ["~/.config/alacritty/copal-sand.toml"]\n' > "$a"
-elif ! grep -q 'copal-sand.toml' "$a"; then
-    printf '\n[general]\nimport = ["~/.config/alacritty/copal-sand.toml"]\n' >> "$a"
+    printf '[general]\nimport = ["~/.config/alacritty/copal-terminal.toml"]\n' > "$a"
+elif ! grep -q 'copal-terminal.toml' "$a"; then
+    printf '\n[general]\nimport = ["~/.config/alacritty/copal-terminal.toml"]\n' >> "$a"
 fi
 say "$a"
 
 # --- wezterm ---------------------------------------------------------------
+# The scheme file keeps one name, "Copal Terminal", so wezterm.lua never has
+# to change when the theme does; the theme's own name is in its metadata.
 d="$HOME/.config/wezterm/colors"; mkdir -p "$d"
 {
-    printf '# Copal Sand -- written by copal-terminal-theme\n[colors]\nbackground = "#%s"\nforeground = "#%s"\n' "$BG" "$FG"
+    printf '# %s\n[colors]\nbackground = "#%s"\nforeground = "#%s"\n' "$STAMP" "$BG" "$FG"
     printf 'cursor_bg = "#%s"\ncursor_fg = "#%s"\ncursor_border = "#%s"\n' "$CURSOR" "$BG" "$CURSOR"
     printf 'selection_bg = "#%s"\nselection_fg = "#%s"\n' "$SELBG" "$SELFG"
     printf 'ansi = ['; i=0; while [ $i -lt 8 ]; do printf '"#%s"%s' "$(col $i)" "$([ $i -lt 7 ] && printf ', ')"; i=$((i+1)); done; printf ']\n'
     printf 'brights = ['; i=8; while [ $i -lt 16 ]; do printf '"#%s"%s' "$(col $i)" "$([ $i -lt 15 ] && printf ', ')"; i=$((i+1)); done; printf ']\n'
-    printf '[metadata]\nname = "Copal Sand"\n'
-} > "$d/copal-sand.toml"
+    printf '[metadata]\nname = "Copal Terminal"\nauthor = "%s"\n' "$LABEL"
+} > "$d/copal-terminal.toml"
+rm -f "$d/copal-sand.toml"
 w="$HOME/.config/wezterm/wezterm.lua"
-if [ ! -f "$w" ]; then
-    printf 'local wezterm = require("wezterm")\nreturn { color_scheme = "Copal Sand" }\n' > "$w"
+if [ ! -f "$w" ] || grep -q 'color_scheme = "Copal Sand"' "$w"; then
+    {
+        printf -- '-- %s\nlocal wezterm = require("wezterm")\nreturn {\n  color_scheme = "Copal Terminal",\n' "$STAMP"
+        printf '  font = wezterm.font("%s"), font_size = %s,\n  window_padding = { left = %s, right = %s, top = %s, bottom = %s },\n' "$FONT" "$SIZE" "$PAD" "$PAD" "$PAD" "$PAD"
+        printf '  scrollback_lines = %s, window_background_opacity = 1.0,\n  default_cursor_style = "SteadyBlock",\n}\n' "$LINES"
+    } > "$w"
 elif ! grep -q 'color_scheme' "$w"; then
-    say "$w exists without a color_scheme line; add:  color_scheme = \"Copal Sand\""
+    say "$w exists without a color_scheme line; add:  color_scheme = \"Copal Terminal\""
 fi
-say "$d/copal-sand.toml"
+say "$d/copal-terminal.toml"
 
 # --- xterm and urxvt -------------------------------------------------------
 # A marked block: the generic *color lines other X programs read are left
 # to the desktop's own theme; these are XTerm- and URxvt-specific.
 x="$HOME/.Xresources"
+[ -f "$x" ] && sed -i -e 's/^! >>> copal sand >>>.*/! >>> copal terminal theme >>>/' -e 's/^! <<< copal sand <<<.*/! <<< copal terminal theme <<</' "$x"
 {
-    printf '! >>> copal sand >>> written by copal-terminal-theme; re-run it rather than edit\n'
+    printf '! >>> copal terminal theme >>> %s\n' "$STAMP"
     for t in XTerm URxvt; do
         printf '%s*background: #%s\n%s*foreground: #%s\n%s*cursorColor: #%s\n' "$t" "$BG" "$t" "$FG" "$t" "$CURSOR"
         printf '%s*highlightColor: #%s\n%s*highlightTextColor: #%s\n' "$t" "$SELBG" "$t" "$SELFG"
+        printf '%s*internalBorder: %s\n%s*cursorBlink: false\n' "$t" "$PAD" "$t"
         i=0; while [ $i -lt 16 ]; do printf '%s*color%d: #%s\n' "$t" $i "$(col $i)"; i=$((i+1)); done
     done
-    printf '! <<< copal sand <<<\n'
-} | replace_block "$x" '! >>> copal sand >>>' '! <<< copal sand <<<'
+    printf '! <<< copal terminal theme <<<\n'
+} | replace_block "$x" '! >>> copal terminal theme >>>' '! <<< copal terminal theme <<<'
 [ -n "${DISPLAY:-}" ] && command -v xrdb >/dev/null 2>&1 && xrdb -merge "$x" 2>/dev/null
 say "$x"
 
@@ -174,32 +292,25 @@ say "$x"
 # text and cursor, and 'tango' is the built-in palette that reads best on it.
 s="$HOME/.config/sakura/sakura.conf"; mkdir -p "$(dirname "$s")"
 [ -f "$s" ] || printf '[sakura]\n' > "$s"
-for kv in "colorset1_fore=rgb($(rgb $FG))" "colorset1_back=rgb($(rgb $BG))" "colorset1_curs=rgb($(rgb $CURSOR))" "palette=tango" "last_colorset=1"; do
-    key=${kv%%=*}
-    if grep -q "^$key=" "$s"; then sed -i "s|^$key=.*|$kv|" "$s"; else printf '%s\n' "$kv" >> "$s"; fi
-done
+set_kv "$s" "[sakura]" "colorset1_fore=rgb($(rgb $FG))" "colorset1_back=rgb($(rgb $BG))" "colorset1_curs=rgb($(rgb $CURSOR))" \
+    "palette=tango" "last_colorset=1" "blinking_cursor=false" "cursor_type=0" "scroll_lines=$LINES"
 say "$s"
 
 # --- lxterminal ------------------------------------------------------------
 l="$HOME/.config/lxterminal/lxterminal.conf"; mkdir -p "$(dirname "$l")"
 [ -f "$l" ] || printf '[general]\n' > "$l"
-set -- "fgcolor=rgb($(rgb $FG))" "bgcolor=rgb($(rgb $BG))"
+set -- "fgcolor=rgb($(rgb $FG))" "bgcolor=rgb($(rgb $BG))" "cursorblinks=false" "cursorunderline=false" "scrollback=$LINES"
 i=0; while [ $i -lt 16 ]; do set -- "$@" "palette_color_$i=rgb($(rgb "$(col $i)"))"; i=$((i+1)); done
-for kv in "$@"; do
-    key=${kv%%=*}
-    if grep -q "^$key=" "$l"; then sed -i "s|^$key=.*|$kv|" "$l"; else printf '%s\n' "$kv" >> "$l"; fi
-done
+set_kv "$l" "[general]" "$@"
 say "$l"
 
 # --- xfce4-terminal --------------------------------------------------------
 t="$HOME/.config/xfce4/terminal/terminalrc"; mkdir -p "$(dirname "$t")"
 [ -f "$t" ] || printf '[Configuration]\n' > "$t"
 pal=""; i=0; while [ $i -lt 16 ]; do pal="$pal#$(col $i);"; i=$((i+1)); done
-for kv in "ColorForeground=#$FG" "ColorBackground=#$BG" "ColorCursor=#$CURSOR" "ColorCursorUseDefault=FALSE" \
-          "ColorSelection=#$SELFG" "ColorSelectionBackground=#$SELBG" "ColorSelectionUseDefault=FALSE" "ColorPalette=${pal%;}"; do
-    key=${kv%%=*}
-    if grep -q "^$key=" "$t"; then sed -i "s|^$key=.*|$kv|" "$t"; else printf '%s\n' "$kv" >> "$t"; fi
-done
+set_kv "$t" "[Configuration]" "ColorForeground=#$FG" "ColorBackground=#$BG" "ColorCursor=#$CURSOR" "ColorCursorUseDefault=FALSE" \
+    "ColorSelection=#$SELFG" "ColorSelectionBackground=#$SELBG" "ColorSelectionUseDefault=FALSE" "ColorPalette=${pal%;}" \
+    "MiscCursorBlinks=FALSE" "MiscCursorShape=TERMINAL_CURSOR_SHAPE_BLOCK" "ScrollingLines=$LINES" "BackgroundMode=TERMINAL_BACKGROUND_SOLID"
 say "$t"
 
 # --- terminator ------------------------------------------------------------
@@ -212,7 +323,7 @@ if [ ! -f "$c" ]; then
     {
         printf '[global_config]\n[keybindings]\n[profiles]\n  [[default]]\n'
         printf '    background_color = "#%s"\n    foreground_color = "#%s"\n    cursor_color = "#%s"\n' "$BG" "$FG" "$CURSOR"
-        printf '    palette = "%s"\n    use_theme_colors = False\n' "${pal%:}"
+        printf '    palette = "%s"\n    use_theme_colors = False\n    cursor_blink = False\n    scrollback_lines = %s\n' "${pal%:}" "$LINES"
         printf '[layouts]\n  [[default]]\n    [[[window0]]]\n      type = Window\n      parent = ""\n    [[[child1]]]\n      type = Terminal\n      parent = window0\n[plugins]\n'
     } > "$c"
     say "$c"
@@ -225,7 +336,7 @@ fi
 for c in "$HOME"/.config/tilda/config_*; do
     [ -f "$c" ] || continue
     pal=""; i=0; while [ $i -lt 16 ]; do pal="$pal$(rgb16 "$(col $i)"),"; i=$((i+1)); done
-    for kv in "background_color=\"#$BG\"" "foreground_color=\"#$FG\"" "palette_scheme=0" "palette = {${pal%,}}"; do
+    for kv in "background_color=\"#$BG\"" "foreground_color=\"#$FG\"" "palette_scheme=0" "palette = {${pal%,}}" "blinks=false" "enable_transparency=false"; do
         key=$(printf '%s' "$kv" | sed 's/ *=.*//')
         if grep -q "^$key *=" "$c"; then sed -i "s|^$key *=.*|$kv|" "$c"; else printf '%s\n' "$kv" >> "$c"; fi
     done
@@ -242,16 +353,14 @@ for v in qtermwidget6 qtermwidget5; do
             printf '[Color%d]\nColor=%s\n[Color%dIntense]\nColor=%s\n' $i "$(rgb "$(col $i)")" $i "$(rgb "$(col $((i+8)))")"
             i=$((i+1))
         done
-        printf '[General]\nDescription=Copal Sand\nOpacity=1\n'
-    } > "$d/CopalSand.colorscheme"
+        printf '[General]\nDescription=%s\nOpacity=1\n' "$LABEL"
+    } > "$d/CopalTerminal.colorscheme"
+    rm -f "$d/CopalSand.colorscheme"
 done
 q="$HOME/.config/qterminal.org/qterminal.ini"
-if [ -f "$q" ]; then
-    if grep -q '^colorScheme=' "$q"; then sed -i 's|^colorScheme=.*|colorScheme=CopalSand|' "$q"; else printf 'colorScheme=CopalSand\n' >> "$q"; fi
-else
-    mkdir -p "$(dirname "$q")"; printf '[General]\ncolorScheme=CopalSand\n' > "$q"
-fi
+[ -f "$q" ] || { mkdir -p "$(dirname "$q")"; printf '[General]\n' > "$q"; }
+set_kv "$q" "[General]" "colorScheme=CopalTerminal" "ApplicationTransparency=0" "TerminalTransparency=0" "FlowControl=false" "HistoryLimited=true" "HistoryLimitedTo=$LINES"
 say "$q"
 
-say "done: Copal Sand on every terminal that has a config file. New windows pick it up."
+say "done: $LABEL on every terminal that has a config file, opaque. New windows pick it up."
 exit 0

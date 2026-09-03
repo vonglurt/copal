@@ -1388,17 +1388,35 @@ Stage 7 installs `st`, `sakura`, `xfce4-terminal`, `terminator` and
 **foot is deliberately absent from the catalogue**: it is Wayland-only, and this
 is an X11 desktop, so it would install and never open a window.
 
-**One palette, every terminal.** The terminals all wear the same light theme,
-Copal Sand: a sand ground (`#f4ead6`), coffee text, rust for red, ochre for
-yellow, oasis blue, turquoise for cyan, and a gold selection you can see. Every
-colour clears 4.5:1 against the ground, so `ls`, `htop`, `mc` and a bold prompt
-are readable rather than decorative. It replaced a palette borrowed from a
-translucent, blurred terminal theme whose "black" was a purple and whose
-selection colour was its background. `copal-terminal-theme` writes it into
-foot, kitty, Alacritty, WezTerm, xterm and urxvt (`~/.Xresources`), Sakura,
-LXTerminal, Xfce Terminal, Terminator, Tilda and QTerminal; run it again after
-a terminal's own settings dialog has changed things. `st` compiles its colours
-in and Cool Retro Term is amber on purpose, so those two keep their own.
+**The desktop's theme, every terminal, opaque.** Linux Antiquity draws its
+terminal as a pane of glass: a window at 20 % opacity over a blurred wallpaper,
+tinted per theme, with one neon palette shared by all five themes whose "black"
+is a purple and whose selection colour is its background. That only reads on
+the glass, and the glass costs a blur pass per frame, which on a CPU renderer
+is the dearest thing on the screen. `copal-terminal-theme` carries each theme
+opaque instead: helios (gold), eris (slate), priapus (sage), eros (indigo, the
+dark one) and hades (grey), the ground being the theme's own glass tint and the
+sixteen colours derived from the theme's own design tokens, each moved along
+its hue until it clears 4.5:1 on that ground. `ls`, `htop`, `mc` and a bold
+prompt are readable rather than decorative. The rest of the theme's terminal
+style comes along: 12 px padding, an 11 pt font, 3000 lines, a block cursor,
+Ctrl+Shift+plus and minus to zoom. Nothing is translucent and nothing blinks, so
+an idle terminal costs nothing. Copal Sand, the sand-and-rust palette, stays as
+a sixth choice. With no argument the script follows the theme the desktop is
+set to (Antiquity's Themes menu writes it to
+`~/.config/quickshell/settings.json`; helios until then); with a name it
+switches every terminal at once:
+
+    copal-terminal-theme eros        # all terminals, opaque indigo
+    copal-terminal-theme --show      # the numbers for the current theme
+    copal-terminal-theme             # back to following the desktop
+
+It writes foot, kitty, Alacritty, WezTerm, xterm and urxvt (`~/.Xresources`),
+Sakura, LXTerminal, Xfce Terminal, Terminator, Tilda and QTerminal, in each
+one's own format, and can be run again after a terminal's own settings dialog
+has changed things. `st` compiles its colours in and Cool Retro Term is amber
+on purpose, so those two keep their own. Switching in the Themes menu does not
+yet re-run the script; that is a one-line hook for Antiquity's `Config.qml`.
 
 ## Instruments, radio, and learning the keyboard
 
