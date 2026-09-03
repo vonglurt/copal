@@ -3538,7 +3538,7 @@ Games|GZDoom (Doom engine, with Freedoom)|gzdoom freedoom|gzdoom|x|64
 Games|Chocolate Doom (faithful Doom, with Freedoom)|chocolate-doom@testing freedoom|chocolate-doom|x|*
 Games|Colossal Cave Adventure|bsd-games|adventure|t|*
 Games|Robots|bsd-games|robots|t|*
-Games|Hangman|bsd-games|hangman|t|*
+Games|Hangman|bsd-games words-en|hangman|t|*
 Games|Snake|bsd-games|snake|t|*
 Games|Klondike (cards)|bsd-games|klondike|t|*
 Games|Air Traffic Control|bsd-games|atc|t|*
@@ -3682,6 +3682,7 @@ Devtools|cppcheck (static analysis)|cppcheck|cppcheck|h|*
 Devtools|shellcheck (lint bash and sh)|shellcheck|shellcheck|h|64
 Devtools|shfmt (format shell scripts)|shfmt|shfmt|h|*
 Devtools|CMake|cmake|cmake|h|*
+Devtools|cc65 (C and assembler for the 6502: Commodore, Atari, NES)|cc65|cl65|h|*
 Devtools|Meson + Ninja|meson ninja-build|meson|h|*
 Devtools|ccache (recompile faster)|ccache|ccache|h|*
 Devtools|Bear (make a compile_commands.json)|bear|bear|h|*
@@ -6223,6 +6224,8 @@ if command -v xmodmap >/dev/null 2>&1 && xmodmap -pke 2>/dev/null | grep -q Caps
             -e 'add mod4 = Super_L' 2>/dev/null || true
 fi
 command -v xsetroot >/dev/null && xsetroot -solid '#1a1b26'
+# The per-user sound server (PipeWire), if stage 10 installed it.
+command -v copal-audio-start >/dev/null 2>&1 && copal-audio-start
 exec i3
 XINIT
     install_home_file .xinitrc /tmp/xinitrc.$$; rm -f /tmp/xinitrc.$$
@@ -12438,6 +12441,44 @@ stage_extras() {
     say "Audio"
     add_optional alsa-utils alsa-lib
     rc-update add alsa default >/dev/null 2>&1 || true
+
+    # --- a sound server ----------------------------------------------------
+    # ALSA alone is the card. Half the catalogue does not talk to the card:
+    # Hydrogen asks JACK and then PulseAudio, gqrx and Firefox ask PulseAudio,
+    # and with no server answering they open an error box or fall silent
+    # (found on the bench, 2 Sep 2026, the day the VM got a sound card).
+    # PipeWire answers all three names -- pipewire-pulse is the PulseAudio
+    # socket, pipewire-jack the JACK library, pipewire-alsa the ALSA plugin
+    # that routes plain ALSA programs through it -- and wireplumber is its
+    # session manager. Per-user, not a system service: copal-audio-start
+    # brings it up from the session (.xinitrc, or exec-once in Hyprland),
+    # and is harmless where nothing is installed.
+    say "Sound server (PipeWire)"
+    add_optional pipewire wireplumber pipewire-pulse pipewire-alsa
+    add_optional pipewire-jack
+    cat > /usr/local/bin/copal-audio-start <<'AUDIO'
+#!/bin/sh
+# copal-audio-start -- bring up the per-user sound server, once per session.
+# Safe to call from any session start: does nothing where PipeWire is not
+# installed or is already running. Logs to $XDG_RUNTIME_DIR (or /tmp).
+_log="${XDG_RUNTIME_DIR:-/tmp}/copal-audio.log"
+_up() { pgrep -u "$(id -u)" -x "$1" >/dev/null 2>&1; }
+command -v pipewire >/dev/null 2>&1 || exit 0
+_up pipewire || { pipewire >>"$_log" 2>&1 & sleep 0.5; }
+command -v wireplumber >/dev/null 2>&1 && ! _up wireplumber && { wireplumber >>"$_log" 2>&1 & }
+command -v pipewire-pulse >/dev/null 2>&1 && ! _up pipewire-pulse && { pipewire-pulse >>"$_log" 2>&1 & }
+exit 0
+AUDIO
+    chmod 0755 /usr/local/bin/copal-audio-start
+    note "PipeWire starts with the session (copal-audio-start); check with:  wpctl status"
+
+    # The ALSA sequencer: MIDI ports for MilkyTracker, FluidSynth, piano-midi.
+    # On the virt kernel it is a module nobody loads, and MilkyTracker aborts
+    # without it ("error creating ALSA sequencer client object").
+    if [ ! -e /dev/snd/seq ] && modprobe snd-seq 2>/dev/null; then
+        [ -f /etc/modules ] && ! grep -qx snd-seq /etc/modules 2>/dev/null && echo snd-seq >> /etc/modules
+        note "snd-seq loaded and added to /etc/modules (the ALSA sequencer, for MIDI)"
+    fi
     # A VM with a sound card the kernel cannot drive. Alpine's linux-virt
     # kernel ships one sound driver, virtio_snd, and UTM's default card is
     # intel-hda: the controller sits on the PCI bus with no driver, ALSA says
@@ -13311,6 +13352,14 @@ seed_home_if_absent() {  # <relative path> <source file>  -- root and the user
 seed_app_configs() {
     say "First-run dialogs: seeding what a file can answer"
     _t=$(mktemp /tmp/copal-seed.XXXXXX)
+
+    # The system word list. words-en installs /usr/share/dict/american-english
+    # and nothing named "words", which is the file hangman, look(1) and the
+    # other word games open (verified on the bench: "unable to open
+    # dictionary file /usr/share/dict/words"). Link it, once.
+    if [ -f /usr/share/dict/american-english ] && [ ! -e /usr/share/dict/words ]; then
+        ln -s american-english /usr/share/dict/words
+    fi
 
     # Firefox ESR: no welcome tab, no "make me the default", no telemetry.
     # A policies file in the distribution directory; read on every start.

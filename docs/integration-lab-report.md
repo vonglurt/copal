@@ -222,6 +222,26 @@ style (`-std=gnu89`) and uses glibc's `__uint32_t` (defined away). Builds and
 prints its usage. Both builds are offered at the end of stage 12, the
 streamripper tarball pinned by SHA-256 since SourceForge publishes none.
 
+### The evening sweep: the whole catalogue, with a sound card
+
+After the VM restart that gave the guest a virtio sound card, the 208-row
+gallery list (`tools/copal-app-sweeplist.py`) went through the probe end to
+end in fifty minutes, 72 rows with a typed or drawn first action
+(`tools/copal-act`). The pictures are `docs/app-gallery.md`; the method is
+`docs/app-probe-guide.md`, written after the sweep's own clean-up closed
+the terminal running it (a close-by-window-class order; the probe now
+protects its own ancestors).
+
+| Finding | Where it went |
+|---|---|
+| A sound card but no sound server: Hydrogen refused by JACK then PulseAudio, gqrx's "Audio Error", wireplumber installed without pipewire | stage 10 installs PipeWire (pulse, jack, alsa faces) and `copal-audio-start` brings it up per session |
+| MilkyTracker aborts on the missing ALSA sequencer once a card exists | stage 10 loads `snd-seq` and lists it in `/etc/modules` |
+| Hangman: "unable to open dictionary file /usr/share/dict/words" | `words-en` on the Hangman row; stage 12 links `words` to `american-english` |
+| Minuet dies in the Qt Quick renderer, like MuseScore | `QT_QUICK_BACKEND=software` opens it; the same stage 1 export covers it |
+| Endless Sky launched from its build directory: "Unable to find the resource directories" | `--resources SRCDIR` in the launcher |
+| UR FINKEL (Paul's Plus/4 game) needs cc65 to `make run` | `cc65` joins the Devtools rows; verified with the apk unpacked user-side, the menu up in xplus4 |
+| Inkscape's synthetic stroke never reaches its canvas, X11 or Wayland | no first action for Inkscape; the document window is the picture |
+
 ## V. Discussion
 
 **"Installed" is the package manager's word.** Every finding here came from a
@@ -259,6 +279,10 @@ tools/copal-app-probe.sh NAME [COMMAND ARGS...]     # closes it afterwards
 tools/copal-app-probe.sh --keep NAME                 # leaves it open for you
 tail -3 ~/copal-apps/log.txt
 ```
+
+The full method — workspaces, the first-action script, the gallery sweep,
+and the rule about never closing windows by class — is in
+`docs/app-probe-guide.md`.
 
 **Check the extras after a clean install:** copal's menu, entry `v`.
 
@@ -305,4 +329,7 @@ throwaway home seeded with a dummy address the way stage 12 seeds a real one.
 | `tools/copal-app-probe.sh`, `tools/copal-app-plan.py` | new |
 | `docs/app-integration-plan.md` | new, generated from the probe log |
 | `docs/img/apps/` | before/after screenshots, half size |
-| `docs/copal-handbook.md` | electronics, maths, mail, workshop rows |
+| `docs/copal-handbook.md` | electronics, maths, mail, workshop rows; the sound server, the 6502 |
+| `tools/copal-act`, `tools/copal-app-sweeplist.py`, `tools/copal-app-sweep.sh`, `tools/copal-app-gallery.py` | new: the first-action script, the sweep, the gallery page |
+| `docs/app-gallery.md`, `docs/img/gallery/` | 192 pictures, one per program that opened a window |
+| `docs/app-probe-guide.md` | new: the launch-and-picture method |

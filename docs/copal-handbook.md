@@ -935,7 +935,7 @@ copal --auto      # also starts it, and is what the resume hook calls
 | 7 | Development environment: **gcc and clang, Rust, Go, Fortran, PHP+Composer+Xdebug, Forth, and a dozen more**; Neovim as an IDE via its built-in LSP (no plugins); gdb/cgdb/lldb/valgrind; terminals and multiplexers; the morse trainer; eight guides; and the git identity from stage 1, written to `user`'s `~/.gitconfig` | 3, network |
 | 8 | Grows `COPALROOT` into any unallocated space after it. Non-destructive, works on a mounted root | network |
 | 9 | Retro emulators: Mini vMac (Macintosh Plus — fast, and the one that works) and VICE (C64, now a package rather than an overnight build). Both get a directory under your home with disk images and launchers | 7, network |
-| 10 | Peripherals and media: wifi, bluetooth, HDMI audio, tcpdump/tshark, hex editors, HFS and disk-image tools | 3, network |
+| 10 | Peripherals and media: wifi, bluetooth, HDMI audio, the PipeWire sound server, tcpdump/tshark, hex editors, HFS and disk-image tools | 3, network |
 | 11 | Snapshots: rsync snapshots on a third partition, and Timeshift if you want it. **Offers to repartition** | 3, network |
 | 12 | Applications: the 316-program catalogue, as a minimal set, by section, or all of it | 3, network |
 | 13 | Hands over root: locks the root password, `PermitRootLogin no`, leaving `user` + `doas`. Verifies the admin account first and declines if it is not ready | 1 |
@@ -1311,6 +1311,12 @@ prompt:
   **RetroForth** is packaged everywhere and is a real, maintained Forth-family
   language — but it is *not* ANS Forth, so a textbook's examples will not all
   run.
+
+**The 6502.** `cc65` is in the Devtools rows: a C compiler, assembler and
+linker for the Commodore 64, Plus/4, VIC-20, Atari and NES, with VICE from
+stage 9 to run what it builds (`c1541` writes the disk image, `xplus4` or
+`x64sc` boots it). A `make run` in a cc65 project is the whole loop: compile,
+write the disk, start the emulator with it autostarted.
 
 ### Language servers, debuggers and analysis
 
@@ -1721,6 +1727,17 @@ Audacity, and LMMS/MuseScore on `armv7`/`aarch64`. For the C64 SID chip, stage 9
 installs VICE, whose `vsid` emulates the 6581/8580 and the 6510 driving it —
 far cheaper than a whole emulated C64 just to play music. The High Voltage SID
 Collection is ~60 MB and fits on the card.
+
+**The sound server.** ALSA is the card; it is not what most of these programs
+ask for. Hydrogen wants JACK and then PulseAudio, gqrx and Firefox want
+PulseAudio, and with nothing answering they show an error box or play nothing
+— which is how the bench behaved the day it first had a sound card. Stage 10
+installs PipeWire with the three faces those programs expect (`pipewire-pulse`,
+`pipewire-jack`, `pipewire-alsa`) and wireplumber to manage it, and
+`copal-audio-start` brings it up per user from `.xinitrc` (or `exec-once` in a
+Hyprland config). `wpctl status` shows what it sees. The ALSA sequencer module
+`snd-seq` is loaded too, because MilkyTracker aborts without a MIDI port to
+open.
 
 **Learning to play piano.** The catalogue had two typing tutors and nothing that
 did the same job for a keyboard you play with both hands — and Alpine packages
