@@ -1388,6 +1388,18 @@ Stage 7 installs `st`, `sakura`, `xfce4-terminal`, `terminator` and
 **foot is deliberately absent from the catalogue**: it is Wayland-only, and this
 is an X11 desktop, so it would install and never open a window.
 
+**One palette, every terminal.** The terminals all wear the same light theme,
+Copal Sand: a sand ground (`#f4ead6`), coffee text, rust for red, ochre for
+yellow, oasis blue, turquoise for cyan, and a gold selection you can see. Every
+colour clears 4.5:1 against the ground, so `ls`, `htop`, `mc` and a bold prompt
+are readable rather than decorative. It replaced a palette borrowed from a
+translucent, blurred terminal theme whose "black" was a purple and whose
+selection colour was its background. `copal-terminal-theme` writes it into
+foot, kitty, Alacritty, WezTerm, xterm and urxvt (`~/.Xresources`), Sakura,
+LXTerminal, Xfce Terminal, Terminator, Tilda and QTerminal; run it again after
+a terminal's own settings dialog has changed things. `st` compiles its colours
+in and Cool Retro Term is amber on purpose, so those two keep their own.
+
 ## Instruments, radio, and learning the keyboard
 
 Three more guides, and a program written because nothing was packaged.

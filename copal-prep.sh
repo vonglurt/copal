@@ -8223,6 +8223,25 @@ URxvt*internalBorder:  2
 XRES
     install_home_file .Xresources /tmp/xres.$$; rm -f /tmp/xres.$$
 
+    # One light palette on every terminal. The Antiquity theme's kitty
+    # palette, copied onto foot, printed "black" as #9400ff and "white" as
+    # #ff00ee -- purple text on a grey ground, found in half the bench's
+    # pictures -- and its selection colours equalled its background. Copal
+    # Sand is the answer: sand ground, coffee text, rust for red, ochre for
+    # yellow, oasis blue, every colour at 4.5:1 or better. The script writes
+    # it into each terminal's own format and can be re-run by hand any time.
+    install -m 0755 "$(cd "$(dirname "$0")" && pwd)/tools/copal-terminal-theme" /usr/local/bin/copal-terminal-theme 2>/dev/null \
+        || warn "tools/copal-terminal-theme not found beside copal-prep.sh; the terminal palette is not applied"
+    if [ -x /usr/local/bin/copal-terminal-theme ]; then
+        say "Copal Sand: one light palette on every terminal"
+        for _h in /root "$(user_home)"; do
+            [ -n "$_h" ] && [ -d "$_h" ] || continue
+            HOME="$_h" /usr/local/bin/copal-terminal-theme >/dev/null 2>&1 || warn "copal-terminal-theme failed for $_h"
+            _own=$(stat -c '%u:%g' "$_h" 2>/dev/null) && chown -R "$_own" "$_h/.config" "$_h/.Xresources" "$_h/.local/share/qtermwidget6" 2>/dev/null || true
+        done
+        note "re-apply or refresh at any time:  copal-terminal-theme"
+    fi
+
     install_modern_browser
     configure_x_for_user
     configure_desktop_autostart
@@ -9617,6 +9636,11 @@ TERMINALS -- which one, and why the fast ones are not
       edit ~/.config/i3/config
       find the line   set $term urxvt
       change it, then Super+Shift+R to reload i3
+
+   Every terminal here carries the same light palette, Copal Sand: a sand
+   ground, coffee text, rust, ochre and oasis blue, each colour readable on
+   the ground. 'copal-terminal-theme' writes it again if a program's own
+   settings dialog has overwritten it.
 
    Fonts and colours for xterm and urxvt live in ~/.Xresources. After editing:
 
