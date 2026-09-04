@@ -5440,8 +5440,8 @@ EOF
     # it broke the Go linker and the Endless Sky link while protecting
     # nothing.
     sed -i '/^tmpfs[[:space:]][[:space:]]*\/tmp[[:space:]]/d' /mnt/etc/fstab
-    cat >> /mnt/etc/fstab <<'FSTAB'
-tmpfs  /tmp      tmpfs  defaults,noatime,size=20%  0 0
+    cat >> /mnt/etc/fstab <<FSTAB
+tmpfs  /tmp      tmpfs  defaults,noatime,size=$TMP_SIZE  0 0
 tmpfs  /var/log  tmpfs  defaults,noatime,size=32M  0 0
 FSTAB
     # noatime avoids a write on every read; commit=600 batches journal
@@ -8871,6 +8871,28 @@ BROWSERENV
     note "If it runs out of memory: NODE_OPTIONS=--max-old-space-size=256 claude"
 }
 
+# ------------------------------------------------ /tmp, on a running system ---
+#
+# Stage 3 writes /tmp's size into the new root's fstab, but a machine installed
+# before the size became a share of RAM carries the flat 64 MB it was given,
+# and nothing revisits fstab. This does: it rewrites the /tmp line to the
+# current size and remounts, which tmpfs allows live with nothing in /tmp
+# lost. Stage 8 (make room) runs it on every machine, and stage 7 runs it
+# before building anything, because the Go link is what found the 64 MB wall.
+TMP_SIZE=20%
+retune_tmp() {
+    grep -q '^tmpfs[[:space:]][[:space:]]*/tmp[[:space:]]' /etc/fstab 2>/dev/null || return 0
+    grep -q "^tmpfs[[:space:]][[:space:]]*/tmp[[:space:]].*size=$TMP_SIZE" /etc/fstab && return 0
+    say "/tmp: sized to the machine rather than to a Zero"
+    _was=$(sed -n 's/^tmpfs[[:space:]][[:space:]]*\/tmp[[:space:]].*size=\([^,[:space:]]*\).*/\1/p' /etc/fstab | head -n1)
+    sed -i "/^tmpfs[[:space:]][[:space:]]*\/tmp[[:space:]]/s/size=[^,[:space:]]*/size=$TMP_SIZE/" /etc/fstab
+    if mount -o "remount,size=$TMP_SIZE" /tmp 2>/dev/null; then
+        note "/tmp: was size=${_was:-unset}, now size=$TMP_SIZE and remounted -- $(df -h /tmp | awk 'NR==2{print $2}') available"
+    else
+        note "/tmp: fstab now says size=$TMP_SIZE; the remount failed, so it applies at the next boot"
+    fi
+}
+
 # ------------------------------------ stage 7: Gonex and Yodacon, in ~/code ---
 #
 # Paul's own projects, checked out where they are worked on -- ~/code, as the
@@ -8940,6 +8962,7 @@ MSG
     done
     apk info -e libx11-dev >/dev/null 2>&1 \
         || { warn "the X11 development headers did not install -- skipping"; return 0; }
+    retune_tmp
 
     cat > /usr/local/bin/copal-code <<'COPALCODE'
 #!/bin/sh
@@ -13857,6 +13880,9 @@ MSG
 
 stage_grow() {
     say "Stage 8: grow $P2 into the free space after it"
+    # Room of a different kind, and on every machine: a /tmp still capped at
+    # the 64 MB that older installs were given.
+    retune_tmp
     _free=$(p2_free_sectors)
     if [ "$_free" -le 131072 ]; then
         note "Nothing to do -- $P2 already reaches the end of the card."

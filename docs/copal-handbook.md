@@ -933,7 +933,7 @@ copal --auto      # also starts it, and is what the resume hook calls
 | 5 | zram — compressed swap in RAM. The biggest single win on 512 MB | network |
 | 6 | Installs the Mac's public key for `user` with the permissions sshd insists on | 1 |
 | 7 | Development environment: **gcc and clang, Rust, Go, Fortran, PHP+Composer+Xdebug, Forth, and a dozen more**; Neovim as an IDE via its built-in LSP (no plugins); gdb/cgdb/lldb/valgrind; terminals and multiplexers; the morse trainer; eight guides; and the git identity from stage 1, written to `user`'s `~/.gitconfig`; optionally Gonex and Yodacon checked out into `~/code` and built, with `copal-code` to rebuild them | 3, network |
-| 8 | Grows `COPALROOT` into any unallocated space after it. Non-destructive, works on a mounted root | network |
+| 8 | Grows `COPALROOT` into any unallocated space after it, and resizes a `/tmp` still capped at 64 MB to a fifth of RAM, live. Non-destructive, works on a mounted root | network |
 | 9 | Retro emulators: Mini vMac (Macintosh Plus — fast, and the one that works) and VICE (C64, now a package rather than an overnight build). Both get a directory under your home with disk images and launchers | 7, network |
 | 10 | Peripherals and media: wifi, bluetooth, HDMI audio, the PipeWire sound server, tcpdump/tshark, hex editors, HFS and disk-image tools | 3, network |
 | 11 | Snapshots: rsync snapshots on a third partition, and Timeshift if you want it. **Offers to repartition** | 3, network |
@@ -1998,8 +1998,8 @@ tmpfs           /var/log  tmpfs  defaults,noatime,size=32M    0 0
 `UUID=`, not `/dev/mmcblk0p2` — edit the line by its mount point. The tmpfs
 sizes are ceilings, not reservations, so `/tmp` is a share of RAM rather than a
 number: about 100 MB on a Zero, over a gigabyte in a 6 GB VM. On a machine
-installed before this change, `/tmp` is a flat 64 MB — edit the line and
-`mount -o remount,size=20% /tmp` to grow it without a reboot. Also repoint
+installed before this change, `/tmp` is a flat 64 MB; running stage 8 (or
+stage 7) rewrites the line and remounts `/tmp` live, no reboot needed. Also repoint
 `/etc/apk/cache` at `/var/cache/apk`: the carried-over config still points it at
 `/media/mmcblk0p2/cache`, and p2 is now the root filesystem itself, so that
 symlink dangles and `apk` breaks on first use.
