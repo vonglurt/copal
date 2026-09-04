@@ -935,7 +935,7 @@ copal --auto      # also starts it, and is what the resume hook calls
 | 7 | Development environment: **gcc and clang, Rust, Go, Fortran, PHP+Composer+Xdebug, Forth, and a dozen more**; Neovim as an IDE via its built-in LSP (no plugins); gdb/cgdb/lldb/valgrind; terminals and multiplexers; the morse trainer; eight guides; and the git identity from stage 1, written to `user`'s `~/.gitconfig`; optionally Gonex and Yodacon checked out into `~/code` and built, with `copal-code` to rebuild them | 3, network |
 | 8 | Grows `COPALROOT` into any unallocated space after it, and resizes a `/tmp` still capped at 64 MB to a fifth of RAM, live. Non-destructive, works on a mounted root | network |
 | 9 | Retro emulators: Mini vMac (Macintosh Plus — fast, and the one that works) and VICE (C64, now a package rather than an overnight build). Both get a directory under your home with disk images and launchers | 7, network |
-| 10 | Peripherals and media: wifi, bluetooth, HDMI audio, the PipeWire sound server, tcpdump/tshark, hex editors, HFS and disk-image tools, and **bleeper** for a GQ GMC Geiger counter on USB | 3, network |
+| 10 | Peripherals and media: wifi, bluetooth, HDMI audio, the PipeWire sound server, tcpdump/tshark, hex editors, HFS and disk-image tools, and **radbeeper** for a GQ GMC Geiger counter on USB | 3, network |
 | 11 | Snapshots: rsync snapshots on a third partition, and Timeshift if you want it. **Offers to repartition** | 3, network |
 | 12 | Applications: the 316-program catalogue, as a minimal set, by section, or all of it. **Everything** now includes Thunderbird where it is packaged, given 700 MB free | 3, network |
 | 13 | Hands over root: locks the root password, `PermitRootLogin no`, leaving `user` + `doas`. Verifies the admin account first and declines if it is not ready | 1 |
@@ -1240,25 +1240,25 @@ Full primer: `copal-guide nvim` and `copal-guide ide`.
 | `\rn` / `\ca` | Rename everywhere / code action |
 | `Ctrl-O` | Back to wherever you jumped from |
 
-## The Geiger counter
+## The Geiger counter — RadBeeper
 
-Stage 10 installs **bleeper**, which finds a GQ GMC-320 (or 300/500/600) on
+Stage 10 installs **radbeeper**, which finds a GQ GMC-320 (or 300/500/600) on
 USB and shows what it is counting. It is one stdlib Python file with no
 `pyserial`: a serial port is thirty lines of `termios`, and this has to run on
 a Zero and on a fresh install with no network. The development home is
-`~/code/bleeper`; `make lint` compares the copy embedded in `copal-prep.sh`
+`~/code/radbeeper`; `make lint` compares the copy embedded in `copal-prep.sh`
 against that checkout whenever it exists, so the two cannot quietly drift.
 
 ```sh
-bleeper probe        # find the counter and say what it is
-bleeper watch        # the monitor: 3s / 30s / 300s averages
-bleeper log pull     # download the stored history to .bin and .csv
+radbeeper probe        # find the counter and say what it is
+radbeeper watch        # the monitor: 3s / 30s / 300s averages
+radbeeper log pull     # download the stored history to .bin and .csv
 ```
 
 ### Three averages, because one is not enough
 
 The counter's own `<GETCPM>>` is a rolling 60-second count: one number with one
-time constant. bleeper counts the blips itself, from the per-second
+time constant. radbeeper counts the blips itself, from the per-second
 `<HEARTBEAT1>>` stream, and averages them over three windows at once.
 
 | Window | What it is for |
@@ -1274,19 +1274,19 @@ is twenty times noisier than it looks, and drawing it as settled is how a
 ### Dormant is the normal state
 
 The boot service probes once. Finding no counter it writes the reason to
-`/var/log/bleeper/status` and **does not start** — OpenRC reports it stopped,
+`/var/log/radbeeper/status` and **does not start** — OpenRC reports it stopped,
 which is correct and is not a fault. A USB device that is not plugged in will
 not become plugged in because a daemon asked again four seconds later, and a
 service that respawns forever on a Zero costs more than it measures. The retry
-is the next boot, or `rc-service bleeper start` the moment you plug one in.
+is the next boot, or `rc-service radbeeper start` the moment you plug one in.
 
-The desktop does the same thing: `bleeper window` runs at login from the i3
+The desktop does the same thing: `radbeeper window` runs at login from the i3
 config and opens the monitor **only** if a counter is there, silently doing
 nothing otherwise.
 
 ### Why your counter may be invisible, and which fix it needs
 
-`bleeper probe` names which of three failures happened, because they do not
+`radbeeper probe` names which of three failures happened, because they do not
 share a cure.
 
 1. **No serial node.** Nothing plugged in — or the kernel has no USB-serial
@@ -1312,14 +1312,14 @@ swap, not a driver hunt.**
 Every command runs against a built-in source:
 
 ```sh
-bleeper --source sim --sim-cpm 400 watch
+radbeeper --source sim --sim-cpm 400 watch
 ```
 
 It is a real Poisson process, not a smooth fake. Radioactive decay *is*
 Poisson, so the simulated signal has variance equal to its mean — which is
 exactly the property that makes the 3-second average jump around while the
 300-second one sits still. Testing the display against a smooth signal would
-prove nothing about either. `--seed` repeats a run exactly, and bleeper's own
+prove nothing about either. `--seed` repeats a run exactly, and radbeeper's own
 suite checks the drawn mean and variance against the requested rate.
 
 ### The tube factor

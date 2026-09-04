@@ -471,23 +471,23 @@ fresh-img-%: | require-tools $(BUILDDIR)
 # check reads the target out of each script's `exec make` line and looks for
 # it among the targets defined below, so renaming one here fails the lint
 # rather than leaving a shortcut that only fails when somebody runs it.
-# Where bleeper is developed. The copy inside copal-prep.sh is what gets
+# Where radbeeper is developed. The copy inside copal-prep.sh is what gets
 # installed -- copal-init.sh has to work with nothing checked out -- so lint
 # compares the two whenever this path exists, and says nothing when it does not.
-BLEEPER_SRC ?= $(HOME)/code/bleeper/bleeper
+RADBEEPER_SRC ?= $(HOME)/code/radbeeper/radbeeper
 
-## sync-bleeper: copy $(BLEEPER_SRC) into the heredoc in copal-prep.sh.
+## sync-radbeeper: copy $(RADBEEPER_SRC) into the heredoc in copal-prep.sh.
 ## This is the fix when lint says the embedded copy has drifted -- edit
-## bleeper in its own checkout, run this, commit both.
-.PHONY: sync-bleeper
-sync-bleeper:
-	@test -f $(BLEEPER_SRC) || { printf '\033[31merror:\033[0m no $(BLEEPER_SRC)\n'; exit 1; }
+## radbeeper in its own checkout, run this, commit both.
+.PHONY: sync-radbeeper
+sync-radbeeper:
+	@test -f $(RADBEEPER_SRC) || { printf '\033[31merror:\033[0m no $(RADBEEPER_SRC)\n'; exit 1; }
 	@python3 -c 'import sys;\
 	p=sys.argv[1];s=open(p).read();prog=open(sys.argv[2]).read();\
-	m="    cat > /usr/local/bin/bleeper <<\x27BLEEPERPY\x27\n";\
-	i=s.index(m)+len(m);j=s.index("\nBLEEPERPY\n",i);\
-	open(p,"w").write(s[:i]+prog.rstrip("\n")+s[j:])' $(PREP) $(BLEEPER_SRC)
-	@printf '  ok      %s -> $(PREP)\n' "$(BLEEPER_SRC)"
+	m="    cat > /usr/local/bin/radbeeper <<\x27RADBEEPERPY\x27\n";\
+	i=s.index(m)+len(m);j=s.index("\nRADBEEPERPY\n",i);\
+	open(p,"w").write(s[:i]+prog.rstrip("\n")+s[j:])' $(PREP) $(RADBEEPER_SRC)
+	@printf '  ok      %s -> $(PREP)\n' "$(RADBEEPER_SRC)"
 	@$(MAKE) --no-print-directory lint
 
 lint: | $(BUILDDIR)
@@ -504,19 +504,19 @@ lint: | $(BUILDDIR)
 	@rm -f $(BUILDDIR)/.copal-init.lint.sh
 	@for _s in bin/*.sh; do sh -n "$$_s" || exit 1; done; \
 	    printf '  ok      bin/*.sh (%s shortcuts)\n' "$$(ls bin/*.sh | wc -l | xargs)"
-	@sed -n "/^    cat > \/usr\/local\/bin\/bleeper <<'BLEEPERPY'$$/,/^BLEEPERPY$$/p" $(PREP) \
-	    | sed '1d;$$d' > $(BUILDDIR)/.bleeper.lint.py
-	@test -s $(BUILDDIR)/.bleeper.lint.py \
-	    || { printf '\033[31merror:\033[0m could not extract bleeper from $(PREP)\n'; exit 1; }
-	@python3 -c "import ast,sys;ast.parse(open(sys.argv[1]).read()+chr(10))" $(BUILDDIR)/.bleeper.lint.py \
-	    && printf '  ok      bleeper (embedded, %s lines)\n' "$$(wc -l < $(BUILDDIR)/.bleeper.lint.py | xargs)"
-	@if [ -f $(BLEEPER_SRC) ]; then \
-	    cmp -s $(BUILDDIR)/.bleeper.lint.py $(BLEEPER_SRC) \
-	      && printf '  ok      bleeper matches %s\n' "$(BLEEPER_SRC)" \
-	      || { printf '\033[31merror:\033[0m the bleeper embedded in $(PREP) has drifted from $(BLEEPER_SRC)\n'; \
-	           diff -u $(BLEEPER_SRC) $(BUILDDIR)/.bleeper.lint.py | head -20; exit 1; }; \
-	  else printf '  --      bleeper source checkout absent, drift not checked\n'; fi
-	@rm -f $(BUILDDIR)/.bleeper.lint.py
+	@sed -n "/^    cat > \/usr\/local\/bin\/radbeeper <<'RADBEEPERPY'$$/,/^RADBEEPERPY$$/p" $(PREP) \
+	    | sed '1d;$$d' > $(BUILDDIR)/.radbeeper.lint.py
+	@test -s $(BUILDDIR)/.radbeeper.lint.py \
+	    || { printf '\033[31merror:\033[0m could not extract radbeeper from $(PREP)\n'; exit 1; }
+	@python3 -c "import ast,sys;ast.parse(open(sys.argv[1]).read()+chr(10))" $(BUILDDIR)/.radbeeper.lint.py \
+	    && printf '  ok      radbeeper (embedded, %s lines)\n' "$$(wc -l < $(BUILDDIR)/.radbeeper.lint.py | xargs)"
+	@if [ -f $(RADBEEPER_SRC) ]; then \
+	    cmp -s $(BUILDDIR)/.radbeeper.lint.py $(RADBEEPER_SRC) \
+	      && printf '  ok      radbeeper matches %s\n' "$(RADBEEPER_SRC)" \
+	      || { printf '\033[31merror:\033[0m the radbeeper embedded in $(PREP) has drifted from $(RADBEEPER_SRC)\n'; \
+	           diff -u $(RADBEEPER_SRC) $(BUILDDIR)/.radbeeper.lint.py | head -20; exit 1; }; \
+	  else printf '  --      radbeeper source checkout absent, drift not checked\n'; fi
+	@rm -f $(BUILDDIR)/.radbeeper.lint.py
 	@_names=$$(grep -E '^[A-Za-z0-9_%.-][A-Za-z0-9_%. -]*:' Makefile \
 	           | sed 's/:.*//' | tr ' ' '\n' | sort -u); \
 	_bad=''; \

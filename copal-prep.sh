@@ -6287,11 +6287,11 @@ for_window [title="Copal Center"] floating enable, resize set 700 520, move posi
 # $helpcmd shows the scrollable version once. Delete either line to stop it.
 exec --no-startup-id copal-splash
 exec --no-startup-id $helpcmd
-# The Geiger monitor, if stage 10 installed bleeper AND a counter is plugged
-# in. 'bleeper window' is deliberately silent when there is neither, because a
+# The Geiger monitor, if stage 10 installed radbeeper AND a counter is plugged
+# in. 'radbeeper window' is deliberately silent when there is neither, because a
 # window that opens at every login to say "nothing is plugged in" gets closed
 # at every login and then gets deleted.
-exec --no-startup-id sh -c 'command -v bleeper >/dev/null 2>&1 && exec bleeper window'
+exec --no-startup-id sh -c 'command -v radbeeper >/dev/null 2>&1 && exec radbeeper window'
 bindsym $mod+Shift+r restart
 bindsym $mod+Shift+e exec "i3-nagbar -t warning -m 'Exit i3?' -B 'Yes' 'i3-msg exit'"
 # The whole of ending the day: it asks, closes the session so applications are
@@ -6925,10 +6925,10 @@ if have endless-sky || have wxmaxima || have streamripper || have ytq || [ -x "$
 fi
 
 # ----- Instruments -----
-if have bleeper; then
+if have radbeeper; then
     out '^sep(Instruments)'
-    out "Geiger counter (monitor),$TERM_EMU -e bleeper watch"
-    out "Geiger counter (what is plugged in),$TERM_EMU -e sh -c 'bleeper probe; echo; exec sh'"
+    out "Geiger counter (monitor),$TERM_EMU -e radbeeper watch"
+    out "Geiger counter (what is plugged in),$TERM_EMU -e sh -c 'radbeeper probe; echo; exec sh'"
 fi
 
 # ----- System -----
@@ -12714,8 +12714,8 @@ YTQ
 
 # ------------------------------------------- stage 10: the Geiger counter ---
 #
-# bleeper: a GQ GMC-320 (or 300/500/600) on USB, its three running averages,
-# and its stored history. The development home is ~/code/bleeper -- this is
+# radbeeper: a GQ GMC-320 (or 300/500/600) on USB, its three running averages,
+# and its stored history. The development home is ~/code/radbeeper -- this is
 # the same file, embedded, because copal-init.sh has to work on a machine
 # with no network and nothing checked out.
 #
@@ -12735,40 +12735,40 @@ YTQ
 # tells you to check the cable. linux-lts and linux-rpi both carry the drivers
 # (verified against the v3.24 aarch64 packages on 4 September 2026), so on real
 # hardware this is a non-issue and in a VM it is a kernel swap.
-install_bleeper() {
-    say "bleeper -- a Geiger counter on USB"
+install_radbeeper() {
+    say "radbeeper -- a Geiger counter on USB"
     cat <<'MSG'
 
     A GQ GMC-320 and its relatives: what it is counting now, against three
     time constants at once, and the history it recorded while unattended.
 
-      bleeper probe        find the counter and say what it is
-      bleeper watch        the monitor: 3s / 30s / 300s averages
-      bleeper log pull     download the stored history to .bin and .csv
+      radbeeper probe        find the counter and say what it is
+      radbeeper watch        the monitor: 3s / 30s / 300s averages
+      radbeeper log pull     download the stored history to .bin and .csv
 
     The counter's own <GETCPM>> is one number with one time constant. Three
     windows answer three questions -- 3s follows a source as you move it,
-    30s reads the room, 300s is worth writing down -- so bleeper counts the
+    30s reads the room, 300s is worth writing down -- so radbeeper counts the
     blips itself from the per-second heartbeat and averages them here.
 
     With no counter on the desk, every command runs against a built-in
-    Poisson source: bleeper --source sim --sim-cpm 400 watch
+    Poisson source: radbeeper --source sim --sim-cpm 400 watch
 
 MSG
-    command -v python3 >/dev/null 2>&1 || { warn "python3 is missing -- skipping bleeper"; return 0; }
+    command -v python3 >/dev/null 2>&1 || { warn "python3 is missing -- skipping radbeeper"; return 0; }
 
-    cat > /usr/local/bin/bleeper <<'BLEEPERPY'
+    cat > /usr/local/bin/radbeeper <<'RADBEEPERPY'
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
 # Copyright (c) 2026 paulr@sdf.org
 #
-#  bleeper -- a GQ GMC Geiger-Muller counter on the desk.
+#  radbeeper -- a GQ GMC Geiger-Muller counter on the desk.
 #
 #  Three things, in the order they were wanted:
 #
-#    1. find the counter on USB and say what it is       bleeper probe
-#    2. show what it is counting, now                    bleeper watch
-#    3. pull the history it recorded while unattended    bleeper log pull
+#    1. find the counter on USB and say what it is       radbeeper probe
+#    2. show what it is counting, now                    radbeeper watch
+#    3. pull the history it recorded while unattended    radbeeper log pull
 #
 #  WHY THERE IS NO pyserial HERE. The counter is a USB serial device and every
 #  example on the internet reaches for pyserial. Alpine packages it, but this
@@ -12780,7 +12780,7 @@ MSG
 #  rolling 60-second count, which is one number with one time constant. What was
 #  asked for is three: 3 seconds to see a source come and go as you move it,
 #  30 seconds to read the room, 300 seconds to have a number worth writing down.
-#  Those cannot be derived from a single CPM reading, so bleeper counts the
+#  Those cannot be derived from a single CPM reading, so radbeeper counts the
 #  blips itself -- one counts-per-second sample every second, from the counter's
 #  own heartbeat -- and computes each window from the samples it kept.
 #
@@ -12856,7 +12856,7 @@ SPIR_CHUNK = 2048
 # and under the home directory when it cannot, because a service that refuses
 # to run unprivileged is a service nobody runs.
 def state_dir():
-    for d in ("/var/log/bleeper", os.path.expanduser("~/.local/share/bleeper")):
+    for d in ("/var/log/radbeeper", os.path.expanduser("~/.local/share/radbeeper")):
         try:
             os.makedirs(d, exist_ok=True)
             probe = os.path.join(d, ".writable")
@@ -13438,7 +13438,7 @@ def run_curses(counter, w, args):
             w.add(when, counts)
             stdscr.erase()
             h, width = stdscr.getmaxyx()
-            title = "bleeper %s -- %s" % (VERSION, counter.version)
+            title = "radbeeper %s -- %s" % (VERSION, counter.version)
             stdscr.addnstr(0, 0, title, width - 1,
                            curses.color_pair(4) if use_colour else 0)
             stdscr.addnstr(1, 0, "%s @ %s baud   serial %s"
@@ -13566,7 +13566,7 @@ def cmd_log(args):
     if args.log_action == "info":
         print("model     %s" % c.model)
         print("flash     %d KiB" % (c.flash_size // 1024))
-        print("pull it   bleeper log pull -o FILE")
+        print("pull it   radbeeper log pull -o FILE")
         c.close()
         return 0
 
@@ -13613,7 +13613,7 @@ def cmd_log(args):
 # retry in a loop, because a USB device that is not plugged in will not become
 # plugged in because a daemon asked again four seconds later, and a service
 # that respawns forever on a Pi Zero is a service that costs more than it
-# measures. The retry is the next boot -- or `rc-service bleeper start` the
+# measures. The retry is the next boot -- or `rc-service radbeeper start` the
 # moment the thing is plugged in.
 def write_status(text):
     path = os.path.join(state_dir(), "status")
@@ -13630,13 +13630,13 @@ def cmd_service(args):
         counter = open_counter(args)
     except NotFound as e:
         path = write_status("dormant: %s" % e.reason)
-        print("bleeper: dormant -- %s" % e.reason)
+        print("radbeeper: dormant -- %s" % e.reason)
         if e.detail:
             for line in e.detail.splitlines():
                 print("    %s" % line)
         print("    status: %s" % path)
         print("    it will look again at the next boot, or when you run:"
-              " rc-service bleeper start")
+              " rc-service radbeeper start")
         return 0
 
     log_path = os.path.join(state_dir(), "cpm.csv")
@@ -13650,8 +13650,8 @@ def cmd_service(args):
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, handler)
 
-    print("bleeper: monitoring %s -- %s" % (counter.path, counter.version))
-    print("bleeper: logging to %s" % log_path)
+    print("radbeeper: monitoring %s -- %s" % (counter.path, counter.version))
+    print("radbeeper: logging to %s" % log_path)
     try:
         with open(log_path, "a") as f:
             if new:
@@ -13702,7 +13702,7 @@ def cmd_window(args):
                 break
         if path:
             os.execv(path, [term, flag, sys.argv[0], "watch"])
-    print("no terminal emulator found; run: bleeper watch", file=sys.stderr)
+    print("no terminal emulator found; run: radbeeper watch", file=sys.stderr)
     return 1
 
 
@@ -13719,14 +13719,14 @@ def spans_arg(text):
 
 def build_parser():
     p = argparse.ArgumentParser(
-        prog="bleeper",
+        prog="radbeeper",
         description="A GQ GMC Geiger-Muller counter on the desk: find it, "
                     "watch it, pull its log.",
         epilog="With no counter plugged in, --source sim runs the whole "
                "program against a Poisson background so the display and the "
                "averages can be worked on without hardware.")
     p.add_argument("--version", action="version",
-                   version="bleeper %s" % VERSION)
+                   version="radbeeper %s" % VERSION)
     p.add_argument("-d", "--device", help="serial port (default: search "
                                           "/dev/ttyUSB* and /dev/ttyACM*)")
     p.add_argument("-b", "--baud", type=int,
@@ -13784,9 +13784,9 @@ def main(argv=None):
 
 if __name__ == "__main__":
     sys.exit(main())
-BLEEPERPY
-    chmod 0755 /usr/local/bin/bleeper
-    note "wrote /usr/local/bin/bleeper"
+RADBEEPERPY
+    chmod 0755 /usr/local/bin/radbeeper
+    note "wrote /usr/local/bin/radbeeper"
 
     # The serial node is root:dialout. Being in the group is the difference
     # between a working monitor and EACCES, and it takes a fresh login, which
@@ -13809,22 +13809,22 @@ BLEEPERPY
     # does NOT start, which is the whole design: a USB device that is not
     # plugged in will not become plugged in because a daemon asked again four
     # seconds later. OpenRC reports it stopped and the next boot tries again.
-    cat > /etc/init.d/bleeper <<'BLEEPERRC'
+    cat > /etc/init.d/radbeeper <<'RADBEEPERRC'
 #!/sbin/openrc-run
-# bleeper -- the Geiger counter monitor.
+# radbeeper -- the Geiger counter monitor.
 #
 # Dormant is the normal state on a machine with no counter plugged in: this
 # service is STOPPED then, on purpose, having written the reason to
-# /var/log/bleeper/status. It looks again at the next boot, and
-# `rc-service bleeper start` picks it up the moment you plug one in.
-name="bleeper"
+# /var/log/radbeeper/status. It looks again at the next boot, and
+# `rc-service radbeeper start` picks it up the moment you plug one in.
+name="radbeeper"
 description="Geiger counter monitor (dormant when no counter is present)"
-command="/usr/local/bin/bleeper"
+command="/usr/local/bin/radbeeper"
 command_args="service"
 command_background=true
-pidfile="/run/bleeper.pid"
-output_log="/var/log/bleeper/service.log"
-error_log="/var/log/bleeper/service.log"
+pidfile="/run/radbeeper.pid"
+output_log="/var/log/radbeeper/service.log"
+error_log="/var/log/radbeeper/service.log"
 
 depend() {
 	after coldplug udev-postmount modules
@@ -13832,38 +13832,38 @@ depend() {
 }
 
 start_pre() {
-	checkpath -d -m 0755 /var/log/bleeper
-	if /usr/local/bin/bleeper probe >/dev/null 2>&1; then
+	checkpath -d -m 0755 /var/log/radbeeper
+	if /usr/local/bin/radbeeper probe >/dev/null 2>&1; then
 		return 0
 	fi
 	# Record the reason where a person will find it, then decline to start.
-	/usr/local/bin/bleeper service >/dev/null 2>&1 || true
-	einfo "No Geiger counter on USB -- bleeper stays dormant."
-	einfo "Why, in detail: cat /var/log/bleeper/status"
-	einfo "It looks again at the next boot, or: rc-service bleeper start"
+	/usr/local/bin/radbeeper service >/dev/null 2>&1 || true
+	einfo "No Geiger counter on USB -- radbeeper stays dormant."
+	einfo "Why, in detail: cat /var/log/radbeeper/status"
+	einfo "It looks again at the next boot, or: rc-service radbeeper start"
 	return 1
 }
-BLEEPERRC
-    chmod 0755 /etc/init.d/bleeper
-    rc-update add bleeper default >/dev/null 2>&1 \
-        && note "bleeper added to the default runlevel" \
-        || warn "could not add bleeper to the default runlevel"
+RADBEEPERRC
+    chmod 0755 /etc/init.d/radbeeper
+    rc-update add radbeeper default >/dev/null 2>&1 \
+        && note "radbeeper added to the default runlevel" \
+        || warn "could not add radbeeper to the default runlevel"
 
     # Say what this machine can actually do, now, rather than at the next
     # reboot when nobody is reading.
-    if bleeper probe >/dev/null 2>&1; then
+    if radbeeper probe >/dev/null 2>&1; then
         note "a counter is present:"
-        bleeper probe 2>&1 | sed 's/^/      /'
-        rc-service bleeper start >/dev/null 2>&1 \
-            && note "the monitor is running -- log: /var/log/bleeper/cpm.csv" || true
+        radbeeper probe 2>&1 | sed 's/^/      /'
+        rc-service radbeeper start >/dev/null 2>&1 \
+            && note "the monitor is running -- log: /var/log/radbeeper/cpm.csv" || true
     else
-        warn "no counter is visible from here. bleeper says why:"
-        bleeper probe 2>&1 | sed 's/^/      /'
+        warn "no counter is visible from here. radbeeper says why:"
+        radbeeper probe 2>&1 | sed 's/^/      /'
         note "That is not an error in the install -- the service stays dormant"
         note "and looks again at the next boot."
     fi
-    note "the monitor:   bleeper watch          (Super+C -> Instruments)"
-    note "no hardware:   bleeper --source sim --sim-cpm 400 watch"
+    note "the monitor:   radbeeper watch          (Super+C -> Instruments)"
+    note "no hardware:   radbeeper --source sim --sim-cpm 400 watch"
 }
 
 stage_extras() {
@@ -14085,7 +14085,7 @@ MOUNTDSK
     note "mountdsk IMAGE       browse a disk image as a directory (read-only)"
     note "mountdsk -u          unmount it again"
 
-    install_bleeper
+    install_radbeeper
 
     say "Stage 10 complete."
     note "Getting files in and out of a Mini vMac disk: ~/minivmac/shared.sh"
