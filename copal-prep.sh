@@ -13837,6 +13837,18 @@ stage_apps() {
     small-and-fast options. On armv7 and aarch64 Firefox ESR, Chromium and
     Thunderbird appear in the list as well.
 
+    Mail. Thunderbird is an Alpine package -- 151.0.1, 93 MB down and 259 MB
+    installed -- so there is nothing to compile and nothing to fetch by hand.
+    'Everything' installs it, and stage 1's mail address seeds the account so
+    it opens on an inbox rather than a wizard.
+
+    There is no Thunderbird for ARMv6 or 32-bit x86, and this is one to take
+    at face value rather than route around: it is a Firefox-sized Rust and
+    C++ tree that wants several gigabytes of RAM to link, so a Zero cannot
+    build what nobody ships for it. Claws Mail is the answer on those boards
+    -- a full IMAP client, GPG and all, in a few MB -- and it is in the
+    minimal set, seeded from the same address.
+
     Games, and the honest version: there is no usable OpenGL here. X renders
     on the CPU through fbdev, so anything expecting a GPU falls back to a
     software rasteriser. SuperTux, Xonotic, OpenMW and GZDoom are listed
@@ -13875,8 +13887,9 @@ MSG
       a   Everything    -- the whole catalogue for this board, minus the
                            handful too big to install unattended: GIMP,
                            Krita, Blender, FreeCAD, KiCad, LibreOffice,
-                           Calibre, TeX Live, Chromium, Thunderbird,
-                           FileZilla and Remmina. Install those by section
+                           Calibre, TeX Live, Chromium, FileZilla and
+                           Remmina. Install those by section.
+                           Thunderbird IS included -- see below
       s   By section    -- pick one section at a time
       l   List          -- show the catalogue and what is already installed
       q   Back to the main menu
@@ -13895,8 +13908,24 @@ MSG
                     audacious-plugins mousepad pcmanfm gpicview zathura
                     zathura-pdf-mupdf galculator xarchiver 7zip unzip" ;;
         a|A) _want=$(catalogue_available \
-                     | grep -vE '\|(gimp|blender|freecad|kicad|libreoffice-writer|calibre@testing|texlive-full|krita|chromium|thunderbird|remmina|filezilla)\|' \
-                     | cut -d'|' -f3 | tr '\n' ' ') ;;
+                     | grep -vE '\|(gimp|blender|freecad|kicad|libreoffice-writer|calibre@testing|texlive-full|krita|chromium|remmina|filezilla)\|' \
+                     | cut -d'|' -f3 | tr '\n' ' ')
+             # THUNDERBIRD IS IN THIS SET, and it is the one heavyweight that
+             # is. It was withheld with the others, which put a full install
+             # on a machine with no mail client but Claws Mail -- and the
+             # exclusion was never about Thunderbird's size: Firefox ESR sits
+             # in this same set at 227 MB installed against Thunderbird's 259,
+             # and FileZilla and Remmina are withheld at a few MB each.
+             #
+             # What the size does earn is a check rather than an exclusion.
+             # 93 MB comes down and 259 MB lands; asking for 700 MB free
+             # leaves room for the rest of the catalogue behind it. A card
+             # too full is told so and gets everything else, and the Mail
+             # section installs it alone later.
+             if ! have_space_mb 700 "Thunderbird (93 MB download, 259 MB installed)"; then
+                 _want=$(echo "$_want" | tr ' ' '\n' | grep -vx thunderbird | tr '\n' ' ')
+                 note "Skipping Thunderbird. Stage 12 -> s -> Mail installs it on its own."
+             fi ;;
         s|S)
             note "Sections: $(echo "$_secs" | tr '\n' ' ')"
             ask "Which section?"
