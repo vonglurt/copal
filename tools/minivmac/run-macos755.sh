@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org
+# Copyright (c) 2026 Paul Richeson
 #
 # run-macos755.sh -- ready-made System 7.5.5 disk. Nothing to install.
 #

@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org
+# Copyright (c) 2026 Paul Richeson
 #
 # run-sys7.sh -- System 7.0.1 profile: install onto a hard disk image.
 #

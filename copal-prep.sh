@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org
+# Copyright (c) 2026 Paul Richeson
 #
 #   ██████  ██████  ██████   █████  ██
 #  ██      ██    ██ ██   ██ ██   ██ ██
@@ -2428,7 +2428,7 @@ fi
 cat > "$MNT/copal-init.sh" <<'COPALINIT'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org
+# Copyright (c) 2026 Paul Richeson
 #
 #  COPAL LINUX -- the damn tasty Raspberry Pi Zero distro.
 #
@@ -5343,7 +5343,7 @@ write_share_retry() {
     cat > /etc/local.d/copal-share.start <<'SHARESTART'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # The folder shared with the host, tried at every boot. Written by copal-init.sh.
 #
 # fstab mounts the share that was there when the card was written. This is
@@ -5535,7 +5535,7 @@ ACPIEVENT
     cat > /etc/acpi/copal-power.sh <<'ACPIHANDLER'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # Run by acpid when the power button is pressed, or when the hypervisor asks
 # the guest to shut down. Runs as root, with no terminal and no DISPLAY.
 #
@@ -6430,7 +6430,7 @@ XWRAP
     cat > /usr/local/bin/copal-startx <<STARTX
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-startx -- start the desktop, from the account that should own it.
 #
 # Written by copal-init.sh. Plain 'startx' still works; this adds the check
@@ -6603,7 +6603,7 @@ configure_desktop_autostart() {  # [session command shown in the question, e.g. 
     cat > /usr/local/bin/copal-session <<'SESSION'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-session -- the one front door for the graphical session.
 #
 # Reads one word from /etc/copal/session and starts that desktop:
@@ -6796,7 +6796,7 @@ XDGENV
     cat > /usr/local/bin/copal-desktop <<'DESKTOPSW'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-desktop -- choose which desktop owns the screen. Needs root.
 #
 #   doas copal-desktop wayland   Hyprland at the next login, and X's setuid
@@ -6887,7 +6887,7 @@ DESKTOPSW
     cat > /usr/local/bin/copal-autologin <<AUTOLOGIN
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-autologin -- what getty runs on tty1 instead of /bin/login.
 #
 # Written by copal-init.sh. -f means "this account is already authenticated",
@@ -6984,7 +6984,7 @@ write_copal_clip() {
     cat > /usr/local/bin/copal-clip <<'COPALCLIP'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 #
 # copal-clip -- one clipboard, one set of keys, every window.
 #
@@ -7965,7 +7965,7 @@ I3LOCAL
     cat > /usr/local/bin/copal-install <<'COPALINSTALL'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-install PKG...  -- install packages and keep the window open to say so.
 set -u
 [ "$#" -gt 0 ] || { echo "usage: copal-install PKG..."; exit 2; }
@@ -8041,7 +8041,7 @@ COPALINSTALL
     cat > /usr/local/bin/copal-halt <<'COPALHALT'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-halt -- end the session, and the machine, in one step.
 set -eu
 
@@ -8202,7 +8202,7 @@ COPALHALT
         cat > /etc/init.d/copal-unplug <<'UNPLUG'
 #!/sbin/openrc-run
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-unplug -- the last words on the console when a Raspberry Pi halts.
 #
 # OpenRC "starts" the shutdown runlevel's services on the way down; this one
@@ -8263,7 +8263,7 @@ UNPLUG
     cat > /usr/local/bin/copal-menu <<'COPALMENU'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-menu -- the desktop's menu: applications on the left, everything else
 # on the right, and Left/Right to cross between them.
 #
@@ -8974,7 +8974,7 @@ DESKCODE
     cat > /usr/local/bin/copal-desk <<'COPALDESK'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-desk -- put the workspaces into a known shape, in one command.
 #
 # Reads a layout file and opens what it names on the workspace it names.
@@ -9166,7 +9166,7 @@ COPALDESK
     cat > /usr/local/bin/copal-camera <<'COPALCAMERA'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-camera -- the camera application, whichever one this machine has.
 #
 #   copal-camera            open it
@@ -9259,7 +9259,7 @@ COPALCAMERA
     cat > /usr/local/bin/copal-center <<'COPALCENTER'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-center -- one window listing the whole catalogue, installed or not.
 set -eu
 CATFILE=/usr/local/share/copal/catalogue
@@ -9355,7 +9355,7 @@ COPALCENTER
     cat > /usr/local/bin/copal-config <<'COPALCONFIG'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-config -- system settings for Copal. raspi-config's job, Copal's tools.
 #
 #   copal-config            GUI if there is a display, otherwise the terminal
@@ -9957,7 +9957,7 @@ COPALCONFIG
     cat > /usr/local/bin/copal-splash <<'COPALSPLASH'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-splash -- render ~/.config/i3/keys.txt onto the root window.
 #
 # Regenerates only when the key list is newer than the image, so this costs
@@ -10049,7 +10049,7 @@ COPALSPLASH
     cat > /usr/local/bin/copal-gpu <<'COPALGPU'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-gpu -- report the display stack, layer by layer, and say what is wrong.
 #
 # Exit status is the verdict, so this is usable in a script:
@@ -10975,7 +10975,7 @@ GUIDE
     cat > /usr/local/bin/copal-guide <<'COPALGUIDE'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-guide [NAME]  -- read one of the plain-text guides, or list them all.
 set -eu
 DIR=/usr/local/share/copal/guides
@@ -11773,7 +11773,7 @@ WAYBARDESKCSS
     cat > /usr/local/bin/copal-widgets <<'COPALWIDGETS'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-widgets -- the widgets on the wallpaper: place them, hide them, seed
 # them for the shell that is not installed yet.
 #
@@ -11920,7 +11920,7 @@ COPALWIDGETS
     cat > /usr/local/bin/copal-bar <<'COPALBAR'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-bar -- start whichever shell this machine actually has.
 #
 # Linux Antiquity's bar, taskbar, widgets and launcher are quickshell QML.
@@ -12208,7 +12208,7 @@ stage_hyprland() {
     cat > /usr/local/bin/copal-launcher <<'ANTIQLAUNCH'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-launcher -- Super+Space, Super+D and Super+Z on the Antiquity desktop.
 #
 # ONE MENU, WHICH IS THE POINT OF THIS FILE NOW. It used to be a second menu:
@@ -12237,7 +12237,7 @@ ANTIQLAUNCH
     cat > /usr/local/bin/copal-shot <<'ANTIQSHOT'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-shot -- Super+Shift+S: screenshot a region you draw.
 #
 # hyprshot is what the theme binds; Alpine does not package it, and grim +
@@ -12259,7 +12259,7 @@ ANTIQSHOT
     cat > /usr/local/bin/copal-wallpaper <<'ANTIQWALL'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-wallpaper -- paint the wallpaper, choose one, or fetch more.
 #
 #   copal-wallpaper              paint the chosen one and stay running.
@@ -13593,7 +13593,7 @@ MSG
     cat > /etc/local.d/zram.start <<ZRAM
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # Compressed swap in RAM. Written by copal-init.sh.
 modprobe zram || exit 0
 [ -e /dev/zram0 ] || exit 0
@@ -13866,7 +13866,7 @@ MSG
     cat > /usr/local/bin/copal-ssh <<COPALSSH
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-ssh -- read and change the SSH policy Copal wrote into sshd_config.
 #
 #   copal-ssh status            show what is in force
@@ -14155,7 +14155,7 @@ install_copal_fonts() {
     cat > /usr/local/bin/copal-fonts <<'COPALFONTS'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-fonts -- the font sets, and the console font.
 #
 #   copal-fonts                  what is installed, group by group
@@ -14618,7 +14618,7 @@ install_copal_code() {
     cat > /usr/local/bin/copal-code <<'COPALCODE'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-code -- the checkouts in ~/code.
 #
 #   copal-code              clone anything on the list that is not here yet,
@@ -14925,7 +14925,7 @@ install_copal_build() {
     cat > /usr/local/bin/copal-build <<'COPALBUILD'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-build -- compile the checkouts in ~/code and put what they make on PATH.
 #
 #   copal-build              build every checkout whose shape it recognises,
@@ -16485,7 +16485,7 @@ dev_write_morse() {
     cat > /usr/local/bin/copal-morse <<'MORSE'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-morse -- send, drill and look up morse code.
 #
 # Written by copal-init.sh, because Alpine packages no morse program at all.
@@ -17366,7 +17366,7 @@ THANTIQ
     cat > /usr/local/bin/copal-theme <<'COPALTHEME'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-theme [NAME]  -- show, list, pick or set the system theme.
 #
 # The theme is a directory under /usr/local/share/copal/themes and the
@@ -18941,7 +18941,7 @@ MSG
     cat > /usr/local/bin/snapshot <<'SNAP'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # snapshot -- hardlinked full-system snapshots, in retention tiers.
 #
 #   snapshot take TIER        make one (tier is any name: daily, monthly, ...)
@@ -19071,7 +19071,7 @@ SNAP
     cat > /etc/periodic/daily/snapshot-daily <<'CRON'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # Daily full-system snapshot, keeping the last 7. Run by crond at 02:00 from
 # the stock Alpine root crontab (run-parts /etc/periodic/daily).
 [ -d /media/snapshots ] || exit 0   # partition not mounted; nothing to do
@@ -19081,7 +19081,7 @@ CRON
     cat > /etc/periodic/monthly/snapshot-monthly <<'CRON'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # Monthly full-system snapshot, keeping the last 24 -- two years of history.
 # Run by crond at 05:00 on the 1st (run-parts /etc/periodic/monthly).
 [ -d /media/snapshots ] || exit 0
@@ -19519,7 +19519,7 @@ MSG
     cat > /usr/local/bin/mountdsk <<'MOUNTDSK'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # mountdsk -- loop-mount a Mac disk image so you can browse it as a directory.
 #   mountdsk IMAGE [MOUNTPOINT]     mount read-only (default /mnt/dsk)
 #   mountdsk -w IMAGE [MOUNTPOINT]  mount read-write  (see the warning below)
@@ -19643,7 +19643,7 @@ minivmac_profile() {
     cat > "$_d/run-plus.sh" <<'RUNPLUS'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # run-plus.sh -- Mini vMac as a Macintosh Plus, with this directory's disks.
 #
 # Mini vMac mounts disk1.dsk, disk2.dsk ... from the CURRENT directory at
@@ -19669,7 +19669,7 @@ RUNPLUS
     cat > "$_d/shared.sh" <<'SHARED'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # shared.sh -- move files between Alpine and the emulated Mac.
 #
 # There is no host-side tool for this: hfsutils (hcopy/hmount), which used to
@@ -19787,7 +19787,7 @@ vice_profile() {
     cat > "$_d/run-c64.sh" <<'RUNC64'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # run-c64.sh -- a C64 with work.d64 in drive 8, ready to SAVE to.
 #
 # x64sc is the cycle-exact core and the accurate one. It is also the expensive
@@ -19804,7 +19804,7 @@ RUNC64
     cat > "$_d/run-sid.sh" <<'RUNSID'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # run-sid.sh -- play a SID tune. vsid is VICE's dedicated SID player: it
 # emulates the 6581/8580 sound chip and the 6510 driving it, and nothing else,
 # so it is far cheaper than running a whole C64.
@@ -20705,7 +20705,7 @@ MSG
     cat > /usr/local/bin/copal-logflush <<'LOGFLUSH'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-logflush -- copy the RAM logs down to the card, and back up at boot.
 #
 #   copal-logflush save     tmpfs -> /var/log.persist   (hourly, and at shutdown)
@@ -20874,7 +20874,7 @@ MSG
     cat > /usr/local/bin/slice-ender3 <<'SLICER'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # slice-ender3 -- STL in, G-code out, with Ender 3 geometry already filled in.
 #
 #   slice-ender3 model.stl [out.gcode] [-s key=value ...]
@@ -21001,7 +21001,7 @@ MSG
     cat > /usr/local/bin/pcbzip <<'PCBZIP'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # pcbzip -- package gerbers and drill files for a fab house.
 #
 #   pcbzip [DIR] [OUT.zip]
@@ -21181,7 +21181,7 @@ iio_write_iiod_service() {
     cat > /etc/init.d/iiod <<'IIOD'
 #!/sbin/openrc-run
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # iiod -- serve this board's IIO devices to libiio clients on the network.
 #
 # Options go in /etc/conf.d/iiod as IIOD_OPTS, e.g. IIOD_OPTS="-p 30431".
@@ -21244,7 +21244,7 @@ iio_usb_access() {
     cat > /etc/local.d/usb-group.start <<'USBGRP'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # The mdev coldplug scan at boot recreates USB device nodes root:root; the
 # rule in /etc/mdev.conf only sees hotplug events. Hand whatever was already
 # plugged in at power-on to the usb group, so libiio can open it as a user.
@@ -21292,7 +21292,7 @@ iio_write_scan_helper() {
     cat > /usr/local/bin/iio-scan <<'IIOSCAN'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # iio-scan -- what libiio can see from here, and why it might not.
 #
 #   iio-scan              scan USB, the network and this board's own devices
@@ -21745,7 +21745,7 @@ piano_write_helper() {
     cat > /usr/local/bin/piano-midi <<'PIANOMIDI'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # piano-midi -- connect a USB MIDI keyboard to FluidSynth, and play MIDI files.
 #
 #   piano-midi            start FluidSynth and connect every MIDI keyboard
@@ -23224,7 +23224,7 @@ install_frontdoor() {
     cat > /usr/local/bin/copal.new <<'COPALCMD'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal -- the front door on the machine itself.
 #
 # Rewritten by copal-init.sh every time it runs, so editing this file is
@@ -23527,7 +23527,7 @@ install_log_tools() {
     cat > /usr/local/bin/copal-debug <<'COPALDEBUG'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-debug -- turn the log collection on, off, or look at it.
 set -eu
 
@@ -23866,7 +23866,7 @@ COPALDEBUG
     cat > /usr/local/bin/copal-times <<'COPALTIMES'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-times -- how long each package took, and which ones are worth moving.
 set -eu
 
@@ -24235,7 +24235,7 @@ TIMESBOOT
     cat > /usr/local/bin/copal-logs <<'COPALLOGS'
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 # copal-logs -- see the logs, and throw the old ones away.
 set -eu
 

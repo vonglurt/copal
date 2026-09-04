@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 #
 # capture-screens.sh -- real screenshots of the graphical console, taken by
 # the hypervisor rather than by a person with a camera or a screen recorder.
