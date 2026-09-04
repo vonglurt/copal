@@ -8907,7 +8907,9 @@ retune_tmp() {
 # There is deliberately no loose ~/code/gonex: yodacon's Makefile builds the
 # submodule and nothing else, since a second checkout of one repository is
 # a tree nobody builds (yodacon b59ae3d). All three are public under
-# github.com/yodacon.
+# github.com/yodacon. Beside it, ~/code/iusethisorg: iusethis.org, a static
+# site (github.com/iusethisorg/iusethisorg) whose Makefile renders articles
+# with a stdlib Python script; `make check` is the strict build its CI runs.
 #
 # The work is done by /usr/local/bin/copal-code, written here and run once as
 # the user; it is also the thing to run again after a git pull. Every quirk it
@@ -8944,7 +8946,7 @@ retune_tmp() {
 # plus modules), and the first run took under a minute on the VM, most of it
 # the download.
 dev_code_checkouts() {
-    say "Yodacon, Gonex and Konex: checked out into ~/code and built"
+    say "Yodacon, Gonex, Konex and iusethis.org: checked out into ~/code and built"
     cat <<'MSG'
 
     Paul's game and its tooling, cloned into ~/code as the user and built
@@ -8957,6 +8959,8 @@ dev_code_checkouts() {
                                    gonex-bin
       ~/code/yodacon/vendor/konex  the 2005 C++ engine Gonex is a port of,
                                    CMake against X11 and GLX
+      ~/code/iusethisorg           iusethis.org, a static site; python3
+                                   renders it, and 'make check' proves it
 
     About 600 MB in all, most of it the Go 1.27 toolchain and modules under
     ~/go. A checkout that is already there is left untouched and rebuilt.
@@ -8983,8 +8987,8 @@ MSG
 
     cat > /usr/local/bin/copal-code <<'COPALCODE'
 #!/bin/sh
-# copal-code -- Yodacon, with Gonex and Konex inside it, checked out into
-# ~/code and built.
+# copal-code -- Yodacon, with Gonex and Konex inside it, and iusethis.org,
+# checked out into ~/code and built.
 #
 # Stage 7 of copal-init.sh writes this and runs it once as the user. Run it
 # again after a git pull to rebuild. It never pulls, resets or moves a
@@ -8994,8 +8998,8 @@ MSG
 #   copal-code status    what is checked out, and what is built
 #
 # What comes out: ~/code/yodacon/gonex/gonex-bin (the game), Yodacon's own
-# suites run, and ~/code/yodacon/vendor/konex/build-release/bin/konex (the
-# 2005 engine).
+# suites run, ~/code/yodacon/vendor/konex/build-release/bin/konex (the 2005
+# engine), and ~/code/iusethisorg rendered by its own strict build.
 #
 # GOTOOLCHAIN=auto: Alpine pins it to local, and gonex wants a newer Go than
 # the package -- go fetches the one go.mod names into ~/go, once.
@@ -9006,6 +9010,7 @@ CODE="$HOME/code"
 YODACON="$CODE/yodacon"
 GONEX="$YODACON/gonex"
 KONEX="$YODACON/vendor/konex"
+IUSETHIS="$CODE/iusethisorg"
 CACHE="$HOME/.cache/copal-code"
 LOG="$CACHE/build.log"
 export GOTOOLCHAIN=auto TMPDIR="$CACHE/tmp"
@@ -9028,6 +9033,19 @@ status() {
     done
     built "gonex-bin " "$GONEX/gonex-bin"
     built "konex     " "$KONEX/build-release/bin/konex"
+    if [ -d "$IUSETHIS/.git" ]; then note "iusethisorg $(rev "$IUSETHIS")"
+    else note "iusethisorg not checked out"; fi
+}
+
+# A checkout that is already there is left exactly as it is: no pull, no
+# reset. That tree is the developer's.
+checkout() {  # <dir> <url>
+    if [ -d "$1/.git" ]; then
+        note "$1 is already checked out ($(rev "$1")) -- left as it is"
+    else
+        say "Cloning $(basename "$1")"
+        git clone "$2" "$1" >>"$LOG" 2>&1 || fail "the clone of $(basename "$1")"
+    fi
 }
 
 # A submodule that is already there is not moved to the recorded commit
@@ -9058,12 +9076,7 @@ esac
 
 mkdir -p "$CODE" "$CACHE/tmp" || exit 1
 : > "$LOG"
-if [ -d "$YODACON/.git" ]; then
-    note "$YODACON is already checked out ($(rev "$YODACON")) -- left as it is"
-else
-    say "Cloning yodacon"
-    git clone https://github.com/yodacon/yodacon.git "$YODACON" >>"$LOG" 2>&1 || fail "the clone"
-fi
+checkout "$YODACON" https://github.com/yodacon/yodacon.git
 submodule gonex
 submodule vendor/konex
 
@@ -9081,6 +9094,11 @@ note "make $_targets: ok -- $GONEX/gonex-bin"
 say "Konex: the 2005 engine"
 (cd "$KONEX" && make release) >>"$LOG" 2>&1 || fail "the Konex build"
 note "built: $KONEX/build-release/bin/konex"
+
+say "iusethis.org: the site, rendered by its strict build"
+checkout "$IUSETHIS" https://github.com/iusethisorg/iusethisorg.git
+(cd "$IUSETHIS" && make check) >>"$LOG" 2>&1 || fail "make check in $IUSETHIS"
+note "make check: ok -- open $IUSETHIS/index.html, or 'make serve' there"
 rm -rf "$CACHE/tmp"
 
 say "Done"
@@ -9094,7 +9112,7 @@ COPALCODE
 
     say "Running copal-code as $PI_USER  (the Go toolchain download is the slow part)"
     if su - "$PI_USER" -c copal-code; then
-        note "Yodacon, with Gonex and Konex inside it, is in $_h/code/yodacon"
+        note "Yodacon, with Gonex and Konex inside it, is in $_h/code/yodacon; iusethis.org beside it"
     else
         warn "copal-code did not finish -- as $PI_USER, run 'copal-code' to retry;"
         warn "the log is $_h/.cache/copal-code/build.log"

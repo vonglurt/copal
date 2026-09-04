@@ -1363,7 +1363,11 @@ Makefile round-trips the 1997 plugin, runs the suites and builds the game, with
 two submodules — [`gonex`](https://github.com/yodacon/gonex), the game (Go,
 Ebitengine), and `vendor/konex`, the 2005 C++ engine Gonex is a port of, built
 with CMake against X11, GLX and GLU. There is deliberately no loose
-`~/code/gonex`: yodacon's Makefile builds the submodule and nothing else. The
+`~/code/gonex`: yodacon's Makefile builds the submodule and nothing else.
+Beside it goes [`iusethisorg`](https://github.com/iusethisorg/iusethisorg), the
+iusethis.org site, a static site whose Makefile renders the articles with a
+stdlib Python script; `make check`, the strict build its CI runs, is what the
+stage runs. The
 work is done by `/usr/local/bin/copal-code`, which the stage writes and then
 runs once; run it again after a `git pull` to rebuild, and `copal-code status`
 says what is checked out and built. A checkout that already exists is never
