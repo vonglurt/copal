@@ -13855,7 +13855,7 @@ RADBEEPERRC
         note "a counter is present:"
         radbeeper probe 2>&1 | sed 's/^/      /'
         rc-service radbeeper start >/dev/null 2>&1 \
-            && note "the monitor is running -- log: /var/log/radbeeper/cpm.csv" || true
+            && note "the monitor is running -- log: /var/log/radbeeper/cpm.tsv" || true
     else
         warn "no counter is visible from here. radbeeper says why:"
         radbeeper probe 2>&1 | sed 's/^/      /'
