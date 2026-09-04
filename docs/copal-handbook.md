@@ -1360,7 +1360,9 @@ Stage 7 ends by offering two of Paul's repositories, cloned into `~/code` **as
 `user`, not root**, and built there: [`gonex`](https://github.com/yodacon/gonex),
 the game (Go, Ebitengine), and [`yodacon`](https://github.com/yodacon/yodacon),
 the organisation repo whose Makefile round-trips the 1997 plugin, runs the
-suites and builds the game. The work is done by `/usr/local/bin/copal-code`,
+suites and builds the game — and its `vendor/konex` submodule, the 2005 C++
+engine Gonex is a port of, built with CMake against X11, GLX and GLU. The work
+is done by `/usr/local/bin/copal-code`,
 which the stage writes and then runs once; run it again after a `git pull`
 to rebuild, and `copal-code status` says what is checked out and built. A
 checkout that already exists is never pulled or reset — only rebuilt.
@@ -1377,15 +1379,20 @@ What it works around, all measured on the aarch64 VM on 4 September 2026:
 - Yodacon's `make verify` unpacks the 1997 `.sit` releases with `unar`, which
   Alpine packages on no port. The suites and the game build still run —
   `make test gonex` — and verify is skipped with a line saying so.
+- Konex's Linux path included and linked OpenAL and alut, for a sound system
+  that is not compiled; Alpine has no alut. konex commit 7c6d7fa puts both
+  behind a `KONEX_SOUND` CMake option, off by default, so the Autotools path
+  and the macOS build are unchanged. `make release` in `vendor/konex` builds
+  it; it opens, draws its menu and runs at about 70 frames/sec on llvmpipe.
 - On musl, Ebitengine's render thread gets a 128 KB stack and llvmpipe's
   shader compiler overflows it: `SIGSEGV` inside libgallium on the first
   frame. `gonex` renders on the main thread when it sees `/lib/ld-musl-*.so.1`
   (`GONEX_SINGLE_THREAD=1` forces it, `=0` turns it off), so a checkout from
   before that commit will crash here.
 
-The game appears under **Built here** in the Super+C menu once `gonex-bin`
-exists; it starts in its own checkout, where it writes `config.xml` and
-`save.json`.
+Both games appear under **Built here** in the Super+C menu once their binaries
+exist; each starts in its own directory, where Gonex writes `config.xml` and
+`save.json` and Konex reads its staged `config.xml` and `data/`.
 
 **Debugging is `Termdebug`,** which ships inside vim and neovim: a real gdb
 session with breakpoints, stepping and variable inspection, with no plugin
