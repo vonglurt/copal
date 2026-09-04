@@ -10437,8 +10437,8 @@ GUIDE
    Left     the menu button, workspaces 1-5, the current submap, the
             window list
    Centre   the clock
-   Right    weather, temperature, cpu, memory, disk, network, volume,
-            battery, the system tray
+   Right    temperature, cpu, memory, disk, network, volume, battery,
+            the system tray  (and weather, which is off -- see below)
 
  MOVING THINGS
 
@@ -10447,7 +10447,7 @@ GUIDE
 
        "modules-left":   ["custom/menu", "hyprland/workspaces", ...]
        "modules-center": ["clock"],
-       "modules-right":  ["custom/weather", "temperature", "cpu", ...]
+       "modules-right":  ["temperature", "cpu", "memory", ...]
 
    Delete a name from all three and that widget is gone. The block that
    configures it lower down can stay; an unlisted module is not drawn.
@@ -10459,9 +10459,15 @@ GUIDE
        "format": "{:%H:%M}"                14:40
        "format": "{:%I:%M %p}"             02:40 PM
 
-   THE WEATHER. It asks wttr.in, which needs no key and no account, and
-   which geolocates by IP -- so with no city in the URL it is right by
-   default on a machine that has not been told where it is. To pin it:
+   THE WEATHER IS OFF. Its block is in the config, but its name is in no
+   list, so it is not drawn and it asks nobody anything. It was on, and
+   it was turned off because of what it does: it asks wttr.in, which
+   geolocates the caller's IP -- so every half hour the machine told a
+   third party where it was, to learn the weather. On a VM that is chatter
+   for nothing. Nothing else in the bar contacts anything.
+
+   To turn it on, add "custom/weather" to modules-right. To pin it to a
+   place instead of your IP, put the city in the URL:
 
        "exec": "curl -sS --max-time 8 'https://wttr.in/Lisbon?format=%c%t'"
 
@@ -10471,8 +10477,7 @@ GUIDE
    THE INTERVAL IS 1800 SECONDS ON PURPOSE. Every tick is a request from
    this machine to somebody else's server. A weather widget on a
    one-minute interval phones out 1440 times a day for a number that
-   changes hourly. If you do not want it phoning out at all, delete
-   "custom/weather" from modules-right -- nothing else contacts anything.
+   changes hourly.
 
    THE TEMPERATURE. This is the one that shows nothing on some machines,
    and it is not broken when it does. waybar reads a sensor file, and
@@ -10535,8 +10540,8 @@ GUIDE
 
  THE WIDGETS ON THE WALLPAPER
 
-   The big clock, the date and the weather sitting ON the desktop -- under
-   your windows, not on the bar -- are the theme's "desktop widgets", and
+   The big clock and the date sitting ON the desktop -- under your
+   windows, not on the bar -- are the theme's "desktop widgets", and
    this is the part people go looking for after seeing the screenshots.
 
        copal-widgets --off        hide them
@@ -10549,8 +10554,10 @@ GUIDE
    It is a SECOND waybar, on the bottom layer -- below every window, above
    the wallpaper, and click-through, so the desktop underneath still
    behaves like the desktop. One file holds both rows because waybar reads
-   a JSON array as several bars: the clock is the first, the date and the
-   weather the second. "margin-top" is what moves them down the screen.
+   a JSON array as several bars: the clock is the first, the date the
+   second. "margin-top" is what moves them down the screen. A weather
+   line sat beside the date and is off for the reason given above; add
+   "custom/weather" to that row's modules-center to have it back.
    copal-bar starts it beside the ordinary bar at login.
 
    Same rules as the bar for the rest: a widget is any command that prints
@@ -10585,7 +10592,7 @@ GUIDE
    OpenWeatherMap, which needs an account, and an unkeyed weather widget is
    an empty square. Put the key and your city in the theme's settings and
    run --seed again. The wallpaper weather above asks wttr.in instead,
-   which needs no key -- which is why it is the one you have today.
+   which needs no key but does geolocate by IP -- which is why it is off.
 
    ONLY TWO OF THE THEME'S WIDGETS ARE REAL, whatever the file names
    suggest: Clock and Weather. CPUTemperatureWidget.qml exists but is an
@@ -11138,7 +11145,7 @@ hypr_write_waybar() {
   // learn and seeing them switch is how that is learned.
   "modules-left":   ["custom/menu", "hyprland/workspaces", "hyprland/submap", "wlr/taskbar"],
   "modules-center": ["clock"],
-  "modules-right":  ["custom/weather", "temperature", "cpu", "memory", "disk", "network", "wireplumber", "battery", "tray"],
+  "modules-right":  ["temperature", "cpu", "memory", "disk", "network", "wireplumber", "battery", "tray"],
 
   // The Omarchy menu, in a corner. Left-click opens it; right-click goes
   // straight to the power entries, because "shut down" is the one thing
@@ -11190,8 +11197,9 @@ hypr_write_waybar() {
 
   // THE THEME'S OTHER TWO WIDGETS. quickshell's bar carries a clock, a CPU
   // temperature and a weather readout; the clock was here from the start and
-  // these two were the gap somebody noticed. See 'copal-guide widgets' for
-  // how to change or remove them.
+  // these two were the gap somebody noticed. The temperature is on; the
+  // weather is configured below and OFF -- see its note. 'copal-guide
+  // widgets' covers changing or removing them.
   //
   // TEMPERATURE HAS NO PORTABLE SOURCE, and this is the one module that shows
   // nothing on some machines. waybar reads a hwmon file, and which file that
@@ -11218,10 +11226,15 @@ hypr_write_waybar() {
 
   // WEATHER, and it is a custom module because waybar has none. wttr.in
   // answers a one-line format over plain HTTP and needs no key and no
-  // account. Deliberately no location: wttr.in geolocates the caller's IP,
+  // account. No location in the URL: wttr.in geolocates the caller's IP,
   // which is the only way to be right by default on a machine that has not
-  // been told where it is. Put a city in the URL to override -- see the
-  // guide.
+  // been told where it is.
+  //
+  // OFF: THE NAME IS IN NO MODULE LIST, so the block is kept and nothing
+  // runs. That geolocation is the reason. Every fetch tells a third party
+  // where this machine is, in exchange for the weather, and on a VM that is
+  // chatter for nothing. Add "custom/weather" to modules-right to have it
+  // back, with a city in the URL if the IP should stay out of it.
   //
   // THIRTY MINUTES, and that is not a stylistic choice. Every interval is a
   // request from this machine to a third party, so a one-minute weather
@@ -11527,7 +11540,7 @@ WOFICSS
     "height": 44,
     "margin-top": 218,
     "spacing": 22,
-    "modules-center": ["custom/date", "custom/weather"],
+    "modules-center": ["custom/date"],
 
     // Hourly: the date changes once a day, and this way it is right by 00:01
     // without a timer that fires while you sleep.
@@ -11538,10 +11551,11 @@ WOFICSS
       "tooltip": false
     },
 
-    // The same wttr.in call the bar makes, on the same 30-minute interval and
-    // for the same reason -- see the note above "custom/weather" in
-    // ~/.config/waybar/config. %C spells the condition out, which there is
-    // room for here and not on the bar.
+    // The same wttr.in call the bar makes, and OFF for the same reason: it
+    // is in no module list. See the note above "custom/weather" in
+    // ~/.config/waybar/config. Add it beside "custom/date" to have it back.
+    // %C spells the condition out, which there is room for here and not on
+    // the bar.
     "custom/weather": {
       "format": "{}",
       "interval": 1800,

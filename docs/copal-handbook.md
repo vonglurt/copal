@@ -1612,19 +1612,21 @@ itself with jgmenu or dmenu, both X11 programs, so on the Antiquity desktop the
 menu had nothing to draw with. It uses wofi there — the same launcher as
 `Super`+`D`, styled to the theme in `~/.config/wofi/style.css`.
 
-Two widgets were missing against the theme's own set, and both are now on the
-right of the bar: **temperature** and **weather**. Temperature shows nothing on a
-machine with no sensor — a VM usually has none — and removes itself cleanly when
-that happens. Weather asks wttr.in every 30 minutes, which needs no key and
-geolocates by IP; delete `custom/weather` from `modules-right` if you would
-rather the machine did not phone out at all.
+Two widgets were missing against the theme's own set: **temperature**, now on
+the right of the bar, and **weather**, configured but off. Temperature shows
+nothing on a machine with no sensor — a VM usually has none — and removes itself
+cleanly when that happens. Weather asks wttr.in, which needs no key and
+geolocates by IP, so every fetch told a third party where the machine was; its
+block stays in the config and its name is in no module list. Add
+`custom/weather` to `modules-right` to have it back, with a city in the URL if
+the IP should stay out of it.
 
 To change any of it: `copal-guide widgets`, which covers moving things between
 the three lists, the clock's format, pinning the weather to a city, naming a
 sensor path, and adding a widget of your own.
 
-**And the widgets on the wallpaper.** The big clock, the date and the weather
-that sit on the desktop under your windows — the thing the theme's screenshots
+**And the widgets on the wallpaper.** The big clock and the date that sit on
+the desktop under your windows — the thing the theme's screenshots
 show and the part people go hunting for — are drawn by a second waybar on the
 bottom layer, click-through, from `~/.config/waybar/desktop.json`.
 `copal-widgets --off` hides them, `--on` brings them back, `--status` says what
