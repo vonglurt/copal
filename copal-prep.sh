@@ -6287,11 +6287,14 @@ for_window [title="Copal Center"] floating enable, resize set 700 520, move posi
 # $helpcmd shows the scrollable version once. Delete either line to stop it.
 exec --no-startup-id copal-splash
 exec --no-startup-id $helpcmd
-# The Geiger monitor, if stage 10 installed radbeeper AND a counter is plugged
-# in. 'radbeeper window' is deliberately silent when there is neither, because a
-# window that opens at every login to say "nothing is plugged in" gets closed
-# at every login and then gets deleted.
-exec --no-startup-id sh -c 'command -v radbeeper >/dev/null 2>&1 && exec radbeeper window'
+# The Geiger monitor, if stage 10 installed radbeeper. 'radbeeper hotplug' sits
+# in the session and opens the monitor when a counter appears -- at login if one
+# is already plugged in, and on plug-in at any point after. It is deliberately
+# silent when there is no counter, because a window that opens at every login to
+# say "nothing is plugged in" gets closed at every login and then gets deleted.
+# It watches for a device NODE and never opens the port itself, so it does not
+# fight the monitor for the device once one is running.
+exec --no-startup-id sh -c 'command -v radbeeper >/dev/null 2>&1 && exec radbeeper hotplug'
 bindsym $mod+Shift+r restart
 bindsym $mod+Shift+e exec "i3-nagbar -t warning -m 'Exit i3?' -B 'Yes' 'i3-msg exit'"
 # The whole of ending the day: it asks, closes the session so applications are
@@ -12852,6 +12855,29 @@ FLASH_SIZES = {"GMC-320": 0x100000, "GMC-300": 0x10000, "GMC-500": 0x100000,
                "GMC-600": 0x100000}
 SPIR_CHUNK = 2048
 
+# The service log: tab-separated, one row per LOG_EVERY seconds.
+LOG_NAME = "cpm.tsv"
+DEFAULT_LOG_EVERY = 30.0
+
+# The session watcher, `radbeeper hotplug`. Four seconds is a listdir of /dev
+# fifteen times a minute, which costs nothing; --settle is the grace the node
+# gets between appearing and being opened, and --tries how many times a plug
+# event is worth retrying before it is written off.
+DEFAULT_POLL = 4.0
+DEFAULT_SETTLE = 2.0
+DEFAULT_TRIES = 3
+
+# How long the service waits between attempts on a port that is present but
+# locked. See cmd_service for why waiting here is not the retry loop the rest
+# of this program refuses to have.
+SERVICE_WAIT = 10.0
+
+# Terminal emulators the desktop autostart will open the monitor in, best
+# first. foot is the Wayland session's; the rest are what an X11 one is likely
+# to have. The list is tried in order and the first that exists wins.
+TERMINALS = (("foot", "-e"), ("alacritty", "-e"), ("urxvt", "-e"),
+             ("xterm", "-e"), ("st", "-e"))
+
 # Where the boot service leaves things. Under /var/log when it can write there
 # and under the home directory when it cannot, because a service that refuses
 # to run unprivileged is a service nobody runs.
@@ -12870,6 +12896,10 @@ def state_dir():
 
 
 # ------------------------------------------------------------------ serial ---
+class Busy(Exception):
+    """The port is open in another process, and is being left alone."""
+
+
 class Serial:
     """A raw serial port, in termios rather than in pyserial.
 
@@ -12882,6 +12912,19 @@ class Serial:
         self.path = path
         self.timeout = timeout
         self.fd = os.open(path, os.O_RDWR | os.O_NOCTTY | os.O_NONBLOCK)
+        # WHY A SERIAL PORT NEEDS A LOCK. Two processes reading one tty do not
+        # each get the stream -- they get a share of it each, and neither is
+        # told. The logger service and a monitor window both running would
+        # quietly halve both their counts, which is a wrong reading that looks
+        # entirely plausible: the worst kind there is. flock is advisory, so it
+        # costs nothing against programs that do not take it, and every
+        # radbeeper takes it -- and radbeepers are exactly the programs that
+        # would otherwise collide here.
+        try:
+            fcntl.flock(self.fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except OSError:
+            os.close(self.fd)
+            raise Busy(path)
         try:
             self._configure(baud)
         except Exception:
@@ -13216,10 +13259,13 @@ def identify(path, baud=None, timeout=1.0):
 class NotFound(Exception):
     """No counter, with a reason a person can act on."""
 
-    def __init__(self, reason, detail=""):
+    def __init__(self, reason, detail="", busy=False):
         super().__init__(reason)
         self.reason = reason
         self.detail = detail
+        # A locked port is not an absent one, and the two want opposite
+        # responses: an absent counter means stop, a busy one means wait.
+        self.busy = busy
 
 
 def find_counter(device=None, baud=None, source="auto", sim_cpm=25.0, seed=None):
@@ -13237,9 +13283,13 @@ def find_counter(device=None, baud=None, source="auto", sim_cpm=25.0, seed=None)
         raise NotFound("no serial device is present",
                        "Nothing matching /dev/ttyUSB* or /dev/ttyACM*.")
     denied = []
+    busy = []
     for p in ports:
         try:
             found = identify(p, baud)
+        except Busy:
+            busy.append(p)
+            continue
         except PermissionError:
             denied.append(p)
             continue
@@ -13248,6 +13298,14 @@ def find_counter(device=None, baud=None, source="auto", sim_cpm=25.0, seed=None)
             continue
         if found is not None:
             return found
+    if busy:
+        raise NotFound(
+            "the port is already open by another radbeeper",
+            "%s is locked by another process. Nothing is wrong with the\n"
+            "counter -- something else is reading it. Usually that is the\n"
+            "logger service, which takes the port at boot and whenever one is\n"
+            "plugged in:  doas rc-service radbeeper stop  hands it over."
+            % ", ".join(busy), busy=True)
     if denied:
         raise NotFound("the serial device cannot be opened by this account",
                        "%s\nAdd yourself to the dialout group: "
@@ -13311,6 +13369,53 @@ class Windows:
         return cpm / cpm_per_usvh
 
 
+class Interval:
+    """What happened between two log lines, in constant space.
+
+    The peaks are the reason this class exists. A row written every 30 seconds
+    carrying only the averages as they stood at the moment of writing would
+    miss a source that came and went in between -- which is the single event
+    most worth having in a log afterwards. Keeping a running maximum per window
+    costs one comparison a second and no memory that grows, so the interesting
+    moment survives without storing the seconds it happened in.
+
+    Nothing here accumulates: counts and seconds are integers, the peaks are
+    one float per window, and reset() puts it back to empty. A month of logging
+    uses exactly as much memory as the first minute.
+    """
+
+    __slots__ = ("spans", "counts", "seconds", "peaks")
+
+    def __init__(self, spans):
+        self.spans = tuple(spans)
+        self.reset()
+
+    def reset(self):
+        self.counts = 0
+        self.seconds = 0
+        self.peaks = [None] * len(self.spans)
+
+    def add(self, counts, averages):
+        """One second of data: the raw count, and each window as it stands."""
+        self.counts += counts
+        self.seconds += 1
+        for i, cpm in enumerate(averages):
+            if cpm is not None and (self.peaks[i] is None or cpm > self.peaks[i]):
+                self.peaks[i] = cpm
+
+    def cps(self):
+        """Counts per ONE second, whatever the interval's length.
+
+        The interval is 30 seconds by default and the log must not imply that
+        the number in this column is 30 seconds' worth: CPS means per second
+        here and everywhere else, so the divisor is the elapsed seconds and
+        never the row spacing.
+        """
+        if not self.seconds:
+            return 0.0
+        return self.counts / float(self.seconds)
+
+
 # ---------------------------------------------------------------- commands ---
 def open_counter(args):
     return find_counter(args.device, args.baud, args.source, args.sim_cpm,
@@ -13321,7 +13426,7 @@ def cmd_probe(args):
     try:
         c = open_counter(args)
     except NotFound as e:
-        print("no counter: %s" % e.reason)
+        print("%s: %s" % ("port busy" if e.busy else "no counter", e.reason))
         if e.detail:
             for line in e.detail.splitlines():
                 print("    %s" % line)
@@ -13626,23 +13731,6 @@ def write_status(text):
 
 
 def cmd_service(args):
-    try:
-        counter = open_counter(args)
-    except NotFound as e:
-        path = write_status("dormant: %s" % e.reason)
-        print("radbeeper: dormant -- %s" % e.reason)
-        if e.detail:
-            for line in e.detail.splitlines():
-                print("    %s" % line)
-        print("    status: %s" % path)
-        print("    it will look again at the next boot, or when you run:"
-              " rc-service radbeeper start")
-        return 0
-
-    log_path = os.path.join(state_dir(), "cpm.csv")
-    write_status("monitoring %s (%s)" % (counter.path, counter.version))
-    new = not os.path.exists(log_path)
-    w = Windows(args.spans)
     stop = {"now": False}
 
     def handler(_sig, _frame):
@@ -13650,33 +13738,131 @@ def cmd_service(args):
     for sig in (signal.SIGTERM, signal.SIGINT):
         signal.signal(sig, handler)
 
+    started = time.time()
+    waiting = False
+    counter = None
+    while counter is None:
+        try:
+            counter = open_counter(args)
+        except NotFound as e:
+            if not e.busy:
+                path = write_status("dormant: %s" % e.reason)
+                print("radbeeper: dormant -- %s" % e.reason)
+                if e.detail:
+                    for line in e.detail.splitlines():
+                        print("    %s" % line)
+                print("    status: %s" % path)
+                print("    it will look again at the next boot, or when you"
+                      " run: rc-service radbeeper start")
+                return 0
+            # WAITING IS NOT RETRYING, and what separates them is the device.
+            # An absent counter does not become present because a daemon asked
+            # again, which is why the case above stops. A port that is present
+            # but LOCKED is the opposite: the counter is right there, somebody
+            # is watching it in a monitor, and they will close it. One open()
+            # every ten seconds to pick the log back up the moment they do is
+            # cheap, and it is what lets the two halves of plug-in -- this
+            # service and the session's window -- share a machine without
+            # either having to know the other exists.
+            if not waiting:
+                waiting = True
+                write_status("waiting: %s" % e.reason)
+                print("radbeeper: waiting -- %s" % e.reason)
+                print("    Logging starts by itself when the port is free.")
+            slept = 0.0
+            while slept < SERVICE_WAIT:
+                if stop["now"]:
+                    return 0
+                if args.duration is not None \
+                        and time.time() - started >= args.duration:
+                    return 0
+                time.sleep(0.5)
+                slept += 0.5
+
+    log_path = os.path.join(state_dir(), LOG_NAME)
+    write_status("monitoring %s (%s)" % (counter.path, counter.version))
+    new = not os.path.exists(log_path)
+    w = Windows(args.spans)
+    iv = Interval(args.spans)
+    every = args.log_every
+
+    def row(averages):
+        """One tab-separated line: when, how fast, and the worst it got.
+
+        The timestamp is first and is written big-endian, so it sorts
+        lexicographically: `sort cpm.tsv` is chronological with no flags, no
+        field numbers and no awk, which is the whole reason for that shape.
+        """
+        cells = [time.strftime("%Y-%m-%dT%H:%M:%S"),
+                 "%.3f" % iv.cps(), "%d" % iv.counts, "%d" % iv.seconds]
+        cells += ["" if a is None else "%.1f" % a for a in averages]
+        cells += ["" if pk is None else "%.1f" % pk for pk in iv.peaks]
+        return "\t".join(cells) + "\n"
+
     print("radbeeper: monitoring %s -- %s" % (counter.path, counter.version))
-    print("radbeeper: logging to %s" % log_path)
+    print("radbeeper: logging to %s, a row every %gs" % (log_path, every))
     try:
         with open(log_path, "a") as f:
             if new:
-                f.write("iso_time,cps,cpm_%s\n"
-                        % ",cpm_".join(str(s) for s in w.spans))
-            for when, counts in counter.samples():
-                w.add(when, counts)
-                cols = ["" if w.average(s) is None else "%.1f" % w.average(s)
-                        for s in w.spans]
-                f.write("%s,%d,%s\n" % (time.strftime("%Y-%m-%dT%H:%M:%S"),
-                                        counts, ",".join(cols)))
+                head = ["time", "cps", "counts", "seconds"]
+                head += ["cpm_%g" % s for s in w.spans]
+                head += ["peak_%g" % s for s in w.spans]
+                # The '#' keeps the header sorting above the rows rather than
+                # into the middle of them, so `sort` stays usable on the file
+                # as it is, and `grep -v '^#'` drops it when it is in the way.
+                f.write("#" + "\t".join(head) + "\n")
                 f.flush()
-                if stop["now"]:
-                    break
-                # --duration is what makes this path testable at all: without
-                # it the only way to exercise the logger is to start a daemon
-                # and kill it, which is not something a test suite should do.
-                if args.duration and w.elapsed() >= args.duration:
-                    break
+            due = None
+            try:
+                for when, counts in counter.samples():
+                    w.add(when, counts)
+                    averages = [w.average(s) for s in w.spans]
+                    iv.add(counts, averages)
+                    if due is None:
+                        due = when + every
+                    # One write and one flush per interval instead of per
+                    # second: at the default that is two syscalls a minute
+                    # rather than a hundred and twenty, which is the whole
+                    # difference on a Pi Zero logging to an SD card. Nothing
+                    # is buffered up to pay for it -- the row is computed from
+                    # four numbers that were already being kept.
+                    if when >= due:
+                        f.write(row(averages))
+                        f.flush()
+                        iv.reset()
+                        due = when + every
+                    if stop["now"]:
+                        break
+                    # --duration is what makes this path testable at all:
+                    # without it the only way to exercise the logger is to
+                    # start a daemon and kill it, which is not something a
+                    # test suite should do.
+                    if args.duration and w.elapsed() >= args.duration:
+                        break
+            except KeyboardInterrupt:
+                pass
+            # Whatever the last interval collected is worth keeping: a service
+            # stopped four seconds after a spike should still have the spike on
+            # disk, and the seconds column says the row is short.
+            if iv.seconds:
+                f.write(row([w.average(s) for s in w.spans]))
+                f.flush()
     except KeyboardInterrupt:
         pass
     finally:
         counter.close()
         write_status("stopped")
     return 0
+
+
+def find_terminal():
+    """The first terminal emulator on PATH, as (path, name, exec flag)."""
+    for term, flag in TERMINALS:
+        for d in os.environ.get("PATH", "").split(os.pathsep):
+            p = os.path.join(d, term)
+            if os.path.isfile(p) and os.access(p, os.X_OK):
+                return p, term, flag
+    return None
 
 
 def cmd_window(args):
@@ -13689,21 +13875,104 @@ def cmd_window(args):
     try:
         counter = open_counter(args)
     except NotFound as e:
-        write_status("dormant: %s" % e.reason)
+        # A busy port means the counter is already being read -- by the logger
+        # service, or by a monitor this session opened earlier. Neither wants a
+        # second window, and the status file belongs to whoever holds the port,
+        # so this says nothing and writes nothing.
+        if not e.busy:
+            write_status("dormant: %s" % e.reason)
         return 0
     counter.close()
-    for term, flag in (("foot", "-e"), ("alacritty", "-e"), ("urxvt", "-e"),
-                       ("xterm", "-e"), ("st", "-e")):
-        path = None
-        for d in os.environ.get("PATH", "").split(os.pathsep):
-            p = os.path.join(d, term)
-            if os.path.isfile(p) and os.access(p, os.X_OK):
-                path = p
-                break
-        if path:
-            os.execv(path, [term, flag, sys.argv[0], "watch"])
-    print("no terminal emulator found; run: radbeeper watch", file=sys.stderr)
-    return 1
+    found = find_terminal()
+    if found is None:
+        print("no terminal emulator found; run: radbeeper watch",
+              file=sys.stderr)
+        return 1
+    path, term, flag = found
+    # An absolute path to ourselves: the terminal inherits whatever cwd the
+    # caller had, and `hotplug` is started from a session whose cwd is not
+    # this checkout. A relative argv[0] works from the Makefile and nowhere
+    # else, which is the worst way for it to be wrong.
+    argv = [term, flag, os.path.abspath(sys.argv[0])]
+    if args.device:
+        argv += ["--device", args.device]
+    if args.baud:
+        argv += ["--baud", str(args.baud)]
+    argv.append("watch")
+    os.execv(path, argv)
+
+
+# ---------------------------------------------------------------- hotplug ---
+#
+# WHY THE SESSION WATCHES AND udev DOES NOT. A udev rule fires as root, in
+# whatever environment udev happens to have: no WAYLAND_DISPLAY, no session
+# bus, and no idea which of several logged-in people a window would belong to.
+# Starting a background LOGGER from udev is right, and the rule Copal installs
+# does exactly that. Opening a WINDOW from udev is guesswork. So the two halves
+# are split at the line where the guessing starts: the rule starts the service,
+# and this -- one process inside the session, on the autostart line that used
+# to run `window` -- opens the monitor.
+#
+# WHAT IT POLLS, AND WHAT IT DOES NOT. os.listdir of /dev, never the serial
+# port. Opening the port to ask <GETVER>> every few seconds would fight the
+# monitor for the device the moment one was running, and would rattle every
+# other serial cable on the machine besides. A device NODE appearing is the
+# event worth acting on; whether it is a GMC is settled once, by the window
+# that opens, which exits silently when it is not.
+def spawn_window(args):
+    """Fork a child that becomes the monitor's terminal. Returns its pid."""
+    pid = os.fork()
+    if pid == 0:
+        try:
+            os.setsid()  # so the window outlives the watcher that opened it
+        except OSError:
+            pass
+        try:
+            os._exit(cmd_window(args) or 0)
+        except Exception:
+            os._exit(1)
+    return pid
+
+
+def cmd_hotplug(args):
+    """Open the monitor when a counter appears -- now, or in an hour's time."""
+    seen = set(candidate_ports())
+    # A counter already plugged in at login is the same event as one plugged in
+    # later, and is handled by the same code rather than by a special case.
+    # That is the whole reason the autostart line runs this and not `window`.
+    tries = args.tries if seen else 0
+    due = time.time()
+    child = None
+    started = time.time()
+    while True:
+        if child is not None:
+            try:
+                reaped = os.waitpid(child, os.WNOHANG)[0]
+            except OSError:
+                reaped = child
+            if reaped:
+                child = None  # the window was closed, or never opened at all
+            else:
+                tries = 0     # it took: this plug event is dealt with
+        now = time.time()
+        if tries and child is None and now >= due:
+            # The retries are for the gap between a node appearing and udev
+            # giving it its group: the first open can be EACCES on a node that
+            # is perfectly good a second later. Three attempts, then the event
+            # is written off -- a cable that is not a counter must not be
+            # opened again every four seconds for the rest of the session.
+            tries -= 1
+            due = now + args.settle
+            child = spawn_window(args)
+        if args.duration is not None and now - started >= args.duration:
+            break
+        time.sleep(args.poll)
+        ports = set(candidate_ports())
+        if ports - seen:
+            tries = args.tries
+            due = time.time() + args.settle
+        seen = ports
+    return 0
 
 
 # -------------------------------------------------------------------- main ---
@@ -13743,6 +14012,11 @@ def build_parser():
     p.add_argument("--cpm-per-usvh", type=float, default=DEFAULT_CPM_PER_USVH,
                    help="tube conversion factor (default %.1f, the M4011)"
                         % DEFAULT_CPM_PER_USVH)
+    p.add_argument("--log-every", type=float, default=DEFAULT_LOG_EVERY,
+                   metavar="SECONDS",
+                   help="how often the service writes a log row (default "
+                        "%g); each row carries the peak of every window since "
+                        "the last one" % DEFAULT_LOG_EVERY)
     p.add_argument("--duration", type=float,
                    help="stop after this many seconds (for tests)")
     p.add_argument("--plain", action="store_true",
@@ -13755,6 +14029,22 @@ def build_parser():
                                    "present, dormant if not")
     sub.add_parser("window", help="open the monitor in a terminal, silently "
                                   "doing nothing if no counter is present")
+    hp = sub.add_parser("hotplug", help="stay in the session and open the "
+                                        "monitor whenever a counter is "
+                                        "plugged in")
+    hp.add_argument("--poll", type=float, default=DEFAULT_POLL,
+                    metavar="SECONDS",
+                    help="how often to look for a new device node (default "
+                         "%g); this is a listdir, never a serial open"
+                         % DEFAULT_POLL)
+    hp.add_argument("--settle", type=float, default=DEFAULT_SETTLE,
+                    metavar="SECONDS",
+                    help="grace between a node appearing and opening it "
+                         "(default %g), for udev to set its group"
+                         % DEFAULT_SETTLE)
+    hp.add_argument("--tries", type=int, default=DEFAULT_TRIES,
+                    help="attempts per plug event before it is written off "
+                         "(default %d)" % DEFAULT_TRIES)
     lg = sub.add_parser("log", help="the counter's stored history")
     lg.add_argument("log_action", choices=("pull", "info"), nargs="?",
                     default="info")
@@ -13771,11 +14061,14 @@ def main(argv=None):
         parser.print_help()
         return 0
     for missing, default in (("log_action", "info"), ("output", None),
-                             ("bytes", None)):
+                             ("bytes", None), ("poll", DEFAULT_POLL),
+                             ("settle", DEFAULT_SETTLE),
+                             ("tries", DEFAULT_TRIES)):
         if not hasattr(args, missing):
             setattr(args, missing, default)
     handlers = {"probe": cmd_probe, "cpm": cmd_cpm, "watch": cmd_watch,
-                "log": cmd_log, "service": cmd_service, "window": cmd_window}
+                "log": cmd_log, "service": cmd_service, "window": cmd_window,
+                "hotplug": cmd_hotplug}
     try:
         return handlers[args.command](args)
     except KeyboardInterrupt:
@@ -13848,6 +14141,72 @@ RADBEEPERRC
     rc-update add radbeeper default >/dev/null 2>&1 \
         && note "radbeeper added to the default runlevel" \
         || warn "could not add radbeeper to the default runlevel"
+
+    # Plugging a counter into a RUNNING machine. Two things should happen and
+    # they want different privileges, so they are two mechanisms:
+    #
+    #   the log     a udev rule, as root, starting the service -- the counting
+    #               begins whether or not anybody is logged in
+    #   the window  `radbeeper hotplug` on the desktop autostart line, in the
+    #               session, where the display and the person both are
+    #
+    # The rule deliberately does NOT try to open a window. udev fires as root
+    # with no WAYLAND_DISPLAY, no session bus and no way to tell which of
+    # several logged-in people a window would belong to; guessing at that is
+    # how you get a monitor on the wrong screen, or none at all and nothing in
+    # any log to say why. Starting a daemon asks none of those questions.
+    cat > /usr/local/bin/radbeeper-plugged <<'RADBEEPERPLUG'
+#!/bin/sh
+# radbeeper-plugged -- what the udev rule runs when a counter appears.
+#
+# udev kills a RUN child that outlives its event, so nothing here may run in
+# the foreground: the service is started by a detached shell udev has stopped
+# caring about.
+#
+# THE SIX SECONDS ARE DELIBERATE, and they are two things at once.
+#
+# The first is the node's group: the device is root:root for a moment before
+# udev's own tty rules hand it to dialout, and a probe landing in that moment
+# gets EACCES and gives up.
+#
+# The second is who gets the port. Only one program can read a serial device
+# sensibly -- two readers share the bytes between them and neither is told, so
+# both undercount plausibly -- and radbeeper locks the port to make sure of it.
+# The session's `radbeeper hotplug` opens its window about two seconds after a
+# node appears. Waiting longer here means that when somebody IS logged in, the
+# window they plugged the counter in to see is the thing that gets it, and this
+# service waits and picks the log up the moment they close it. When nobody is
+# logged in there is no window to lose to and the six seconds cost nothing.
+[ -x /usr/local/bin/radbeeper ] || exit 0
+setsid /bin/sh -c 'sleep 6
+    rc-service radbeeper status >/dev/null 2>&1 && exit 0
+    rc-service radbeeper start >/dev/null 2>&1' >/dev/null 2>&1 </dev/null &
+exit 0
+RADBEEPERPLUG
+    chmod 0755 /usr/local/bin/radbeeper-plugged
+
+    if [ -d /etc/udev/rules.d ]; then
+        cat > /etc/udev/rules.d/60-radbeeper.rules <<'RADBEEPERUDEV'
+# Start the Geiger logger when a counter is plugged into a running machine.
+# Written by Copal stage 10. The window is the session's half, not this one:
+# see /usr/local/bin/radbeeper-plugged for why udev does not open one.
+#
+# The three USB-serial bridges GQ has shipped behind: CH340 (1a86:7523, which
+# is the GMC-320), CP210x (10c4:ea60) and PL2303 (067b:2303). Matching a
+# little wide is safe here -- a rule that fires for some other CH340 cable
+# costs one probe, which finds no counter, writes down why and stops. That is
+# the dormant path working exactly as designed, not a failure.
+ACTION=="add", SUBSYSTEM=="tty", ATTRS{idVendor}=="1a86", ATTRS{idProduct}=="7523", RUN+="/usr/local/bin/radbeeper-plugged"
+ACTION=="add", SUBSYSTEM=="tty", ATTRS{idVendor}=="10c4", ATTRS{idProduct}=="ea60", RUN+="/usr/local/bin/radbeeper-plugged"
+ACTION=="add", SUBSYSTEM=="tty", ATTRS{idVendor}=="067b", ATTRS{idProduct}=="2303", RUN+="/usr/local/bin/radbeeper-plugged"
+RADBEEPERUDEV
+        udevadm control --reload >/dev/null 2>&1 || true
+        note "udev rule: plugging a counter in starts the logger"
+    else
+        warn "no /etc/udev/rules.d -- plugging a counter in will not start the"
+        warn "logger by itself. Install eudev, or start it by hand:"
+        warn "    rc-service radbeeper start"
+    fi
 
     # Say what this machine can actually do, now, rather than at the next
     # reboot when nobody is reading.

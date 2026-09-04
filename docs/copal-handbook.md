@@ -1253,6 +1253,7 @@ against that checkout whenever it exists, so the two cannot quietly drift.
 radbeeper probe        # find the counter and say what it is
 radbeeper watch        # the monitor: 3s / 30s / 300s averages
 radbeeper log pull     # download the stored history to .bin and .csv
+radbeeper hotplug      # sit in the session, open the monitor on plug-in
 ```
 
 ### Three averages, because one is not enough
@@ -1280,9 +1281,80 @@ not become plugged in because a daemon asked again four seconds later, and a
 service that respawns forever on a Zero costs more than it measures. The retry
 is the next boot, or `rc-service radbeeper start` the moment you plug one in.
 
-The desktop does the same thing: `radbeeper window` runs at login from the i3
-config and opens the monitor **only** if a counter is there, silently doing
-nothing otherwise.
+### Plugging one in, in two halves
+
+Plugging a counter into a running machine should start the log *and* open the
+monitor, and those two want different privileges — so stage 10 installs two
+mechanisms rather than one.
+
+| Half | What starts it | What it does |
+|---|---|---|
+| the log | `/etc/udev/rules.d/60-radbeeper.rules`, as root | runs `radbeeper-plugged`, which starts the service — counting begins whether or not anyone is logged in |
+| the window | the autostart line in the i3 and Hyprland configs | `radbeeper hotplug` opens the monitor in a terminal |
+
+**The rule does not open a window, on purpose.** udev fires as root with no
+`WAYLAND_DISPLAY`, no session bus and no way to know which of several
+logged-in people a window belongs to; guessing at that is how you get a monitor
+on the wrong screen, or none at all with nothing in any log to say why.
+Starting a daemon asks none of those questions, so that is the half udev does.
+
+**`radbeeper hotplug` watches for a device node, not for a counter.** Once
+every four seconds it lists `/dev`. It never opens a port to ask `<GETVER>>`,
+because doing that on a schedule would fight the running monitor for the device
+and rattle every other serial cable on the machine. A node *appearing* is the
+event; whether it is a GMC is settled once, by the window it opens, which is
+silent when it is not. A window that stays up marks the event dealt with; one
+that exits at once is retried three times and then the event is written off.
+
+It replaces the older `radbeeper window` autostart line and subsumes it — a
+counter already plugged in at login is the same event, handled by the same
+code, so there is no separate already-there case.
+
+The rule matches the three USB-serial bridges GQ has shipped behind: CH340
+(`1a86:7523`, the GMC-320), CP210x (`10c4:ea60`) and PL2303 (`067b:2303`).
+Matching a little wide is safe — a rule that fires for some other CH340 cable
+costs one probe, which finds no counter, writes down why and stops.
+
+### One reader at a time
+
+Two processes reading one tty do not each get the stream — they get a *share*
+of it each, and neither is told. A logger and a monitor running together would
+halve both their counts and look entirely plausible doing it, which is the
+worst way for a measurement to be wrong. Every port radbeeper opens is
+`flock`ed, so the second one to try is refused with a reason of its own
+(`port busy:` …) rather than quietly succeeding.
+
+The two halves then settle it between themselves:
+
+| Situation | What happens |
+|---|---|
+| Nobody logged in | The service takes the port and logs |
+| Plugged in while logged in | The window gets it — `hotplug` opens at ~2s, the udev rule waits 6s before starting the service |
+| Service already logging, monitor wanted | `doas rc-service radbeeper stop` hands the port over; the message says so |
+| Monitor closed | The service is waiting on the lock and picks the log up by itself |
+
+Waiting on a locked port is the one place the service loops, and it is not the
+retry the dormant rule forbids: an absent counter does not become present
+because a daemon asked again, but a busy one *does* become free.
+
+### What it writes down
+
+When a counter *is* there, the service logs to `/var/log/radbeeper/cpm.tsv`:
+one tab-separated row every 30 seconds, timestamp first and big-endian so
+`sort` on the file is chronological with no arguments.
+
+```
+#time	cps	counts	seconds	cpm_3	cpm_30	cpm_300	peak_3	peak_30	peak_300
+2026-09-04T11:54:37	0.633	19	30	40.0	38.0	36.8	140.0	52.0	37.1
+```
+
+Each row carries the **peak** every window reached since the previous row, not
+just the averages at the moment of writing — otherwise a source that came and
+went between two rows leaves no trace, and that is the event a log is for.
+`cps` is per one second whatever the row spacing is. An unfilled window writes
+an empty field rather than a zero, the same distinction the monitor's `--`
+makes. `--log-every` changes the spacing; nothing accumulates in memory either
+way.
 
 ### Why your counter may be invisible, and which fix it needs
 
