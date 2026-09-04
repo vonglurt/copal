@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 #
 # release-walkthrough.sh -- run a release, and stop at the parts a person has
 # to do.

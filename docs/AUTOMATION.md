@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
-<!-- Copyright (c) 2026 paulr@sdf.org -- copal-alpine-linux -->
+<!-- Copyright (c) 2026 Paul Richeson -- copal-alpine-linux -->
 
 # Automation: what to type, what calls what, and what can be driven
 

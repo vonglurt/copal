@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 #
 # copal-terminal-palettes.py -- derive the opaque terminal palettes that
 # copal-terminal-theme carries for the Linux Antiquity (diinki) themes.
