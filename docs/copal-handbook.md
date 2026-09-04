@@ -1381,7 +1381,39 @@ of a service trying to start.
 
 ### What it writes down
 
-When a counter *is* there, the service logs to `/var/log/radbeeper/cpm.tsv`:
+### One file per counter per month, and where it was
+
+Rotation by construction, so there is nothing to schedule and no window in
+which a log is half-moved: a row goes to the file for its own counter and its
+own month.
+
+```
+/var/log/radbeeper/cpm-F48824B8207F7E-2026-09.tsv
+/var/log/radbeeper/sites.tsv
+```
+
+The serial is in the name because two counters on one machine are two
+measurements, not one. An older undated `cpm.tsv` is split across the dated
+files the first time it is seen and kept as `cpm.tsv.pre-rotation`.
+
+`sites.tsv` records where each counter has been, from when — a history, not a
+setting, so a reading from last Tuesday resolves to where the counter was last
+Tuesday. `radbeeper site --name "The garage"` records a move. It stores a
+**name and nothing finer** on purpose: these logs are meant to be published,
+and a decimal fix is a street address for whoever is holding the counter.
+
+### Putting it on the web
+
+`radbeeper export` turns the logs into one self-contained `index.html` —
+summary cards, a by-day table and the latest rows, sortable and searchable.
+The radbeeper repository carries a GitHub Actions workflow for it: fork, drop
+your `cpm-*.tsv` into `logs/`, push, and the page is rebuilt and committed
+back. Nothing to install in the workflow — the generator is the same one-file
+stdlib program, which is also why the page cannot drift from the row format.
+
+### What it writes down, in detail
+
+When a counter *is* there, the service logs a row like this:
 one tab-separated row every 30 seconds, timestamp first and big-endian so
 `sort` on the file is chronological with no arguments.
 
