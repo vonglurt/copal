@@ -1337,6 +1337,48 @@ Waiting on a locked port is the one place the service loops, and it is not the
 retry the dormant rule forbids: an absent counter does not become present
 because a daemon asked again, but a busy one *does* become free.
 
+### Backfilling from the counter's own flash
+
+The counter records to its internal flash whether or not anything is listening.
+The service reads the tail of it before it starts appending — at boot, and the
+moment a counter is plugged in, which is exactly when the counter has been
+recording somewhere the log was not.
+
+```sh
+radbeeper backfill                     # the counter, into the service log
+radbeeper backfill --image hist.bin    # a raw dump from `log pull`
+radbeeper service --no-backfill        # don't
+```
+
+Rows are built by replaying flash samples through the *same* averaging code
+the live logger uses, so a backfilled row and a live row of the same stretch
+agree. Three things make that possible:
+
+**A row's identity is its slot**, not its timestamp — the log interval it falls
+in. A backfill never writes into a slot that already has a row, so live
+measurements always win, and a slot with no evidence is simply absent.
+Nothing is interpolated across a gap. Every row carries a `src` column saying
+`live` or `flash`.
+
+**The counter's second is measured, not assumed.** It writes a timestamp every
+few minutes and one sample per "second" between them, and its second is 1.011
+of ours — 39 seconds of drift an hour. The spacing is taken from each pair of
+marks. Its RTC is a separate error again: `backfill` measures it against this
+machine's clock and shifts everything by the difference, printing what it
+applied. Set the counter's clock and data recorded *before* that needs the old
+offset passed by hand with `--clock-offset`.
+
+**The flash is a ring.** On a counter that has been running a while there is no
+unwritten byte in it: the newest sample sits just before the write pointer and
+the oldest just after. Reading the physical tail would hand back the oldest
+hours while claiming they were the newest, so the pointer is found by
+bisection — on the `0xFF` boundary if the flash is not full yet, and on the one
+step backwards in time if it has wrapped.
+
+Only the tail is read: 64 KiB, about seventeen hours, some forty seconds of
+serial. The whole megabyte is ten minutes, which is not a thing to put in front
+of a service trying to start.
+
 ### What it writes down
 
 When a counter *is* there, the service logs to `/var/log/radbeeper/cpm.tsv`:
