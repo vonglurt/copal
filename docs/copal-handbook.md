@@ -1356,16 +1356,18 @@ tested in one go. Stage 7 optionally adds Go with a matching `~/dev/hello-go`.
 
 ### Gonex and Yodacon in `~/code`
 
-Stage 7 ends by offering two of Paul's repositories, cloned into `~/code` **as
-`user`, not root**, and built there: [`gonex`](https://github.com/yodacon/gonex),
-the game (Go, Ebitengine), and [`yodacon`](https://github.com/yodacon/yodacon),
-the organisation repo whose Makefile round-trips the 1997 plugin, runs the
-suites and builds the game — and its `vendor/konex` submodule, the 2005 C++
-engine Gonex is a port of, built with CMake against X11, GLX and GLU. The work
-is done by `/usr/local/bin/copal-code`,
-which the stage writes and then runs once; run it again after a `git pull`
-to rebuild, and `copal-code status` says what is checked out and built. A
-checkout that already exists is never pulled or reset — only rebuilt.
+Stage 7 ends by offering Paul's game and its tooling, cloned into `~/code`
+**as `user`, not root**, and built there. It is one checkout:
+[`yodacon`](https://github.com/yodacon/yodacon), the organisation repo whose
+Makefile round-trips the 1997 plugin, runs the suites and builds the game, with
+two submodules — [`gonex`](https://github.com/yodacon/gonex), the game (Go,
+Ebitengine), and `vendor/konex`, the 2005 C++ engine Gonex is a port of, built
+with CMake against X11, GLX and GLU. There is deliberately no loose
+`~/code/gonex`: yodacon's Makefile builds the submodule and nothing else. The
+work is done by `/usr/local/bin/copal-code`, which the stage writes and then
+runs once; run it again after a `git pull` to rebuild, and `copal-code status`
+says what is checked out and built. A checkout that already exists is never
+pulled, reset or moved — the submodules included — only rebuilt.
 
 What it works around, all measured on the aarch64 VM on 4 September 2026:
 

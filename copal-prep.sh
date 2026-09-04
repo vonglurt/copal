@@ -6904,11 +6904,11 @@ if grep -q '^Emulators,' "$CSV"; then
 fi
 
 # ----- Built from source, by stages 12 and 14 -----
-if have endless-sky || have wxmaxima || have streamripper || have ytq || [ -x "$HOME/code/gonex/gonex-bin" ] || [ -x "$HOME/code/yodacon/vendor/konex/build-release/bin/konex" ]; then
+if have endless-sky || have wxmaxima || have streamripper || have ytq || [ -x "$HOME/code/yodacon/gonex/gonex-bin" ] || [ -x "$HOME/code/yodacon/vendor/konex/build-release/bin/konex" ]; then
     out '^sep(Built here)'
     # Gonex writes config.xml and save.json to the directory it starts in,
     # so it starts in its own checkout, where .gitignore expects them.
-    [ -x "$HOME/code/gonex/gonex-bin" ] && out "Gonex,sh -c 'cd $HOME/code/gonex && exec ./gonex-bin'" || true
+    [ -x "$HOME/code/yodacon/gonex/gonex-bin" ] && out "Gonex,sh -c 'cd $HOME/code/yodacon/gonex && exec ./gonex-bin'" || true
     # Konex reads ./config.xml and ./data from where it starts, and its build
     # stages them beside the binary.
     [ -x "$HOME/code/yodacon/vendor/konex/build-release/bin/konex" ] \
@@ -8900,9 +8900,14 @@ retune_tmp() {
 # ------------------------------------ stage 7: Gonex and Yodacon, in ~/code ---
 #
 # Paul's own projects, checked out where they are worked on -- ~/code, as the
-# user, never as root -- and built. Gonex is the game (Go, Ebitengine); Yodacon
-# is the organisation repo whose Makefile round-trips the 1997 plugin, runs the
-# suites and builds the game. Both are public under github.com/yodacon.
+# user, never as root -- and built. One checkout: ~/code/yodacon, the
+# organisation repo whose Makefile round-trips the 1997 plugin, runs the
+# suites and builds the game, with the game (gonex: Go, Ebitengine) and the
+# 2005 engine it ports (vendor/konex: C++, X11 + GLX) as its two submodules.
+# There is deliberately no loose ~/code/gonex: yodacon's Makefile builds the
+# submodule and nothing else, since a second checkout of one repository is
+# a tree nobody builds (yodacon b59ae3d). All three are public under
+# github.com/yodacon.
 #
 # The work is done by /usr/local/bin/copal-code, written here and run once as
 # the user; it is also the thing to run again after a git pull. Every quirk it
@@ -8920,37 +8925,38 @@ retune_tmp() {
 #     Alpine packages on no port (checked v3.24 main and community, and edge).
 #     The suites and the game build still run -- `make test gonex` -- and
 #     verify is skipped with a line saying why.
-#   - The Makefile builds its own gonex submodule by default; GONEX= points
-#     it at the standalone checkout instead, so there is one gonex, not two.
-#   - konex, the 2005 C++ engine, is Yodacon's other submodule (vendor/konex,
-#     branch macos-port) and builds with CMake against X11, GLX and GLU. Its
-#     Linux path used to include and link OpenAL and alut, which Alpine does
-#     not have; konex commit 7c6d7fa put that behind an option that is off.
-#     A submodule already initialised is left where it is, like a checkout.
+#   - konex builds with CMake against X11, GLX and GLU. Its Linux path used
+#     to include and link OpenAL and alut, which Alpine does not have; konex
+#     commit 7c6d7fa put that behind an option that is off.
+#   - A submodule already initialised is left where it is, like a checkout:
+#     `git submodule update` would move a developer's tree to the recorded
+#     commit behind their back, so it runs only with --init on an empty one.
 #   - On musl, Ebitengine's render thread gets a 128 KB stack and llvmpipe's
 #     shader compiler overflows it: SIGSEGV on the first frame. gonex renders
-#     on the main thread when it sees /lib/ld-musl-*.so.1, so nothing is
-#     needed here -- but a checkout from before that commit will crash, and
-#     GONEX_SINGLE_THREAD=1 is the switch.
+#     on the main thread when it sees /lib/ld-musl-*.so.1 (gonex 21860ec), so
+#     nothing is needed here -- but a submodule from before that commit will
+#     crash, and GONEX_SINGLE_THREAD=1 is the switch.
 #
 # A checkout that already exists is left exactly as it is: no pull, no reset.
 # A developer's tree is not the installer's to move. It is rebuilt, which is
-# what makes the stage re-runnable. Measured from a clean home: the two
-# checkouts are 179 MB, ~/go ends up at 437 MB (toolchain plus modules), and
-# the first run took about 40 seconds on the VM, most of it the download.
+# what makes the stage re-runnable. Measured from a clean home: the checkout
+# with both submodules is about 200 MB, ~/go ends up at 437 MB (toolchain
+# plus modules), and the first run took under a minute on the VM, most of it
+# the download.
 dev_code_checkouts() {
-    say "Gonex and Yodacon: checked out into ~/code and built"
+    say "Yodacon, Gonex and Konex: checked out into ~/code and built"
     cat <<'MSG'
 
-    Two of Paul's repositories, cloned into ~/code as the user and built
-    there, so the machine comes up with the game and its tooling ready to
-    work on:
+    Paul's game and its tooling, cloned into ~/code as the user and built
+    there, so the machine comes up ready to work on them. One checkout,
+    with the game and the engine it ports as submodules:
 
-      ~/code/gonex      the game -- Go, Ebitengine. Built to gonex-bin
-      ~/code/yodacon    the organisation repo: the 1997 plugin, exporters,
-                        the suites, and the Makefile that ties them together
-                        -- and vendor/konex, the 2005 C++ engine Gonex is a
-                        port of, built with CMake against X11 and GLX
+      ~/code/yodacon               the organisation repo: the 1997 plugin,
+                                   exporters, the suites, and the Makefile
+      ~/code/yodacon/gonex         the game -- Go, Ebitengine. Built to
+                                   gonex-bin
+      ~/code/yodacon/vendor/konex  the 2005 C++ engine Gonex is a port of,
+                                   CMake against X11 and GLX
 
     About 600 MB in all, most of it the Go 1.27 toolchain and modules under
     ~/go. A checkout that is already there is left untouched and rebuilt.
@@ -8977,17 +8983,19 @@ MSG
 
     cat > /usr/local/bin/copal-code <<'COPALCODE'
 #!/bin/sh
-# copal-code -- Gonex and Yodacon, checked out into ~/code and built.
+# copal-code -- Yodacon, with Gonex and Konex inside it, checked out into
+# ~/code and built.
 #
 # Stage 7 of copal-init.sh writes this and runs it once as the user. Run it
-# again after a git pull to rebuild. It never pulls or resets a checkout that
-# exists: that tree is yours.
+# again after a git pull to rebuild. It never pulls, resets or moves a
+# checkout that exists -- the submodules included: that tree is yours.
 #
 #   copal-code           clone what is missing, build everything
 #   copal-code status    what is checked out, and what is built
 #
-# Three things come out of it: ~/code/gonex/gonex-bin, Yodacon's suites run,
-# and ~/code/yodacon/vendor/konex/build-release/bin/konex, the 2005 engine.
+# What comes out: ~/code/yodacon/gonex/gonex-bin (the game), Yodacon's own
+# suites run, and ~/code/yodacon/vendor/konex/build-release/bin/konex (the
+# 2005 engine).
 #
 # GOTOOLCHAIN=auto: Alpine pins it to local, and gonex wants a newer Go than
 # the package -- go fetches the one go.mod names into ~/go, once.
@@ -8995,7 +9003,9 @@ MSG
 # and a 40 MB link does not fit in it.
 set -u
 CODE="$HOME/code"
-KONEX="$CODE/yodacon/vendor/konex"
+YODACON="$CODE/yodacon"
+GONEX="$YODACON/gonex"
+KONEX="$YODACON/vendor/konex"
 CACHE="$HOME/.cache/copal-code"
 LOG="$CACHE/build.log"
 export GOTOOLCHAIN=auto TMPDIR="$CACHE/tmp"
@@ -9004,25 +9014,40 @@ say()  { printf '\033[1m%s\033[0m\n' "$*"; }
 note() { printf '      %s\n' "$*"; }
 warn() { printf '\033[33mwarning:\033[0m %s\n' "$*" >&2; }
 rev()  { git -C "$1" describe --tags --always 2>/dev/null || echo '?'; }
-
-status() {
-    for _r in gonex yodacon; do
-        if [ -d "$CODE/$_r/.git" ]; then note "$CODE/$_r   $(rev "$CODE/$_r")"
-        else note "$CODE/$_r   not checked out"; fi
-    done
-    if [ -x "$CODE/gonex/gonex-bin" ]; then note "gonex-bin   built $(date -r "$CODE/gonex/gonex-bin" '+%Y-%m-%d %H:%M')"
-    else note "gonex-bin   not built"; fi
-    if [ -x "$KONEX/build-release/bin/konex" ]; then note "konex       built $(date -r "$KONEX/build-release/bin/konex" '+%Y-%m-%d %H:%M')"
-    else note "konex       not built"; fi
+built() {  # <label> <binary>
+    if [ -x "$2" ]; then note "$1  built $(date -r "$2" '+%Y-%m-%d %H:%M')"
+    else note "$1  not built"; fi
 }
 
-fetch() {  # <name> <url>
-    if [ -d "$CODE/$1/.git" ]; then
-        note "$CODE/$1 is already checked out ($(rev "$CODE/$1")) -- left as it is"
+status() {
+    if [ -d "$YODACON/.git" ]; then note "yodacon    $(rev "$YODACON")"
+    else note "yodacon    not checked out"; return 0; fi
+    for _m in gonex vendor/konex; do
+        if [ -e "$YODACON/$_m/.git" ]; then note "$(printf '%-10s' "$_m") $(rev "$YODACON/$_m")"
+        else note "$(printf '%-10s' "$_m") submodule not checked out"; fi
+    done
+    built "gonex-bin " "$GONEX/gonex-bin"
+    built "konex     " "$KONEX/build-release/bin/konex"
+}
+
+# A submodule that is already there is not moved to the recorded commit
+# behind anyone's back; only an empty one is checked out.
+submodule() {  # <path>
+    if [ -e "$YODACON/$1/.git" ]; then
+        note "$YODACON/$1 is already checked out ($(rev "$YODACON/$1")) -- left as it is"
+    elif git -C "$YODACON" submodule update --init "$1" >>"$LOG" 2>&1; then
+        note "checked out: $YODACON/$1 ($(rev "$YODACON/$1"))"
     else
-        say "Cloning $1"
-        git clone "$2" "$CODE/$1" || { warn "the clone of $1 failed"; return 1; }
+        warn "the $1 submodule did not check out -- the last lines of $LOG:"
+        tail -n 15 "$LOG" | sed 's/^/    /'
+        exit 1
     fi
+}
+
+fail() {  # <what>
+    warn "$1 failed -- the last lines of $LOG:"
+    tail -n 15 "$LOG" | sed 's/^/    /'
+    exit 1
 }
 
 case "${1:-}" in
@@ -9033,67 +9058,43 @@ esac
 
 mkdir -p "$CODE" "$CACHE/tmp" || exit 1
 : > "$LOG"
-fetch gonex   https://github.com/yodacon/gonex.git   || exit 1
-fetch yodacon https://github.com/yodacon/yodacon.git || exit 1
-
-say "Building Gonex   (log: $LOG)"
-if (cd "$CODE/gonex" && go build -o gonex-bin ./cmd/gonex) >>"$LOG" 2>&1; then
-    note "built: $CODE/gonex/gonex-bin"
+if [ -d "$YODACON/.git" ]; then
+    note "$YODACON is already checked out ($(rev "$YODACON")) -- left as it is"
 else
-    warn "the Gonex build failed -- the last lines of $LOG:"
-    tail -n 15 "$LOG" | sed 's/^/    /'
-    exit 1
+    say "Cloning yodacon"
+    git clone https://github.com/yodacon/yodacon.git "$YODACON" >>"$LOG" 2>&1 || fail "the clone"
 fi
+submodule gonex
+submodule vendor/konex
 
-say "Yodacon: the suites, and the game through its Makefile"
-_targets="test gonex"
+say "Gonex: the suites, and the game, through Yodacon's Makefile   (log: $LOG)"
 if command -v unar >/dev/null 2>&1; then
     _targets=all
 else
     note "unar is not packaged by Alpine, so 'make verify' -- the 1997"
     note "resource-fork round trip -- is skipped. The rest runs."
+    _targets="test gonex"
 fi
-if (cd "$CODE/yodacon" && make $_targets GONEX="$CODE/gonex") >>"$LOG" 2>&1; then
-    note "make $_targets: ok"
-else
-    warn "make $_targets failed in $CODE/yodacon -- the last lines of $LOG:"
-    tail -n 15 "$LOG" | sed 's/^/    /'
-    exit 1
-fi
+(cd "$YODACON" && make $_targets) >>"$LOG" 2>&1 || fail "make $_targets in $YODACON"
+note "make $_targets: ok -- $GONEX/gonex-bin"
 
-say "Konex: the 2005 engine, from Yodacon's submodule"
-# The same rule as a checkout: a submodule that is already there is not
-# moved to the recorded commit behind anyone's back.
-if [ -e "$KONEX/.git" ]; then
-    note "$KONEX is already checked out ($(rev "$KONEX")) -- left as it is"
-elif git -C "$CODE/yodacon" submodule update --init vendor/konex >>"$LOG" 2>&1; then
-    note "checked out: $KONEX ($(rev "$KONEX"))"
-else
-    warn "the konex submodule did not check out -- the last lines of $LOG:"
-    tail -n 15 "$LOG" | sed 's/^/    /'
-    exit 1
-fi
-if (cd "$KONEX" && make release) >>"$LOG" 2>&1; then
-    note "built: $KONEX/build-release/bin/konex"
-else
-    warn "the Konex build failed -- the last lines of $LOG:"
-    tail -n 15 "$LOG" | sed 's/^/    /'
-    exit 1
-fi
+say "Konex: the 2005 engine"
+(cd "$KONEX" && make release) >>"$LOG" 2>&1 || fail "the Konex build"
+note "built: $KONEX/build-release/bin/konex"
 rm -rf "$CACHE/tmp"
 
 say "Done"
 status
-note "play:     cd ~/code/gonex && ./gonex-bin    (or Super+C -> Built here -> Gonex)"
+note "play:     cd ~/code/yodacon/gonex && ./gonex-bin    (or Super+C -> Built here -> Gonex)"
 note "          cd ~/code/yodacon/vendor/konex/build-release/bin && ./konex    (or Built here -> Konex)"
-note "rebuild:  copal-code, after a git pull in either checkout"
+note "rebuild:  copal-code, after a git pull"
 COPALCODE
     chmod 0755 /usr/local/bin/copal-code
     note "wrote /usr/local/bin/copal-code"
 
     say "Running copal-code as $PI_USER  (the Go toolchain download is the slow part)"
     if su - "$PI_USER" -c copal-code; then
-        note "Gonex and Yodacon are in $_h/code"
+        note "Yodacon, with Gonex and Konex inside it, is in $_h/code/yodacon"
     else
         warn "copal-code did not finish -- as $PI_USER, run 'copal-code' to retry;"
         warn "the log is $_h/.cache/copal-code/build.log"
@@ -11468,8 +11469,9 @@ MAKEFILE
 
     Or from a shell:  make run    make debug    make clean
 
-    Gonex and Yodacon, if you said yes to them, are in ~/code. 'copal-code'
-    rebuilds them after a pull; 'copal-code status' says what is there.
+    Yodacon, with Gonex and Konex inside it, is in ~/code if you said yes.
+    'copal-code' rebuilds them after a pull; 'copal-code status' says what
+    is there.
 
     THE GUIDES. These are the tutorials, on this machine, no network needed.
     Super+Shift+G opens the list; from a terminal:
