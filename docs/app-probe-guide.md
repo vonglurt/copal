@@ -1,7 +1,7 @@
 # Launching Programs and Taking Their Pictures with the Tools
 
 <!-- SPDX-License-Identifier: MIT -->
-Copyright (c) 2026 paulr@sdf.org. MIT licensed — see `LICENSE`.
+Copyright (c) 2026 Paul Richeson. MIT licensed — see `LICENSE`.
 
 ---
 

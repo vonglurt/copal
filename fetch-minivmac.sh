@@ -1,6 +1,6 @@
 #!/bin/bash
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org
+# Copyright (c) 2026 Paul Richeson
 #
 #
 # fetch-minivmac.sh -- assemble a complete Mini vMac setup: emulator source,

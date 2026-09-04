@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 #
 # copal-app-sweeplist.py -- write the gallery sweep list: one row per catalogue
 # program whose binary is installed (plus the bench extras), tab separated:

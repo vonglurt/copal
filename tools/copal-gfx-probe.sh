@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 #
 #  copal-gfx-probe.sh -- what is the guest's graphics stack doing, right now?
 #

@@ -1,5 +1,5 @@
 <!-- SPDX-License-Identifier: MIT -->
-<!-- Copyright (c) 2026 paulr@sdf.org -- Copal Linux -->
+<!-- Copyright (c) 2026 Paul Richeson -- Copal Linux -->
 ```
  ██████  ██████  ██████   █████  ██
 ██      ██    ██ ██   ██ ██   ██ ██
