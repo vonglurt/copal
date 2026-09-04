@@ -476,6 +476,20 @@ fresh-img-%: | require-tools $(BUILDDIR)
 # compares the two whenever this path exists, and says nothing when it does not.
 BLEEPER_SRC ?= $(HOME)/code/bleeper/bleeper
 
+## sync-bleeper: copy $(BLEEPER_SRC) into the heredoc in copal-prep.sh.
+## This is the fix when lint says the embedded copy has drifted -- edit
+## bleeper in its own checkout, run this, commit both.
+.PHONY: sync-bleeper
+sync-bleeper:
+	@test -f $(BLEEPER_SRC) || { printf '\033[31merror:\033[0m no $(BLEEPER_SRC)\n'; exit 1; }
+	@python3 -c 'import sys;\
+	p=sys.argv[1];s=open(p).read();prog=open(sys.argv[2]).read();\
+	m="    cat > /usr/local/bin/bleeper <<\x27BLEEPERPY\x27\n";\
+	i=s.index(m)+len(m);j=s.index("\nBLEEPERPY\n",i);\
+	open(p,"w").write(s[:i]+prog.rstrip("\n")+s[j:])' $(PREP) $(BLEEPER_SRC)
+	@printf '  ok      %s -> $(PREP)\n' "$(BLEEPER_SRC)"
+	@$(MAKE) --no-print-directory lint
+
 lint: | $(BUILDDIR)
 	@sh -n $(PREP) && printf '  ok      copal-prep.sh\n'
 	@sh -n $(VMRUN) && printf '  ok      copal-vm.sh\n'
