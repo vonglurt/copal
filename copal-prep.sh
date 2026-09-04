@@ -5432,9 +5432,16 @@ EOF
     # UUID= (not /dev/mmcblk0p2) and /boot is already listed because p1 was
     # mounted. It also appends a bare `tmpfs /tmp tmpfs` -- replace that with
     # sized entries so /tmp and /var/log churn never reaches the card.
+    #
+    # A tmpfs size is a ceiling, not a reservation: it costs nothing until
+    # something fills it. So it is a share of RAM, not a number: a fifth is
+    # about 100 MB on a Zero and over a gigabyte in a 6 GB VM. The fixed
+    # 64 MB it replaces was a Zero's number applied everywhere, and on the VM
+    # it broke the Go linker and the Endless Sky link while protecting
+    # nothing.
     sed -i '/^tmpfs[[:space:]][[:space:]]*\/tmp[[:space:]]/d' /mnt/etc/fstab
     cat >> /mnt/etc/fstab <<'FSTAB'
-tmpfs  /tmp      tmpfs  defaults,noatime,size=64M  0 0
+tmpfs  /tmp      tmpfs  defaults,noatime,size=20%  0 0
 tmpfs  /var/log  tmpfs  defaults,noatime,size=32M  0 0
 FSTAB
     # noatime avoids a write on every read; commit=600 batches journal
@@ -6897,8 +6904,11 @@ if grep -q '^Emulators,' "$CSV"; then
 fi
 
 # ----- Built from source, by stages 12 and 14 -----
-if have endless-sky || have wxmaxima || have streamripper || have ytq; then
+if have endless-sky || have wxmaxima || have streamripper || have ytq || [ -x "$HOME/code/gonex/gonex-bin" ]; then
     out '^sep(Built here)'
+    # Gonex writes config.xml and save.json to the directory it starts in,
+    # so it starts in its own checkout, where .gitignore expects them.
+    [ -x "$HOME/code/gonex/gonex-bin" ] && out "Gonex,sh -c 'cd $HOME/code/gonex && exec ./gonex-bin'" || true
     have endless-sky  && out "Endless Sky,endless-sky" || true
     have wxmaxima     && out "wxMaxima,wxmaxima" || true
     have ytq          && out "ytq download queue,$TERM_EMU -e ytq" || true
@@ -8859,6 +8869,174 @@ BROWSERENV
     note "Sign in by running:  claude      (as $PI_USER, not as root)"
     note "Credentials land in ~/.claude, so run it as the account you use."
     note "If it runs out of memory: NODE_OPTIONS=--max-old-space-size=256 claude"
+}
+
+# ------------------------------------ stage 7: Gonex and Yodacon, in ~/code ---
+#
+# Paul's own projects, checked out where they are worked on -- ~/code, as the
+# user, never as root -- and built. Gonex is the game (Go, Ebitengine); Yodacon
+# is the organisation repo whose Makefile round-trips the 1997 plugin, runs the
+# suites and builds the game. Both are public under github.com/yodacon.
+#
+# The work is done by /usr/local/bin/copal-code, written here and run once as
+# the user; it is also the thing to run again after a git pull. Every quirk it
+# handles was measured on the aarch64 VM on 4 Sep 2026, not guessed:
+#
+#   - Alpine's go package sets GOTOOLCHAIN=local, and gonex's go.mod asks for
+#     Go 1.27 where v3.24 ships 1.26.3: "go.mod requires go >= 1.27.0".
+#     GOTOOLCHAIN=auto lets go fetch the 1.27 toolchain into ~/go (248 MB,
+#     once) and build with it.
+#   - The Go linker writes its objects to $TMPDIR, and with /tmp a small
+#     tmpfs the link died with "No space left on device" -- the same wall the
+#     Endless Sky link hit. TMPDIR points into the home directory.
+#   - Ebitengine is cgo on Linux: build-base plus the X11, GL and ALSA headers.
+#   - Yodacon's `make verify` unpacks the 1997 .sit releases with unar, which
+#     Alpine packages on no port (checked v3.24 main and community, and edge).
+#     The suites and the game build still run -- `make test gonex` -- and
+#     verify is skipped with a line saying why.
+#   - The Makefile builds its own gonex submodule by default; GONEX= points
+#     it at the standalone checkout instead, so there is one gonex, not two.
+#   - On musl, Ebitengine's render thread gets a 128 KB stack and llvmpipe's
+#     shader compiler overflows it: SIGSEGV on the first frame. gonex renders
+#     on the main thread when it sees /lib/ld-musl-*.so.1, so nothing is
+#     needed here -- but a checkout from before that commit will crash, and
+#     GONEX_SINGLE_THREAD=1 is the switch.
+#
+# A checkout that already exists is left exactly as it is: no pull, no reset.
+# A developer's tree is not the installer's to move. It is rebuilt, which is
+# what makes the stage re-runnable. Measured from a clean home: the two
+# checkouts are 179 MB, ~/go ends up at 437 MB (toolchain plus modules), and
+# the first run took about 40 seconds on the VM, most of it the download.
+dev_code_checkouts() {
+    say "Gonex and Yodacon: checked out into ~/code and built"
+    cat <<'MSG'
+
+    Two of Paul's repositories, cloned into ~/code as the user and built
+    there, so the machine comes up with the game and its tooling ready to
+    work on:
+
+      ~/code/gonex      the game -- Go, Ebitengine. Built to gonex-bin
+      ~/code/yodacon    the organisation repo: the 1997 plugin, exporters,
+                        the suites, and the Makefile that ties them together
+
+    About 600 MB in all, most of it the Go 1.27 toolchain and modules under
+    ~/go. A checkout that is already there is left untouched and rebuilt.
+
+MSG
+    confirm "Clone and build Gonex and Yodacon now?" || { note "Skipped."; return 0; }
+    have_space_mb 1000 "the Gonex and Yodacon checkouts and the Go toolchain" \
+        || { note "Skipped."; return 0; }
+    ensure_user_home || true
+    _h=$(user_home)
+    if [ -z "$_h" ] || [ ! -d "$_h" ] || ! su - "$PI_USER" -c 'id' >/dev/null 2>&1; then
+        warn "no usable account for $PI_USER -- skipping"
+        return 0
+    fi
+    add_optional git go build-base pkgconf python3 make \
+        alsa-lib-dev libx11-dev libxcursor-dev libxi-dev libxinerama-dev \
+        libxrandr-dev libxxf86vm-dev mesa-dev
+    for _p in git go gcc make python3; do
+        command -v "$_p" >/dev/null 2>&1 || { warn "$_p is missing -- cannot build; skipping"; return 0; }
+    done
+    apk info -e libx11-dev >/dev/null 2>&1 \
+        || { warn "the X11 development headers did not install -- skipping"; return 0; }
+
+    cat > /usr/local/bin/copal-code <<'COPALCODE'
+#!/bin/sh
+# copal-code -- Gonex and Yodacon, checked out into ~/code and built.
+#
+# Stage 7 of copal-init.sh writes this and runs it once as the user. Run it
+# again after a git pull to rebuild. It never pulls or resets a checkout that
+# exists: that tree is yours.
+#
+#   copal-code           clone what is missing, build everything
+#   copal-code status    what is checked out, and what is built
+#
+# GOTOOLCHAIN=auto: Alpine pins it to local, and gonex wants a newer Go than
+# the package -- go fetches the one go.mod names into ~/go, once.
+# TMPDIR: the Go linker's scratch. /tmp is a small tmpfs on a Copal machine
+# and a 40 MB link does not fit in it.
+set -u
+CODE="$HOME/code"
+CACHE="$HOME/.cache/copal-code"
+LOG="$CACHE/build.log"
+export GOTOOLCHAIN=auto TMPDIR="$CACHE/tmp"
+
+say()  { printf '\033[1m%s\033[0m\n' "$*"; }
+note() { printf '      %s\n' "$*"; }
+warn() { printf '\033[33mwarning:\033[0m %s\n' "$*" >&2; }
+rev()  { git -C "$1" describe --tags --always 2>/dev/null || echo '?'; }
+
+status() {
+    for _r in gonex yodacon; do
+        if [ -d "$CODE/$_r/.git" ]; then note "$CODE/$_r   $(rev "$CODE/$_r")"
+        else note "$CODE/$_r   not checked out"; fi
+    done
+    if [ -x "$CODE/gonex/gonex-bin" ]; then note "gonex-bin   built $(date -r "$CODE/gonex/gonex-bin" '+%Y-%m-%d %H:%M')"
+    else note "gonex-bin   not built"; fi
+}
+
+fetch() {  # <name> <url>
+    if [ -d "$CODE/$1/.git" ]; then
+        note "$CODE/$1 is already checked out ($(rev "$CODE/$1")) -- left as it is"
+    else
+        say "Cloning $1"
+        git clone "$2" "$CODE/$1" || { warn "the clone of $1 failed"; return 1; }
+    fi
+}
+
+case "${1:-}" in
+    status) status; exit 0 ;;
+    "") ;;
+    *)  echo "usage: copal-code [status]" >&2; exit 2 ;;
+esac
+
+mkdir -p "$CODE" "$CACHE/tmp" || exit 1
+: > "$LOG"
+fetch gonex   https://github.com/yodacon/gonex.git   || exit 1
+fetch yodacon https://github.com/yodacon/yodacon.git || exit 1
+
+say "Building Gonex   (log: $LOG)"
+if (cd "$CODE/gonex" && go build -o gonex-bin ./cmd/gonex) >>"$LOG" 2>&1; then
+    note "built: $CODE/gonex/gonex-bin"
+else
+    warn "the Gonex build failed -- the last lines of $LOG:"
+    tail -n 15 "$LOG" | sed 's/^/    /'
+    exit 1
+fi
+
+say "Yodacon: the suites, and the game through its Makefile"
+_targets="test gonex"
+if command -v unar >/dev/null 2>&1; then
+    _targets=all
+else
+    note "unar is not packaged by Alpine, so 'make verify' -- the 1997"
+    note "resource-fork round trip -- is skipped. The rest runs."
+fi
+if (cd "$CODE/yodacon" && make $_targets GONEX="$CODE/gonex") >>"$LOG" 2>&1; then
+    note "make $_targets: ok"
+else
+    warn "make $_targets failed in $CODE/yodacon -- the last lines of $LOG:"
+    tail -n 15 "$LOG" | sed 's/^/    /'
+    exit 1
+fi
+rm -rf "$CACHE/tmp"
+
+say "Done"
+status
+note "play:     cd ~/code/gonex && ./gonex-bin    (or Super+C -> Built here -> Gonex)"
+note "rebuild:  copal-code, after a git pull in either checkout"
+COPALCODE
+    chmod 0755 /usr/local/bin/copal-code
+    note "wrote /usr/local/bin/copal-code"
+
+    say "Running copal-code as $PI_USER  (the Go toolchain download is the slow part)"
+    if su - "$PI_USER" -c copal-code; then
+        note "Gonex and Yodacon are in $_h/code"
+    else
+        warn "copal-code did not finish -- as $PI_USER, run 'copal-code' to retry;"
+        warn "the log is $_h/.cache/copal-code/build.log"
+    fi
 }
 
 # The guides that go with the toolchain. Dropped into the same directory the
@@ -11210,6 +11388,8 @@ MAKEFILE
     install_home_file dev/hello/Makefile /tmp/Makefile.$$
     rm -f /tmp/main.c.$$ /tmp/Makefile.$$
 
+    dev_code_checkouts
+
     say "Stage 7 complete."
     cat <<MSG
     Try the whole loop:
@@ -11226,6 +11406,9 @@ MAKEFILE
         Ctrl-O          back to wherever you jumped from
 
     Or from a shell:  make run    make debug    make clean
+
+    Gonex and Yodacon, if you said yes to them, are in ~/code. 'copal-code'
+    rebuilds them after a pull; 'copal-code status' says what is there.
 
     THE GUIDES. These are the tutorials, on this machine, no network needed.
     Super+Shift+G opens the list; from a terminal:
@@ -14321,8 +14504,9 @@ print(sorted(tags, key=lambda s: [int(x) for x in s.split(".")])[-1] if tags els
         # this was written does not. Only for the series it belongs to.
         [ -z "$_tver" ] && [ "$_kver" = 10.0 ] && _tver=10.0.6
         if [ -n "$_tver" ]; then
-            # Not /tmp: that is a 64 MB tmpfs on a Copal machine, and the
-            # unpacked release is a fair part of it.
+            # Not /tmp: that is a small tmpfs on a Copal machine (stage 3
+            # caps it at a fifth of RAM), and the unpacked release is a fair
+            # part of it on a Zero.
             mkdir -p /usr/local/src
             _w=$(mktemp -d /usr/local/src/kicad-templates.XXXXXX)
             _url="https://gitlab.com/kicad/libraries/kicad-templates/-/archive/$_tver/kicad-templates-$_tver.tar.gz"

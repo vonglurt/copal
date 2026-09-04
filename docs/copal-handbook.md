@@ -932,7 +932,7 @@ copal --auto      # also starts it, and is what the resume hook calls
 | 4 | X.Org on the framebuffer, i3, terminal, file manager, the Copal menu, Center, guides and splash. Tokyo Night everywhere | 3, network |
 | 5 | zram — compressed swap in RAM. The biggest single win on 512 MB | network |
 | 6 | Installs the Mac's public key for `user` with the permissions sshd insists on | 1 |
-| 7 | Development environment: **gcc and clang, Rust, Go, Fortran, PHP+Composer+Xdebug, Forth, and a dozen more**; Neovim as an IDE via its built-in LSP (no plugins); gdb/cgdb/lldb/valgrind; terminals and multiplexers; the morse trainer; eight guides; and the git identity from stage 1, written to `user`'s `~/.gitconfig` | 3, network |
+| 7 | Development environment: **gcc and clang, Rust, Go, Fortran, PHP+Composer+Xdebug, Forth, and a dozen more**; Neovim as an IDE via its built-in LSP (no plugins); gdb/cgdb/lldb/valgrind; terminals and multiplexers; the morse trainer; eight guides; and the git identity from stage 1, written to `user`'s `~/.gitconfig`; optionally Gonex and Yodacon checked out into `~/code` and built, with `copal-code` to rebuild them | 3, network |
 | 8 | Grows `COPALROOT` into any unallocated space after it. Non-destructive, works on a mounted root | network |
 | 9 | Retro emulators: Mini vMac (Macintosh Plus — fast, and the one that works) and VICE (C64, now a package rather than an overnight build). Both get a directory under your home with disk images and launchers | 7, network |
 | 10 | Peripherals and media: wifi, bluetooth, HDMI audio, the PipeWire sound server, tcpdump/tshark, hex editors, HFS and disk-image tools | 3, network |
@@ -1353,6 +1353,39 @@ the more capable of the two. Install any of them from **Super+C → Devtools**.
 `~/dev/hello` is a ready-made C project — `main.c` and a `Makefile` with `run`,
 `debug` and `clean` — so the whole compile → breakpoint → inspect loop can be
 tested in one go. Stage 7 optionally adds Go with a matching `~/dev/hello-go`.
+
+### Gonex and Yodacon in `~/code`
+
+Stage 7 ends by offering two of Paul's repositories, cloned into `~/code` **as
+`user`, not root**, and built there: [`gonex`](https://github.com/yodacon/gonex),
+the game (Go, Ebitengine), and [`yodacon`](https://github.com/yodacon/yodacon),
+the organisation repo whose Makefile round-trips the 1997 plugin, runs the
+suites and builds the game. The work is done by `/usr/local/bin/copal-code`,
+which the stage writes and then runs once; run it again after a `git pull`
+to rebuild, and `copal-code status` says what is checked out and built. A
+checkout that already exists is never pulled or reset — only rebuilt.
+
+What it works around, all measured on the aarch64 VM on 4 September 2026:
+
+- Alpine pins `GOTOOLCHAIN=local`, and `gonex` wants Go 1.27 where v3.24
+  ships 1.26.3. `copal-code` sets `GOTOOLCHAIN=auto`, so `go` fetches the
+  toolchain `go.mod` names into `~/go` — 248 MB, once.
+- The Go linker scratches in `$TMPDIR`, and a 40 MB link did not fit in a
+  64 MB `/tmp`. `TMPDIR` points under `~/.cache/copal-code`. (Stage 3 now
+  sizes `/tmp` at a fifth of RAM rather than a flat 64 MB, for the same
+  reason.)
+- Yodacon's `make verify` unpacks the 1997 `.sit` releases with `unar`, which
+  Alpine packages on no port. The suites and the game build still run —
+  `make test gonex` — and verify is skipped with a line saying so.
+- On musl, Ebitengine's render thread gets a 128 KB stack and llvmpipe's
+  shader compiler overflows it: `SIGSEGV` inside libgallium on the first
+  frame. `gonex` renders on the main thread when it sees `/lib/ld-musl-*.so.1`
+  (`GONEX_SINGLE_THREAD=1` forces it, `=0` turns it off), so a checkout from
+  before that commit will crash here.
+
+The game appears under **Built here** in the Super+C menu once `gonex-bin`
+exists; it starts in its own checkout, where it writes `config.xml` and
+`save.json`.
 
 **Debugging is `Termdebug`,** which ships inside vim and neovim: a real gdb
 session with breakpoints, stepping and variable inspection, with no plugin
@@ -1957,12 +1990,16 @@ persists, and `lbu commit` is no longer needed.
 
 ```
 UUID=<p2>       /         ext4   defaults,noatime,commit=600  0 1
-tmpfs           /tmp      tmpfs  defaults,noatime,size=64M    0 0
+tmpfs           /tmp      tmpfs  defaults,noatime,size=20%    0 0
 tmpfs           /var/log  tmpfs  defaults,noatime,size=32M    0 0
 ```
 
 `setup-disk` regenerates `/etc/fstab` with `genfstab -U`, so the root line is a
-`UUID=`, not `/dev/mmcblk0p2` — edit the line by its mount point. Also repoint
+`UUID=`, not `/dev/mmcblk0p2` — edit the line by its mount point. The tmpfs
+sizes are ceilings, not reservations, so `/tmp` is a share of RAM rather than a
+number: about 100 MB on a Zero, over a gigabyte in a 6 GB VM. On a machine
+installed before this change, `/tmp` is a flat 64 MB — edit the line and
+`mount -o remount,size=20% /tmp` to grow it without a reboot. Also repoint
 `/etc/apk/cache` at `/var/cache/apk`: the carried-over config still points it at
 `/media/mmcblk0p2/cache`, and p2 is now the root filesystem itself, so that
 symlink dangles and `apk` breaks on first use.
