@@ -10437,8 +10437,9 @@ GUIDE
    Left     the menu button, workspaces 1-5, the current submap, the
             window list
    Centre   the clock
-   Right    temperature, cpu, memory, disk, network, volume, battery,
-            the system tray  (and weather, which is off -- see below)
+   Right    temperature, cpu, memory, disk (small, one letter each),
+            hostname, network, volume, battery, the system tray
+            (and weather, which is off -- see below)
 
  MOVING THINGS
 
@@ -11145,7 +11146,7 @@ hypr_write_waybar() {
   // learn and seeing them switch is how that is learned.
   "modules-left":   ["custom/menu", "hyprland/workspaces", "hyprland/submap", "wlr/taskbar"],
   "modules-center": ["clock"],
-  "modules-right":  ["temperature", "cpu", "memory", "disk", "network", "wireplumber", "battery", "tray"],
+  "modules-right":  ["temperature", "cpu", "memory", "disk", "custom/hostname", "network", "wireplumber", "battery", "tray"],
 
   // The Omarchy menu, in a corner. Left-click opens it; right-click goes
   // straight to the power entries, because "shut down" is the one thing
@@ -11181,19 +11182,32 @@ hypr_write_waybar() {
     "tooltip-format": "{title} ({app_id})",
     "on-click": "activate",
     "on-click-middle": "close",
-    "max-length": 60,
+    "max-length": 120,
     "icon-size": 0
   },
 
+  // Time only, 24-hour. The date is on the calendar behind the tooltip, and
+  // on the wallpaper under the big clock, so the bar need not say it twice.
   "clock": {
-    "format": "{:%a %d %b  %H:%M}",
+    "format": "{:%H:%M}",
     "tooltip-format": "<tt>{calendar}</tt>",
     "calendar": { "mode": "month" }
   },
 
-  "cpu":    { "format": "cpu {usage}%", "interval": 5 },
-  "memory": { "format": "mem {percentage}%", "interval": 5 },
-  "disk":   { "format": "disk {percentage_used}%", "path": "/", "interval": 60 },
+  // One letter each: three numbers that are glanced at, not read, and the
+  // tooltip spells the word out for anyone who hovers.
+  "cpu":    { "format": "c{usage}%", "tooltip-format": "cpu {usage}%", "interval": 5 },
+  "memory": { "format": "m{percentage}%", "tooltip-format": "memory {used:0.1f} of {total:0.1f} GiB", "interval": 5 },
+  "disk":   { "format": "d{percentage_used}%", "tooltip-format": "disk / {used} of {total}", "path": "/", "interval": 60 },
+
+  // The machine's name, beside its address: the two things you need to reach
+  // it from somewhere else. Once, because it does not change while logged in.
+  "custom/hostname": {
+    "format": "{}",
+    "exec": "hostname",
+    "interval": "once",
+    "tooltip": false
+  },
 
   // THE THEME'S OTHER TWO WIDGETS. quickshell's bar carries a clock, a CPU
   // temperature and a weather readout; the clock was here from the start and
@@ -11307,10 +11321,16 @@ window#waybar {
 
 /* One rule for every block, so adding a module does not mean adding CSS. */
 #workspaces, #submap, #taskbar, #clock, #cpu, #memory, #disk, #temperature,
-#custom-weather, #network, #wireplumber, #battery, #tray {
+#custom-hostname, #custom-weather, #network, #wireplumber, #battery, #tray {
     padding: 0 10px;
     color: @text-light;
     background: transparent;
+}
+/* The three readouts are small on purpose -- glanced at, not read. */
+#cpu, #memory, #disk {
+    padding: 0 5px;
+    font-size: 11px;
+    color: @accent-dark;
 }
 
 /* THE MENU BUTTON, in the top-left corner. It is given the accent colour and
