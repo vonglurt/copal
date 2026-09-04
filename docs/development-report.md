@@ -3,7 +3,7 @@
 *Lab Report — IEEE Format*
 
 <!-- SPDX-License-Identifier: MIT -->
-Copyright (c) 2026 paulr@sdf.org. MIT licensed — see `LICENSE`.
+Copyright (c) 2026 Paul Richeson. MIT licensed — see `LICENSE`.
 
 Companion to `lab-report.md`. That report documents the *experiment* — bringing
 Alpine up on Raspberry Pi Zero hardware. This one documents the *artifact* — the

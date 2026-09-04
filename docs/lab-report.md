@@ -3,7 +3,7 @@
 *Lab Report — IEEE Format*
 
 <!-- SPDX-License-Identifier: MIT -->
-Copyright (c) 2026 paulr@sdf.org. MIT licensed — see `LICENSE`. Copal Linux is
+Copyright (c) 2026 Paul Richeson. MIT licensed — see `LICENSE`. Copal Linux is
 an aggregation of Alpine Linux, not a derivative work of it; Alpine and its
 packages remain under their own licences.
 

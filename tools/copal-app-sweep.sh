@@ -1,6 +1,6 @@
 #!/bin/sh
 # SPDX-License-Identifier: MIT
-# Copyright (c) 2026 paulr@sdf.org -- part of Copal Linux.
+# Copyright (c) 2026 Paul Richeson -- part of Copal Linux.
 #
 # copal-app-sweep.sh -- run the gallery sweep: every row of the list through
 # copal-app-probe.sh --gallery, one probe at a time, never two (a second
