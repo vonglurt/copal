@@ -471,6 +471,11 @@ fresh-img-%: | require-tools $(BUILDDIR)
 # check reads the target out of each script's `exec make` line and looks for
 # it among the targets defined below, so renaming one here fails the lint
 # rather than leaving a shortcut that only fails when somebody runs it.
+# Where bleeper is developed. The copy inside copal-prep.sh is what gets
+# installed -- copal-init.sh has to work with nothing checked out -- so lint
+# compares the two whenever this path exists, and says nothing when it does not.
+BLEEPER_SRC ?= $(HOME)/code/bleeper/bleeper
+
 lint: | $(BUILDDIR)
 	@sh -n $(PREP) && printf '  ok      copal-prep.sh\n'
 	@sh -n $(VMRUN) && printf '  ok      copal-vm.sh\n'
@@ -485,6 +490,19 @@ lint: | $(BUILDDIR)
 	@rm -f $(BUILDDIR)/.copal-init.lint.sh
 	@for _s in bin/*.sh; do sh -n "$$_s" || exit 1; done; \
 	    printf '  ok      bin/*.sh (%s shortcuts)\n' "$$(ls bin/*.sh | wc -l | xargs)"
+	@sed -n "/^    cat > \/usr\/local\/bin\/bleeper <<'BLEEPERPY'$$/,/^BLEEPERPY$$/p" $(PREP) \
+	    | sed '1d;$$d' > $(BUILDDIR)/.bleeper.lint.py
+	@test -s $(BUILDDIR)/.bleeper.lint.py \
+	    || { printf '\033[31merror:\033[0m could not extract bleeper from $(PREP)\n'; exit 1; }
+	@python3 -c "import ast,sys;ast.parse(open(sys.argv[1]).read()+chr(10))" $(BUILDDIR)/.bleeper.lint.py \
+	    && printf '  ok      bleeper (embedded, %s lines)\n' "$$(wc -l < $(BUILDDIR)/.bleeper.lint.py | xargs)"
+	@if [ -f $(BLEEPER_SRC) ]; then \
+	    cmp -s $(BUILDDIR)/.bleeper.lint.py $(BLEEPER_SRC) \
+	      && printf '  ok      bleeper matches %s\n' "$(BLEEPER_SRC)" \
+	      || { printf '\033[31merror:\033[0m the bleeper embedded in $(PREP) has drifted from $(BLEEPER_SRC)\n'; \
+	           diff -u $(BLEEPER_SRC) $(BUILDDIR)/.bleeper.lint.py | head -20; exit 1; }; \
+	  else printf '  --      bleeper source checkout absent, drift not checked\n'; fi
+	@rm -f $(BUILDDIR)/.bleeper.lint.py
 	@_names=$$(grep -E '^[A-Za-z0-9_%.-][A-Za-z0-9_%. -]*:' Makefile \
 	           | sed 's/:.*//' | tr ' ' '\n' | sort -u); \
 	_bad=''; \
