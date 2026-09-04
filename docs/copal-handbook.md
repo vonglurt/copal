@@ -1272,6 +1272,25 @@ A window shows `--` until it is full. A three-second CPM built from one sample
 is twenty times noisier than it looks, and drawing it as settled is how a
 25 CPM background reads as 60 and somebody goes hunting for a leak.
 
+### The spectrum, where flat is the good answer
+
+The monitor also accumulates a power spectrum of the per-second counts and
+draws it along the bottom in colour, one column per column of the terminal.
+
+Radioactive decay is a Poisson process, and **the power spectrum of a Poisson
+process is flat** — so a healthy counter watching background produces no shape
+at all, and that featureless strip is the useful result: a statement that
+nothing periodic is happening. The feature earns its place on the other case, a
+peak meaning something is arriving on a schedule, which decay does not have —
+mains hum on the tube's supply, a fan carrying a source past, a loose connector,
+firmware that batches its reporting. In the time domain all of those look
+exactly like more counts.
+
+It averages successive windows, which is what makes it readable: one
+periodogram of a Poisson process is flat in expectation and violently noisy in
+fact, and averaging *N* of them divides that scatter by √*N*. The FFT is
+twenty-five lines of `cmath` — the same argument as the absent `pyserial`.
+
 ### Dormant is the normal state
 
 The boot service probes once. Finding no counter it writes the reason to
@@ -1405,7 +1424,12 @@ and a decimal fix is a street address for whoever is holding the counter.
 ### Putting it on the web
 
 `radbeeper export` turns the logs into one self-contained `index.html` —
-summary cards, a by-day table and the latest rows, sortable and searchable.
+a how-to, summary cards, a log-scale plot of counts per minute by the hour, a
+by-day table and the latest rows. **No JavaScript, no web fonts, no CDN:** the
+chart is SVG the program draws itself, and the full record is one link away as
+the file it already lives in, rather than a table widget pretending to page
+through it.
+
 The radbeeper repository carries a GitHub Actions workflow for it: fork, drop
 your `cpm-*.tsv` into `logs/`, push, and the page is rebuilt and committed
 back. Nothing to install in the workflow — the generator is the same one-file

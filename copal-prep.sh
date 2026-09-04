@@ -12792,11 +12792,13 @@ MSG
 #  though it were settled is how a 25 CPM background reads as 60 and someone
 #  goes looking for a leak.
 import argparse
+import cmath
 import errno
 import fcntl
 import os
 import random
 import select
+import math
 import signal
 import stat
 import struct
@@ -12855,6 +12857,11 @@ FLASH_SIZES = {"GMC-320": 0x100000, "GMC-300": 0x10000, "GMC-500": 0x100000,
                "GMC-600": 0x100000}
 SPIR_CHUNK = 2048
 
+# The accumulating spectrum. 128 samples at one a second is a window of just
+# over two minutes, resolving periods from 2 seconds to 128; a longer window
+# resolves slower things but waits longer before it can say anything at all.
+SPECTRUM_WINDOW = 128
+
 # The service log: tab-separated, one row per LOG_EVERY seconds, one file per
 # month. LOG_NAME is the single undated file older versions wrote; it is
 # migrated into the dated ones the first time it is seen and then kept aside.
@@ -12888,8 +12895,11 @@ DEFAULT_MAX_GAP = 10.0
 # place name is what a reader needs, while a decimal fix to six places is a
 # street address for whoever is holding the counter. Nothing here has any use
 # for the precision, so it is not collected.
+#
+# AND THERE IS NO DEFAULT PLACE. A site is recorded when somebody records one;
+# until then the column is empty, which is the truthful answer to "where was
+# this taken" and does not put an address on a public page by accident.
 SITES_NAME = "sites.tsv"
-DEFAULT_SITE = "Bellevue High School"
 
 # How much of the flash tail a backfill reads when it is not told otherwise.
 # 64 KiB is around seventeen hours at the interval this counter records, and
@@ -13354,6 +13364,150 @@ def find_counter(device=None, baud=None, source="auto", sim_cpm=25.0, seed=None)
                    % ", ".join(ports))
 
 
+# ---------------------------------------------------------------- spectrum ---
+#
+# WHAT AN FFT OF THIS IS FOR, AND WHY A BORING ANSWER IS THE RIGHT ONE.
+# Radioactive decay is a Poisson process, and the power spectrum of a Poisson
+# process is FLAT -- white noise, every frequency carrying the same expected
+# power. So a healthy counter watching background produces a spectrum with no
+# shape in it at all, and that is the useful result: it is a statement that
+# nothing periodic is happening.
+#
+# What it is for is the other case. A peak means something is arriving on a
+# schedule, and decay does not have a schedule. Mains hum picked up on the
+# tube's high-voltage supply, a fan or a pump passing a source, a loose
+# connector chattering, a firmware that batches its reporting -- all of them
+# put a line in the spectrum that no amount of staring at a CPM number would
+# separate from ordinary noise, because in the time domain they look exactly
+# like more counts.
+#
+# IT ACCUMULATES, which is Bartlett's method and is the whole reason it works.
+# One 128-sample periodogram of a Poisson process is not flat -- it is flat in
+# expectation and violently noisy in fact, every bin an exponential random
+# variable with standard deviation equal to its own mean. Averaging N of them
+# divides that scatter by root N, so a real line climbs out of the grass while
+# the grass settles down. Ten minutes of watching is five windows; an hour is
+# twenty-eight, and by then a peak twice the mean is worth believing.
+def fft(values):
+    """Iterative radix-2 Cooley-Tukey. Stdlib cmath, for the same reason there
+    is no pyserial: 25 lines against a dependency this program cannot assume.
+    """
+    n = len(values)
+    if n == 0 or (n & (n - 1)):
+        raise ValueError("fft needs a power-of-two length, got %d" % n)
+    a = [complex(v) for v in values]
+    # Bit-reversal permutation, in place.
+    j = 0
+    for i in range(1, n):
+        bit = n >> 1
+        while j & bit:
+            j ^= bit
+            bit >>= 1
+        j |= bit
+        if i < j:
+            a[i], a[j] = a[j], a[i]
+    size = 2
+    while size <= n:
+        step = cmath.exp(-2j * cmath.pi / size)
+        half = size // 2
+        for start in range(0, n, size):
+            w = 1 + 0j
+            for k in range(start, start + half):
+                u = a[k]
+                v = a[k + half] * w
+                a[k] = u + v
+                a[k + half] = u - v
+                w *= step
+        size <<= 1
+    return a
+
+
+class Spectrum:
+    """A running average of periodograms over a fixed window.
+
+    THE MEAN IS REMOVED BEFORE EVERY TRANSFORM. The DC term is the count rate,
+    which is what every other number on the screen already says; leaving it in
+    would put a mountain at bin zero and flatten everything worth seeing into
+    the foothills.
+
+    A HANN TAPER, because a period that does not divide the window exactly
+    would otherwise leak its energy across every bin -- turning the one real
+    line into a raised floor, which is precisely the shape this is meant to
+    tell apart from a raised floor.
+    """
+
+    def __init__(self, window=SPECTRUM_WINDOW):
+        self.window = window
+        self.bins = window // 2
+        self.buf = []
+        self.power = [0.0] * self.bins
+        self.runs = 0
+        self.taper = [0.5 - 0.5 * math.cos(2 * math.pi * i / (window - 1))
+                      for i in range(window)]
+
+    def add(self, counts):
+        self.buf.append(float(counts))
+        if len(self.buf) < self.window:
+            return False
+        mean = sum(self.buf) / self.window
+        shaped = [(v - mean) * t for v, t in zip(self.buf, self.taper)]
+        spec = fft(shaped)
+        for i in range(self.bins):
+            self.power[i] += abs(spec[i]) ** 2
+        self.runs += 1
+        self.buf = []
+        return True
+
+    def wait(self):
+        """Samples still needed before the first window closes."""
+        return 0 if self.runs else self.window - len(self.buf)
+
+    def averaged(self):
+        """Mean power per bin, DC dropped. Empty until a window has closed."""
+        if not self.runs:
+            return []
+        return [p / self.runs for p in self.power[1:]]
+
+    def relative(self):
+        """Each bin against the average bin: 1.0 is what flat looks like.
+
+        Poisson is flat, so this is the number that means anything -- an
+        absolute power depends on the count rate and says nothing about
+        whether the arrivals were random.
+        """
+        avg = self.averaged()
+        if not avg:
+            return []
+        mean = sum(avg) / len(avg)
+        if mean <= 0:
+            return [0.0] * len(avg)
+        return [p / mean for p in avg]
+
+    def period(self, index, rate=1.0):
+        """Seconds per cycle for a bin of the averaged (DC-dropped) spectrum."""
+        k = index + 1
+        return self.window / (k * rate)
+
+
+def spectrum_columns(rel, width):
+    """Fold the bins onto the columns the screen actually has.
+
+    The window gives 63 bins and a terminal gives whatever it gives, so each
+    column is the LOUDEST bin it covers rather than the average of them: a
+    single sharp line is the thing being looked for, and averaging it with its
+    quiet neighbours is how it disappears.
+    """
+    if not rel or width < 1:
+        return []
+    out = []
+    n = len(rel)
+    for c in range(width):
+        lo = c * n // width
+        hi = max(lo + 1, (c + 1) * n // width)
+        out.append(max(rel[lo:hi]))
+    return out
+
+
 # ---------------------------------------------------------------- averages ---
 class Windows:
     """Counts per second in, three running CPM averages out.
@@ -13563,8 +13717,34 @@ def sparkline(samples, width):
                    for _t, c in tail)
 
 
+def bar_rows(samples, width, height=4):
+    """The counts as a column chart `height` terminal rows tall.
+
+    One row of block glyphs has eight levels in it, which is enough to say
+    "something happened" and not enough to say how much. Four rows have
+    thirty-two, which is the difference between seeing a spike and seeing that
+    it was three times the background -- and it costs three lines of a screen
+    that has them going spare.
+    """
+    tail = samples[-width:]
+    if not tail:
+        return [""] * height
+    peak = max(c for _t, c in tail) or 1
+    rows = []
+    for r in range(height):
+        floor = (height - 1 - r) * 8       # row 0 is the top of the chart
+        line = []
+        for _t, c in tail:
+            units = int(round(c * height * 8.0 / peak))
+            line.append(SPARK[min(8, max(0, units - floor))])
+        rows.append("".join(line))
+    return rows
+
+
 def run_curses(counter, w, args):
     import curses
+
+    spec = Spectrum()
 
     def draw(stdscr):
         curses.curs_set(0)
@@ -13587,6 +13767,7 @@ def run_curses(counter, w, args):
 
         for when, counts in counter.samples():
             w.add(when, counts)
+            spec.add(counts)
             stdscr.erase()
             h, width = stdscr.getmaxyx()
             title = "radbeeper %s -- %s" % (VERSION, counter.version)
@@ -13620,10 +13801,78 @@ def run_curses(counter, w, args):
                            % (w.total, int(w.elapsed())), width - 1)
             row += 2
             if width > 20:
-                stdscr.addnstr(row, 0, sparkline(w.samples, width - 1),
-                               width - 1,
-                               curses.color_pair(4) if use_colour else 0)
-            if h > row + 2:
+                # As tall as there is room for, up to four rows, so the shape
+                # of the last few minutes is readable and not just present.
+                tall = max(1, min(4, h - row - 7))
+                for i, line in enumerate(bar_rows(w.samples, width - 1, tall)):
+                    stdscr.addnstr(row + i, 0, line, width - 1,
+                                   curses.color_pair(4) if use_colour else 0)
+                row += tall
+            row += 2
+
+            # The spectrum, which is flat when everything is well. See the
+            # Spectrum class for why that is the useful answer and not a
+            # missing feature.
+            if h > row + 3 and width > 30:
+                rel = spec.relative()
+                if not rel:
+                    left = spec.wait()
+                    stdscr.addnstr(row, 0,
+                                   "spectrum   accumulating, %ds to the first"
+                                   " window" % left, width - 1, curses.A_DIM)
+                else:
+                    cols = spectrum_columns(rel, width - 1)
+                    top = max(cols)
+                    where = cols.index(top)
+                    bins = len(rel)
+                    secs = spec.period(int(where * bins / max(1, len(cols))))
+                    if top < 3.0:
+                        verdict = ("flat -- arrivals look random, as decay "
+                                   "should")
+                        attr = curses.A_DIM
+                    else:
+                        verdict = ("peak at %.0fs, %.1fx the mean -- something"
+                                   " periodic" % (secs, top))
+                        attr = (curses.color_pair(2 if top < 6 else 3)
+                                | curses.A_BOLD) if use_colour \
+                            else curses.A_BOLD
+                    stdscr.addnstr(row, 0, "spectrum   %s (%d windows)"
+                                   % (verdict, spec.runs), width - 1, attr)
+                    row += 1
+                    # One column per screen column, height by log power and
+                    # colour by how far above flat it is.
+                    for i, v in enumerate(cols):
+                        # NOT `level`: that is a module-level function this
+                        # same closure calls through band(), and binding the
+                        # name here makes it a local of draw() for the whole
+                        # function -- so band() raises NameError on the first
+                        # row it colours, long before this loop is reached.
+                        height = min(len(SPARK) - 1,
+                                     int(math.log(max(v, 0.05), 2) + 3))
+                        glyph = SPARK[max(0, height)]
+                        if not use_colour:
+                            pair = 0
+                        elif v >= 6.0:
+                            pair = curses.color_pair(3) | curses.A_BOLD
+                        elif v >= 3.0:
+                            pair = curses.color_pair(2)
+                        else:
+                            pair = curses.color_pair(4)
+                        try:
+                            stdscr.addstr(row, i, glyph, pair)
+                        except curses.error:
+                            break
+                    row += 1
+                    if h > row + 1:
+                        # Bin 1 is the slowest thing the window can see and
+                        # the last bin is the fastest, so the axis runs from
+                        # long periods on the left to short ones on the right.
+                        lo = "%ds" % spec.window
+                        hi = "2s"
+                        gap = max(1, (width - 1) - len(lo) - len(hi))
+                        stdscr.addnstr(row, 0, lo + " " * gap + hi,
+                                       width - 1, curses.A_DIM)
+            if h > row + 1:
                 stdscr.addnstr(h - 1, 0, "q to quit", width - 1, curses.A_DIM)
             stdscr.refresh()
             ch = stdscr.getch()
@@ -13669,7 +13918,7 @@ def cmd_watch(args):
 # reason the rule earns its keep.
 #
 #   55 AA 00 YY MM DD HH MM SS          a timestamp -- NINE bytes, no mode
-#   55 AA 01 <hi> <lo>                  one count that did not fit in a byte
+#   55 AA 01                            follows every timestamp; three bytes
 #   55 AA 02 <len> <ascii...>           a note typed on the device
 #   FF                                  unwritten flash
 #   anything else                       one count, one byte
@@ -13679,9 +13928,27 @@ def cmd_watch(args):
 # 4.26: measured over a 16 KiB image on 4 Sep 2026, all 85 datetime records
 # were followed immediately by 0x55 -- the first byte of the next marker.
 # Reading a tenth byte swallowed that 0x55, left 0xAA to be decoded as an
-# ordinary sample, and so INVENTED a count of 170 every three minutes while
-# losing the real two-byte count that follows every timestamp. Nine bytes, and
-# the save interval is measured rather than believed.
+# ordinary sample, and so INVENTED a count of 170 every three minutes. Nine
+# bytes, and the save interval is measured rather than believed.
+#
+# AND 55 AA 01 CARRIES NO PAYLOAD. GQ's document calls it a two-byte count,
+# for a second whose count did not fit in a byte, and reading it that way
+# produced 1,701 readings between 256 and 21,930 counts per second on a tube
+# that saturates three orders of magnitude below that. Three things settle it,
+# measured over a full 1 MiB image:
+#
+#   1. All 4,709 of them sit exactly nine bytes after a timestamp. Not one
+#      appears anywhere else, so it is structural and not data-driven -- a
+#      real escape would follow the data, not the clock.
+#   2. Its two "payload" bytes have the same distribution as ordinary count
+#      bytes: 64% zero, 21% one, 7% two. Counts, not a big-endian pair.
+#   3. Read as a marker, a three-minute stretch holds 180 samples over 181
+#      seconds rather than 179 -- nearer a true one per second, which is what
+#      the counter claims to be doing.
+#
+# So it is three bytes and the two that follow it are samples. 0x55AA itself
+# turned up as a "count" of 21,930 under the old reading, which is the marker
+# eating itself and was the thread worth pulling.
 def _history_raw(blob):
     """Yield (offset, kind, value) for each record: mark, count or note.
 
@@ -13714,9 +13981,8 @@ def _history_raw(blob):
                     yield i, "mark", when
                 i += 9
                 continue
-            if kind == 0x01 and i + 5 <= n:
-                yield i, "count", struct.unpack(">H", blob[i + 3:i + 5])[0]
-                i += 5
+            if kind == 0x01 and i + 3 <= n:
+                i += 3
                 continue
             if kind == 0x02 and i + 4 <= n:
                 ln = blob[i + 3]
@@ -14090,13 +14356,11 @@ def record_site(serial, name, when=None, directory=None):
 
 
 def ensure_site(serial, directory=None):
-    """A counter seen for the first time is written down where it started."""
-    sites = read_sites(directory)
-    if any(r[0] == serial for r in sites):
-        return sites
-    # Dated well before any reading, so it covers the whole of the counter's
-    # history rather than only what comes after this moment.
-    record_site(serial, DEFAULT_SITE, when=0, directory=directory)
+    """The sites on file. Nothing is invented for a counter nobody has placed.
+
+    An assumed location is worse than none: it is published, it looks like a
+    measurement, and nobody who reads it later can tell it was a guess.
+    """
     return read_sites(directory)
 
 
@@ -14531,7 +14795,8 @@ def cmd_site(args):
     mine = [r for r in sites if r[0] == serial]
     now = site_at(serial, time.time(), sites)
     print("counter %s" % serial)
-    print("now     %s" % now[2])
+    print("now     %s" % (now[2] if now else
+                          "nowhere recorded -- radbeeper site --name ..."))
     if len(mine) > 1:
         print("history")
         for _s, when, name in mine:
@@ -14552,10 +14817,15 @@ def cmd_site(args):
 # them, so a format change breaks it here rather than silently on somebody
 # else's web page.
 #
-# The generator is stdlib. The PAGE pulls DataTables from a CDN, which is a
-# different question from what this program depends on: a browser fetching a
-# table widget is not a Pi Zero fetching a package.
+# The page has no javascript and fetches nothing. A search box and a pager
+# over a table somebody scrolls once are two hundred kilobytes of library to
+# reimplement what the browser already does with ctrl-F and a scrollbar; and
+# the full record is a tab-separated file that opens in anything, so the page
+# links to it rather than pretending to page through it. The chart is SVG the
+# generator draws itself, for the same reason there is no pyserial.
 LOG_GLOB = "cpm-"
+HOMEPAGE = "https://github.com/vonglurt/radbeeper"
+TAGLINE = "A GQ GMC Geiger-Muller counter on the desk"
 
 
 def log_files(directory=None):
@@ -14605,7 +14875,7 @@ def summarise(directory=None, cpm_per_usvh=DEFAULT_CPM_PER_USVH):
         c = counters.setdefault(serial, {
             "serial": serial, "rows": 0, "counts": 0, "seconds": 0.0,
             "first": None, "last": None, "peak": None, "days": {},
-            "latest": [], "sites": set()})
+            "hours": {}, "latest": [], "sites": set()})
         for when, cells in read_rows(path):
             try:
                 counts = int(cells[2])
@@ -14627,6 +14897,16 @@ def summarise(directory=None, cpm_per_usvh=DEFAULT_CPM_PER_USVH):
                 c["peak"] = peak
             if len(cells) > 11 and cells[11]:
                 c["sites"].add(cells[11])
+            # An hour is the plot's resolution: eleven days of thirty-second
+            # rows is 28,000 points, which is more ink than the page is wide
+            # and nothing a reader can see. 270 is a line.
+            hour = int(when // 3600)
+            h = c["hours"].setdefault(hour, {"counts": 0, "seconds": 0.0,
+                                             "peak": None})
+            h["counts"] += counts
+            h["seconds"] += seconds
+            if peak is not None and (h["peak"] is None or peak > h["peak"]):
+                h["peak"] = peak
             day = time.strftime("%Y-%m-%d", time.localtime(when))
             d = c["days"].setdefault(day, {"rows": 0, "counts": 0,
                                            "seconds": 0.0, "peak": None})
@@ -14638,10 +14918,135 @@ def summarise(directory=None, cpm_per_usvh=DEFAULT_CPM_PER_USVH):
             c["latest"].append((when, cells))
     for c in counters.values():
         c["latest"].sort(key=lambda r: r[0])
-        c["latest"] = c["latest"][-300:]
+        # Sixty rows is half an hour and about four screens. The rest of the
+        # record is one link away as the file it already lives in, which loads
+        # faster than any amount of javascript pretending to page through it.
+        c["latest"] = c["latest"][-60:]
         c["cpm"] = (c["counts"] * 60.0 / c["seconds"]) if c["seconds"] else 0.0
         c["usvh"] = c["cpm"] / cpm_per_usvh if cpm_per_usvh else 0.0
     return counters
+
+
+def nice_ceiling(value):
+    """A round number at or above value, for an axis somebody can read."""
+    if value <= 0:
+        return 1.0
+    import math
+    power = 10 ** math.floor(math.log10(value))
+    for step in (1, 1.5, 2, 2.5, 3, 4, 5, 6, 8, 10):
+        if value <= step * power:
+            return step * power
+    return 10 * power
+
+
+def hour_series(counter):
+    """[(unix time, mean CPM, peak CPM or None)] per hour, in order."""
+    out = []
+    for hour in sorted(counter["hours"]):
+        h = counter["hours"][hour]
+        if not h["seconds"]:
+            continue
+        out.append((hour * 3600.0, h["counts"] * 60.0 / h["seconds"],
+                    h["peak"]))
+    return out
+
+
+def svg_plot(series, width=1120, height=1200, pad_l=52, pad_b=26, pad_t=12,
+             pad_r=10):
+    """An inline SVG line chart. No plotting library, for the same reason
+    there is no pyserial: this has to build on a machine with no network, and
+    a line and some axes are not worth a dependency.
+
+    THE LINE BREAKS OVER A GAP rather than running across it. An hour the
+    counter was not recording is not an hour of zero and it is not a straight
+    line between the readings either side; drawing one would invent the very
+    thing the log format goes to such lengths not to invent.
+
+    THE AXIS IS LOGARITHMIC because the data is. Background sits near 40 CPM
+    and the highest three-second peak in a quiet fortnight is two hundred
+    times that; on a linear axis the background -- the line somebody is
+    actually here to read -- is a flat smear along the bottom one percent,
+    and the whole plot is one spike. Decades are also how anybody who works
+    with this quantity already thinks about it.
+    """
+    if len(series) < 2:
+        return ""
+    import math
+    xs = [t for t, _m, _p in series]
+    values = [m for _t, m, _p in series if m > 0]
+    values += [p for _t, _m, p in series if p]
+    if not values:
+        return ""
+    lo = 10.0 ** math.floor(math.log10(min(values)))
+    hi = 10.0 ** math.ceil(math.log10(max(values)))
+    if hi <= lo:
+        hi = lo * 10.0
+    span_y = math.log10(hi) - math.log10(lo)
+    t0, t1 = xs[0], xs[-1]
+    span = (t1 - t0) or 1.0
+    iw = width - pad_l - pad_r
+    ih = height - pad_t - pad_b
+    X = lambda t: pad_l + iw * (t - t0) / span
+    Y = lambda v: pad_t + ih * (1.0 - (math.log10(max(v, lo)) - math.log10(lo))
+                                / span_y)
+    # An hour and a half between points means an hour went unrecorded.
+    step = 3600 * 1.5
+
+    def path(values):
+        d, pen = [], False
+        last = None
+        for t, v in values:
+            if v is None:
+                pen = False
+                last = t
+                continue
+            if not pen or (last is not None and t - last > step):
+                d.append("M%.1f %.1f" % (X(t), Y(v)))
+            else:
+                d.append("L%.1f %.1f" % (X(t), Y(v)))
+            pen = True
+            last = t
+        return " ".join(d)
+
+    out = ['<svg class="plot" viewBox="0 0 %d %d" width="100%%" '
+           'preserveAspectRatio="xMidYMid meet" role="img" '
+           'aria-label="counts per minute over time">' % (width, height)]
+    # y grid: one line per decade, with the halfway marks left unlabelled so
+    # the eye can still judge where a value sits inside one.
+    decade = lo
+    while decade <= hi * 1.0001:
+        y = Y(decade)
+        out.append('<line class="grid" x1="%d" y1="%.1f" x2="%d" y2="%.1f"/>'
+                   % (pad_l, y, width - pad_r, y))
+        out.append('<text class="ylab" x="%d" y="%.1f">%s</text>'
+                   % (pad_l - 8, y + 4, "{:,}".format(int(decade))))
+        for minor in (2, 5):
+            v = decade * minor
+            if v < hi:
+                ym = Y(v)
+                out.append('<line class="grid minor" x1="%d" y1="%.1f" '
+                           'x2="%d" y2="%.1f"/>' % (pad_l, ym, width - pad_r,
+                                                    ym))
+        decade *= 10
+    # x ticks at local midnight
+    day = 86400
+    first = t0 - (t0 % day) + day
+    t = first
+    while t < t1:
+        x = X(t)
+        out.append('<line class="grid" x1="%.1f" y1="%d" x2="%.1f" y2="%d"/>'
+                   % (x, pad_t, x, pad_t + ih))
+        out.append('<text class="xlab" x="%.1f" y="%d">%s</text>'
+                   % (x, height - 8, time.strftime("%b %-d", time.localtime(t))))
+        t += day
+    out.append('<path class="peak" d="%s"/>'
+               % path([(t, p) for t, _m, p in series]))
+    out.append('<path class="mean" d="%s"/>'
+               % path([(t, m) for t, m, _p in series]))
+    out.append('<text class="ycap" x="%d" y="%d">CPM, log</text>'
+               % (pad_l - 44, pad_t + 10))
+    out.append("</svg>")
+    return "".join(out)
 
 
 def esc(text):
@@ -14650,8 +15055,8 @@ def esc(text):
 
 
 def render_html(counters, sites, cpm_per_usvh=DEFAULT_CPM_PER_USVH,
-                title="Radiation monitor"):
-    """One self-contained page. DataTables does the sorting and the search."""
+                title="Radiation monitor", shots=None):
+    """One self-contained page: no scripts, no fetches, no web fonts."""
     when = lambda t: time.strftime("%Y-%m-%d %H:%M", time.localtime(t))
     out = []
     a = out.append
@@ -14659,19 +15064,31 @@ def render_html(counters, sites, cpm_per_usvh=DEFAULT_CPM_PER_USVH,
     a("<html lang=\"en\"><head><meta charset=\"utf-8\">")
     a("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">")
     a("<title>" + esc(title) + "</title>")
-    a("<link rel=\"stylesheet\" href=\"https://cdnjs.cloudflare.com/ajax/"
-      "libs/datatables.net-dt/2.1.8/dataTables.dataTables.min.css\">")
     a("<style>")
     a(":root{color-scheme:light dark;--fg:#181818;--bg:#faf9f7;"
-      "--dim:#6b6b6b;--line:#e0ddd8;--card:#fff}")
+      "--dim:#6b6b6b;--line:#e0ddd8;--card:#fff;--accent:#2f6f4f;"
+      "--warn:#b0642a}")
     a("@media (prefers-color-scheme:dark){:root{--fg:#e8e6e3;--bg:#16161a;"
-      "--dim:#9a9a9a;--line:#2e2e35;--card:#1e1e24}}")
+      "--dim:#9a9a9a;--line:#2e2e35;--card:#1e1e24;--accent:#6cc08c;"
+      "--warn:#e0a06a}}")
     a("body{margin:0;padding:2rem 1rem;background:var(--bg);color:var(--fg);"
       "font:15px/1.55 system-ui,-apple-system,Segoe UI,sans-serif}")
     a("main{max-width:1100px;margin:0 auto}")
     a("h1{font-size:1.6rem;margin:0 0 .2rem}")
     a("h2{font-size:1.1rem;margin:2.2rem 0 .6rem;font-weight:600}")
-    a(".sub{color:var(--dim);margin:0 0 1.6rem}")
+    a(".sub{color:var(--dim);margin:0 0 1rem}")
+    a(".lede{max-width:70ch;margin:0 0 2rem;font-size:1rem;line-height:1.6}")
+    a(".lede a{color:var(--accent)}")
+    a(".how{margin-top:2.6rem}")
+    a(".how h3{margin:1.6rem 0 .3rem;font-size:1rem}")
+    a(".how p{margin:.35rem 0;max-width:68ch}")
+    a(".how pre{background:var(--card);border:1px solid var(--line);"
+      "border-radius:8px;padding:.6rem .9rem;overflow-x:auto;"
+      "font-size:.84rem;margin:.5rem 0}")
+    a(".how img{border:1px solid var(--line);border-radius:8px;"
+      "margin:.6rem 0;max-width:100%}")
+    a(".how figure{margin:.8rem 0 1.2rem}")
+    a(".how figcaption{color:var(--dim);font-size:.82rem;margin-top:.3rem}")
     a(".cards{display:grid;gap:.9rem;"
       "grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}")
     a(".card{background:var(--card);border:1px solid var(--line);"
@@ -14681,17 +15098,65 @@ def render_html(counters, sites, cpm_per_usvh=DEFAULT_CPM_PER_USVH,
     a(".card .v{font-size:1.5rem;font-variant-numeric:tabular-nums;"
       "margin-top:.15rem}")
     a(".card .n{color:var(--dim);font-size:.8rem}")
-    a("table.dataTable{font-variant-numeric:tabular-nums;font-size:.88rem}")
-    a("table.dataTable td,table.dataTable th{border-color:var(--line)!important}")
+    a(".plotwrap{background:var(--card);border:1px solid var(--line);"
+      "border-radius:10px;padding:.9rem 1rem 0;margin-top:.9rem}")
+    a(".plot{display:block;height:auto}")
+    a(".plot .grid{stroke:var(--line);stroke-width:1}")
+    a(".plot .minor{opacity:.45}")
+    a(".plot .mean{fill:none;stroke:var(--accent);stroke-width:1.6;"
+      "stroke-linejoin:round;stroke-linecap:round}")
+    a(".plot .peak{fill:none;stroke:var(--warn);stroke-width:1;opacity:.55}")
+    a(".plot text{fill:var(--dim);font-size:11px;"
+      "font-family:system-ui,sans-serif}")
+    a(".plot .ylab{text-anchor:end}")
+    a(".plot .xlab{text-anchor:middle}")
+    a(".plot .ycap{text-anchor:start;font-size:10px;letter-spacing:.05em;"
+      "text-transform:uppercase}")
+    a(".legend{display:flex;gap:1.2rem;color:var(--dim);font-size:.8rem;"
+      "padding:.1rem 0 .8rem}")
+    a(".legend i{display:inline-block;width:18px;height:0;"
+      "border-top-width:2px;border-top-style:solid;vertical-align:middle;"
+      "margin-right:.4rem}")
+    a(".about{background:var(--card);border:1px solid var(--line);"
+      "border-radius:10px;padding:1.2rem 1.4rem;margin-top:2.6rem}")
+    a(".about h3{margin:0 0 .4rem;font-size:1.05rem}")
+    a(".about p{margin:.4rem 0;max-width:62ch}")
+    a(".about pre{background:var(--bg);border:1px solid var(--line);"
+      "border-radius:6px;padding:.6rem .8rem;overflow-x:auto;font-size:.82rem}")
+    a(".windows{display:grid;gap:.7rem;margin:.9rem 0 0;padding:0;"
+      "list-style:none;grid-template-columns:repeat(auto-fit,minmax(190px,1fr))}")
+    a(".windows li{border-left:2px solid var(--accent);padding-left:.7rem}")
+    a(".windows b{display:block;font-size:1.05rem}")
+    a(".windows span{color:var(--dim);font-size:.85rem}")
+    a("table{border-collapse:collapse;width:100%;font-size:.86rem;"
+      "font-variant-numeric:tabular-nums;background:var(--card);"
+      "border:1px solid var(--line);border-radius:10px;overflow:hidden}")
+    a("th{text-align:left;font-weight:600;color:var(--dim);font-size:.76rem;"
+      "text-transform:uppercase;letter-spacing:.04em}")
+    a("th,td{padding:.36rem .7rem;border-bottom:1px solid var(--line)}")
+    a("tbody tr:last-child td{border-bottom:0}")
+    a("td:not(:first-child),th:not(:first-child){text-align:right}")
+    a(".more{margin:.6rem 0 0;font-size:.85rem}")
+    a(".more a{color:var(--accent)}")
+    a(".tablewrap{overflow-x:auto}")
     a("footer{color:var(--dim);font-size:.82rem;margin-top:3rem;"
       "border-top:1px solid var(--line);padding-top:1rem}")
     a("code{background:var(--card);padding:.1rem .3rem;border-radius:4px}")
     a("</style></head><body><main>")
     a("<h1>" + esc(title) + "</h1>")
-    a("<p class=\"sub\">Generated " + esc(when(time.time()))
+    a("<p class=\"sub\">" + esc(TAGLINE) + " &middot; generated "
+      + esc(when(time.time()))
       + " by radbeeper " + VERSION
       + " &middot; tube factor " + ("%.1f" % cpm_per_usvh)
       + " CPM per &micro;Sv/h</p>")
+    a('<p class="lede">A <strong>GQ GMC-320 Plus</strong> Geiger&ndash;M&uuml;ller '
+      "counter, plugged into a machine running <strong>Alpine Linux</strong> as "
+      "a USB serial device &mdash; here shared into a virtual machine over USB "
+      "pass-through. RadBeeper reads the counter, logs it to tab-separated "
+      "files, and <strong>this page is regenerated from those files by a "
+      "GitHub Action</strong> on every push. The whole of it is forkable: copy "
+      "your own logs into <code>logs/</code> and you get a page like this "
+      'one. <a href="' + HOMEPAGE + '">Source and instructions</a>.</p>')
 
     if not counters:
         a("<p>No logs found. Put <code>cpm-&lt;serial&gt;-YYYY-MM.tsv</code> "
@@ -14721,8 +15186,22 @@ def render_html(counters, sites, cpm_per_usvh=DEFAULT_CPM_PER_USVH,
             card("Site", here[2])
         a("</div>")
 
+        series = hour_series(c)
+        chart = svg_plot(series)
+        if chart:
+            a("<h2>Counts per minute, by the hour</h2>")
+            a('<div class="plotwrap">' + chart)
+            a('<div class="legend">'
+              '<span><i style="border-top-color:var(--accent)"></i>'
+              'hourly mean</span>'
+              '<span><i style="border-top-color:var(--warn)"></i>'
+              'highest 3-second peak in the hour</span>'
+              '<span>a break in the line is an hour with no recording</span>'
+              '</div></div>')
+
         a("<h2>By day</h2>")
-        a("<table class=\"rb\"><thead><tr><th>Day</th><th>Mean CPM</th>"
+        a('<div class="tablewrap"><table><thead><tr><th>Day</th>'
+          "<th>Mean CPM</th>"
           "<th>&micro;Sv/h</th><th>Peak 3s CPM</th><th>Rows</th>"
           "<th>Hours</th></tr></thead><tbody>")
         for day in sorted(c["days"], reverse=True):
@@ -14734,11 +15213,11 @@ def render_html(counters, sites, cpm_per_usvh=DEFAULT_CPM_PER_USVH,
                                else "%.0f" % d["peak"])
               + "</td><td>" + str(d["rows"])
               + "</td><td>" + "%.1f" % (d["seconds"] / 3600.0) + "</td></tr>")
-        a("</tbody></table>")
+        a("</tbody></table></div>")
 
         a("<h2>Latest rows</h2>")
-        a("<table class=\"rb\"><thead><tr><th>Time</th><th>CPS</th>"
-          "<th>3s</th><th>30s</th><th>300s</th><th>Peak 3s</th>"
+        a('<div class="tablewrap"><table><thead><tr><th>Time</th>'
+          "<th>CPS</th><th>3s</th><th>30s</th><th>300s</th><th>Peak 3s</th>"
           "<th>Source</th><th>Site</th></tr></thead><tbody>")
         for _t, cells in reversed(c["latest"]):
             cell = lambda i: esc(cells[i]) if len(cells) > i and cells[i] else "--"
@@ -14746,21 +15225,112 @@ def render_html(counters, sites, cpm_per_usvh=DEFAULT_CPM_PER_USVH,
               + cell(4) + "</td><td>" + cell(5) + "</td><td>" + cell(6)
               + "</td><td>" + cell(7) + "</td><td>" + cell(10) + "</td><td>"
               + cell(11) + "</td></tr>")
-        a("</tbody></table>")
+        a("</tbody></table></div>")
+        if c.get("links"):
+            a('<p class="more">The last %d rows of %s. '
+              "Read the full chart: " % (len(c["latest"]),
+                                         "{:,}".format(c["rows"]))
+              + " &middot; ".join('<a href="%s">%s</a>' % (href, esc(name))
+                                  for name, href in c["links"])
+              + " &mdash; tab-separated, one row every 30 seconds.</p>")
 
+    # THE HOW-TO AND THE DATA ON ONE PAGE. Somebody arriving from a link
+    # wants to know what they are looking at and how to get their own; putting
+    # that behind a second click loses most of them, and there is nothing here
+    # that needs a second page.
+    a('<section class="how">')
+    a("<h2>How to use it</h2>")
+
+    def shot(name, caption):
+        if shots and name in shots:
+            a('<figure><img src="%s" alt="%s" loading="lazy">'
+              '<figcaption>%s</figcaption></figure>'
+              % (esc(shots[name]), esc(caption), esc(caption)))
+
+    a("<h3>Install</h3>")
+    a("<p>One stdlib Python file. No packages, no build, nothing to compile "
+      "&mdash; the install is a copy.</p>")
+    a("<pre>git clone " + HOMEPAGE + ".git\n"
+      "cd radbeeper &amp;&amp; make install\n\n"
+      "doas adduser $USER dialout    # then log in again</pre>")
+
+    a("<h3>Find the counter</h3>")
+    a("<pre>radbeeper probe</pre>")
+    shot("probe", "radbeeper probe, against the counter these logs came from")
+    a("<p>If it finds nothing it says which of four things went wrong, because "
+      "they have four different fixes: no serial node at all (often a kernel "
+      "with no <code>ch341</code> &mdash; Alpine's <code>linux-virt</code> has "
+      "none, <code>linux-lts</code> does), permission on the node, something "
+      "that is not a GMC, or a port another reader already holds.</p>")
+
+    a("<h3>Watch it</h3>")
+    a("<pre>radbeeper watch</pre>")
+    shot("watch", "the monitor: three time constants at once")
+    a("<p>The counter's own reading is a rolling 60-second count &mdash; one "
+      "number with one time constant. RadBeeper counts the blips itself and "
+      "keeps three windows at once.</p>")
+    a('<ul class="windows">')
+    a("<li><b>3 s</b><span>Watching a source come and go as you move it. "
+      "Jumpy, and honestly so.</span></li>")
+    a("<li><b>30 s</b><span>Reading the room. Settled enough to compare two "
+      "places.</span></li>")
+    a("<li><b>300 s</b><span>A number worth writing down.</span></li>")
+    a("</ul>")
+    a("<p><strong>A window shows nothing until it is full</strong>, and says "
+      "how long it still needs. A three-second CPM built from one sample is "
+      "twenty times noisier than it looks, and drawing it as though it were "
+      "settled is how a 25 CPM background reads as 60 and somebody goes "
+      "hunting for a leak.</p>")
+    shot("watch-filling", "the long window still filling, and saying so")
+    a("<h3>Is anything periodic?</h3>")
+    a("<p>The monitor also accumulates a power spectrum of the per-second "
+      "counts. <strong>Decay is a Poisson process and the spectrum of a "
+      "Poisson process is flat</strong> &mdash; so a featureless strip is the "
+      "good answer, and says that nothing is arriving on a schedule.</p>")
+    shot("watch-spectrum", "the accumulating spectrum: flat is healthy")
+    a("<p>A peak is the interesting case: mains hum on the tube's supply, a "
+      "fan carrying a source past, a loose connector, firmware that batches "
+      "its reporting. In the time domain all of those look exactly like more "
+      "counts. Averaging successive windows is what makes a real line climb "
+      "out of the noise &mdash; one periodogram of a Poisson process is flat "
+      "in expectation and violently noisy in fact.</p>")
+    a("<p>No counter on the desk? Every command runs against a built-in "
+      "source, and it is a real one &mdash; radioactive decay is a Poisson "
+      "process, so the simulator draws Poisson samples.</p>")
+    a("<pre>radbeeper --source sim --sim-cpm 400 watch</pre>")
+
+    a("<h3>Log it</h3>")
+    a("<pre>radbeeper service</pre>")
+    a("<p>A row every 30 seconds into a dated file per counter, "
+      "<code>cpm-&lt;serial&gt;-YYYY-MM.tsv</code> &mdash; which is rotation "
+      "by construction, with no cron entry and nothing renaming a file while "
+      "a service appends to it. Each row carries the <strong>peak</strong> "
+      "every window reached since the last one, so a source that came and "
+      "went between two rows still leaves a trace.</p>")
+    shot("log-output", "the log on disk, and what a row holds")
+    a("<p>The counter also records to its own flash whether or not anything "
+      "is listening. <code>radbeeper backfill</code> reads that back and "
+      "fills the gaps &mdash; one row per slot, never over a live "
+      "measurement, and an hour nobody recorded stays an hour nobody "
+      "recorded.</p>")
+    a("<pre>radbeeper backfill</pre>")
+
+    a("<h3>Publish it</h3>")
+    a("<pre>radbeeper export --logs logs -o index.html</pre>")
+    a("<p>This page. Fork the repository, copy your <code>cpm-*.tsv</code> "
+      "into <code>logs/</code>, push, and the workflow rebuilds and commits "
+      "it &mdash; served by GitHub Pages with no build step. There is nothing "
+      "to install in the workflow: the generator is the same one file, which "
+      "is also why the page cannot drift from the log format.</p>")
+    a('<p>MIT &mdash; <a href="' + HOMEPAGE + '">' + HOMEPAGE.split("//")[1]
+      + "</a></p>")
+    a("</section>")
     a("<footer>Rows marked <code>live</code> were measured by a monitor on "
       "this machine; rows marked <code>flash</code> were reconstructed from "
       "the counter's own recorded history. Gaps are gaps: nothing is "
       "interpolated. Built by "
       "<code>radbeeper export</code>.</footer>")
     a("</main>")
-    a("<script src=\"https://cdnjs.cloudflare.com/ajax/libs/jquery/3.7.1/"
-      "jquery.min.js\"></script>")
-    a("<script src=\"https://cdnjs.cloudflare.com/ajax/libs/datatables.net/"
-      "2.1.8/dataTables.min.js\"></script>")
-    a("<script>document.addEventListener('DOMContentLoaded',function(){"
-      "document.querySelectorAll('table.rb').forEach(function(t){"
-      "new DataTable(t,{pageLength:25,order:[]});});});</script>")
     a("</body></html>")
     return "\n".join(out) + "\n"
 
@@ -14768,8 +15338,24 @@ def render_html(counters, sites, cpm_per_usvh=DEFAULT_CPM_PER_USVH,
 def cmd_export(args):
     directory = args.logs or state_dir()
     counters = summarise(directory, args.cpm_per_usvh)
+    # Linked relative to the page, so it works wherever the page is served
+    # from -- a repository root on Pages, or a directory opened off a disk.
+    out_dir = os.path.dirname(os.path.abspath(args.output or "index.html"))
+    for serial, path in log_files(directory):
+        if serial in counters:
+            counters[serial].setdefault("links", []).append(
+                (os.path.basename(path), os.path.relpath(path, out_dir)))
     sites = read_sites(directory)
-    html = render_html(counters, sites, args.cpm_per_usvh, args.title)
+    # Screenshots are linked only when they are actually beside the page, so
+    # an export into some other directory does not litter it with broken
+    # images.
+    shots = {}
+    for name in ("probe", "watch", "watch-filling", "watch-spectrum",
+                 "watch-plain", "log-output", "commands"):
+        rel = os.path.join("docs", "screenshots", name + ".png")
+        if os.path.exists(os.path.join(out_dir, rel)):
+            shots[name] = rel.replace(os.sep, "/")
+    html = render_html(counters, sites, args.cpm_per_usvh, args.title, shots)
     out = args.output or "index.html"
     with open(out, "w") as f:
         f.write(html)
