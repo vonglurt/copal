@@ -10436,10 +10436,10 @@ GUIDE
 
    Left     the menu button, workspaces 1-5, the current submap, the
             window list
-   Centre   the clock
+   Centre   nothing, so the window titles can take the width
    Right    temperature, cpu, memory, disk (small, one letter each),
-            hostname, network, volume, battery, the system tray
-            (and weather, which is off -- see below)
+            hostname, network, volume, battery, the system tray, and
+            the time in the corner (and weather, which is off -- see below)
 
  MOVING THINGS
 
@@ -10447,8 +10447,9 @@ GUIDE
    name between them moves the thing on screen:
 
        "modules-left":   ["custom/menu", "hyprland/workspaces", ...]
-       "modules-center": ["clock"],
-       "modules-right":  ["temperature", "cpu", "memory", ...]
+       "modules-right":  ["temperature", "cpu", "memory", ..., "clock"]
+
+   There is no modules-center; add one to pin something to the middle.
 
    Delete a name from all three and that widget is gone. The block that
    configures it lower down can stay; an unlisted module is not drawn.
@@ -11145,8 +11146,10 @@ hypr_write_waybar() {
   // workspace numbers sit beside it because Super+1..5 is the next thing to
   // learn and seeing them switch is how that is learned.
   "modules-left":   ["custom/menu", "hyprland/workspaces", "hyprland/submap", "wlr/taskbar"],
-  "modules-center": ["clock"],
-  "modules-right":  ["temperature", "cpu", "memory", "disk", "custom/hostname", "network", "wireplumber", "battery", "tray"],
+  // No centre group: with nothing pinned to the middle, the window titles
+  // on the left can run as wide as the bar allows. The time is the last
+  // thing on the right, in the corner.
+  "modules-right":  ["temperature", "cpu", "memory", "disk", "custom/hostname", "network", "wireplumber", "battery", "tray", "clock"],
 
   // The Omarchy menu, in a corner. Left-click opens it; right-click goes
   // straight to the power entries, because "shut down" is the one thing
@@ -11182,7 +11185,6 @@ hypr_write_waybar() {
     "tooltip-format": "{title} ({app_id})",
     "on-click": "activate",
     "on-click-middle": "close",
-    "max-length": 120,
     "icon-size": 0
   },
 
